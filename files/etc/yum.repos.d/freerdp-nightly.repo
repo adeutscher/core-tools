@@ -1,0 +1,8 @@
+
+[freerdp-nightly]
+name=freerdp-nightly
+baseurl=http://pub.freerdp.com/repositories/rpm/fedora/$releasever/freerdp-nightly/
+enabled=1
+metadata_expire=12h
+gpgcheck=0
+skip_if_unavailable=False

@@ -1,0 +1,30 @@
+
+# General SSH Config
+# priority:1
+
+Host *
+
+  #UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  ServerAliveInterval 60
+
+  #GSSAPIAuthentication no
+  PreferredAuthentications publickey,password
+  # Only use the 'IdentityFile's specified in this file; default: no
+  IdentitiesOnly yes
+  # Don't forward X11 as untrusted; default: no
+  ForwardX11 no
+  # Don't forward X11 as trusted; default: no
+  ForwardX11Trusted no
+  # Sets time interval to 60 seconds to see if connection is still alive; default: 0 (never)
+  ServerAliveInterval 60
+  # Kills ssh connection after 5 failed intervals;default: 3
+  ServerAliveCountMax 5
+  # Don't connect to any server using Protocol 1; watch the beginning
+  #  of Matrix Reloaded to learn why you don't use SSHv1
+  Protocol 2
+
+  # Addresses CVE-2016-0777 and CVE-2016-0778
+  UseRoaming no
+
+

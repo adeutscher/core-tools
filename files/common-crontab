@@ -1,0 +1,4 @@
+# common-crontab-marker for grep's benefit
+# Rotate temporary directory.
+@reboot $HOME/tools/scripts/files/make-temp.sh 2>/dev/null >&2
+1 0 * * * $HOME/tools/scripts/files/make-temp.sh 2>/dev/null >&2

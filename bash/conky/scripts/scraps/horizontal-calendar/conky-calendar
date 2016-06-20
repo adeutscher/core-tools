@@ -1,0 +1,39 @@
+background yes
+use_xft yes
+xftfont 123:size=8
+xftalpha 0.2
+update_interval 30
+total_run_times 0
+own_window yes
+own_window_type normal
+own_window_transparent yes
+own_window_hints undecorated,below,sticky,skip_taskbar,skip_pager
+double_buffer yes
+minimum_size 1020 240
+maximum_width 1020
+no_buffers yes
+cpu_avg_samples 2
+net_avg_samples 2
+use_spacer yes
+draw_shades no
+draw_outline no
+draw_borders no
+draw_graph_borders no
+border_inner_margin 0
+border_outer_margin 0 
+override_utf8_locale yes
+default_color white  
+alignment top_right
+uppercase no
+text_buffer_size 2048
+imlib_cache_size 0 
+gap_x 5  
+gap_y 0
+TEXT
+
+$color${execpi 36000 ./horical.sh}${color}
+#${voffset 5}${goto 198}${color}${hr 1}
+#${color 72A4DB}${voffset -64}${goto 46}${font Caviar Dreams:bold:size=18}${time %A}${font Caviar Dreams:bold:size=40}${goto 175} ${color}${voffset 0}${time %d}$color
+#${color 72A4DB}${voffset -50}${font Caviar Dreams:bold:size=24}${goto 46}${time %b}${font Caviar Dreams:bold:size=16}${goto 128}${color}${voffset 4}${time %Y}$color
+
+#${voffset -32}${font Sahara:italic:size=15}${goto 280}${color E0EBF1}${execi 30 fortune fran}

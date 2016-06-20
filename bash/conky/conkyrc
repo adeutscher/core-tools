@@ -1,0 +1,85 @@
+# Conky, a system monitor, based on torsmo
+#
+# Any original torsmo code is licensed under the BSD license
+#
+# All code written since the fork of torsmo is licensed under the GPL
+#
+# Please see COPYING for details
+#
+# Copyright (c) 2004, Hannu Saransaari and Lauri Hakkarainen
+# Copyright (c) 2005-2012 Brenden Matthews, Philip Kovacs, et. al. (see AUTHORS)
+# All rights reserved.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+# Old alignment properties.
+# Positioning is now handled by start.sh
+#alignment bottom_right
+#gap_x 10
+#gap_y 40
+
+# A width of 390 translates to 35 characters of writing room
+# with standard font before things start to expand.
+maximum_width 390
+
+background no
+border_width 1
+cpu_avg_samples 2
+default_color white
+default_outline_color white
+default_shade_color white
+draw_borders no
+draw_graph_borders yes
+draw_outline no
+draw_shades no
+use_xft yes
+xftfont DejaVu Sans Mono:size=12
+net_avg_samples 2
+no_buffers no
+double_buffer yes
+out_to_console no
+out_to_stderr no
+extra_newline no
+own_window yes
+own_window_class Conky
+own_window_type override
+own_window_hints undecorated,below,sticky,skip_taskbar,skip_pager  
+
+stippled_borders 0
+update_interval 1.0
+uppercase no
+use_spacer none
+show_graph_scale no
+show_graph_range no
+text_buffer_size 2048
+
+# Draw rounded backgrounds with lua.
+
+lua_load lua/draw_bg.lua
+lua_draw_hook_pre draw_bg 
+# If you want to disable the lua backgrounds, set own_window_transparent to no and uncomment own_window_color
+
+own_window_transparent yes
+#own_window_colour 1A334C
+
+TEXT
+${execp bash scripts/system.sh}
+${execpi 5 bash scripts/tmux.sh}${execpi 5 bash scripts/filesystems.sh}
+${execp bash scripts/networking.sh}${execp bash scripts/host-specific.sh}${execp bash scripts/bluetooth.sh}${execpi 30 bash scripts/vms.sh}${execpi 30 bash scripts/reports.sh}
+$hr
+${color grey}Name              PID   CPU%   MEM%
+${color lightgrey} ${top name 1} ${top pid 1} ${top cpu 1} ${top mem 1}
+${color lightgrey} ${top name 2} ${top pid 2} ${top cpu 2} ${top mem 2}
+${color lightgrey} ${top name 3} ${top pid 3} ${top cpu 3} ${top mem 3}
+${color lightgrey} ${top name 4} ${top pid 4} ${top cpu 4} ${top mem 4}

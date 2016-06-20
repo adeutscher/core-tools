@@ -1,0 +1,19 @@
+#!/usr/bin/expect
+
+set timeout 5
+
+log_user 0
+
+set bssid [lindex $argv 0]
+
+spawn "bluetoothctl"
+
+expect "bluetooth" {
+    send "power on\n"
+    sleep 2
+    send "agent KeyboardOnly\n"
+    send "default-agent\n"
+    send "connect $bssid\n"
+    sleep 2
+    send "exit\n"
+}

@@ -1,0 +1,17 @@
+
+[fedora-steam]
+name=Steam
+baseurl=http://negativo17.org/repos/steam/fedora-$releasever/$basearch/
+enabled=1
+skip_if_unavailable=1
+gpgkey=http://negativo17.org/repos/RPM-GPG-KEY-slaanesh
+gpgcheck=1
+
+[fedora-steam-source]
+name=Steam - Source
+baseurl=http://negativo17.org/repos/steam/fedora-$releasever/SRPMS
+enabled=0
+skip_if_unavailable=1
+gpgkey=http://negativo17.org/repos/RPM-GPG-KEY-slaanesh
+gpgcheck=1
+

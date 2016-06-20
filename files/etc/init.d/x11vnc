@@ -1,0 +1,76 @@
+#!/bin/bash
+### BEGIN INIT INFO
+# Provides:          x11vnc
+# Should-Start:
+# Required-Start:    lightdm
+# Required-Stop:     
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: X11 VNC Server for Display :0
+# Description:       Debian init script for the X11 VNC Server
+### END INIT INFO
+#
+# Authors:	Brian Cunnie <cunnie@pivotallabs.com>
+#		Colin Deeb <deeb@pivotallabs.com> 
+#		Laurence Koret <lkoret@pivotallabs.com>
+#
+# MIT License
+
+# This is a useful SysV reference file for automatically starting x11vnc as a service.
+# Source: https://raw.githubusercontent.com/starlightmedia/bin/master/x11vnc
+
+set -e
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=/usr/bin/x11vnc
+DAEMON_ARGS="-forever -display :0"
+DAEMON_USER=pi
+eval DAEMON_HOME=~$DAEMON_USER
+DISPLAY=:0
+
+. /lib/lsb/init-functions
+
+# The X Server can take from 3-8 seconds to start, so we
+# try for 20 seconds to test to see if the Xserver is up
+# before starting the VNC server.
+function start_x11vnc() {
+  local COUNT LIMIT XAUTHORITY
+  COUNT=0
+  LIMIT=20
+  
+  while :; do
+    if xrdb -query -display $DISPLAY > /dev/null 2>&1; then
+      log_daemon_msg "Start x11vnc: X is running"
+      start-stop-daemon --start --quiet \
+        --name x11vnc --chuid $DAEMON_USER --background \
+        --exec $DAEMON -- $DAEMON_ARGS
+      return $?
+    else
+      COUNT=$(($COUNT + 1))
+      if [ $COUNT -ge $LIMIT ]; then
+	log_daemon_msg "Start x11vnc: Giving up; X isn't running on $DISPLAY"
+	return 2
+      fi
+      log_daemon_msg "Start x11vnc: X isn't up yet; waited $COUNT seconds"
+      sleep 1
+      cp $DAEMON_HOME/.Xauthority ~ || true
+    fi
+  done
+}
+
+case "$1" in
+  start)
+    log_daemon_msg "Start x11vnc"
+    start_x11vnc
+    log_daemon_msg " End start x11vnc"
+    ;;
+  stop)
+    start-stop-daemon --stop --quiet --name x11vnc 
+    log_daemon_msg "x11vnc has been stopped"
+    ;;
+  *)
+    echo "Usage: /etc/init.d/x11vnc {start|stop}"
+    exit 1
+    ;;
+esac
+exit 0

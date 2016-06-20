@@ -1,0 +1,65 @@
+
+# This bashrc file is a main hub for my BASH functions and aliases.
+
+# Set toolsDir to default to ~/tools/ if it has not already been set.
+export toolsDir="${toolsDir:-$HOME/tools}"
+
+# If the tools are not at $toolsDir, someone messed up.
+# Consider running scripts/setup/setup-tools.sh to write to the appropriate file.
+if [ -d "$toolsDir" ]; then
+
+    # Load in any function files stored in the functions directory.
+    #   It is assumed that none of the contents of the directory are directories ending in .sh
+    #   Modules will be loaded in alphabetical order. Numbering off these modules is encouraged
+    if [ -d "$toolsDir/bash/functions/" ]; then
+        for functionFile in $(ls "$toolsDir/bash/functions/"*sh 2> /dev/null); do
+            # Note: Sourcing in one line by wildcard didn't work, sadly
+            . "$functionFile"
+        done
+        unset functionFile
+    fi
+
+    # Load additional per-host functions.
+    if [ -f "$toolsDir/bash/functions/hosts/$HOSTNAME.sh" ]; then
+        . "$toolsDir/bash/functions/hosts/$HOSTNAME.sh"
+    fi
+
+    # Cycle through each possible location for variable-location modules.
+    # Just in '~/work/' and 'bash/modules/' for now.
+    # Each path added here should be an absolute path in order to
+    #     make __module_dir (and by extension, the things that take its values) absolute paths.
+    for __module_location in "$toolsDir/secure" "$HOME/work" "$toolsDir/modules" "$toolsDir/bash/modules"; do
+        if [ -d "$__module_location" ]; then
+            for __module_dir in $__module_location $__module_location/*; do
+                # Reminder: This will be an absolute path.
+                # Double-check that the module-directory exists (/* would be included)
+                if [ -d "$__module_dir" ]; then
+                    if [ -f "$__module_dir/bash/bashrc" ]; then
+                        # Can come up in general modules or the shortcut directory 'secure/.
+                        #     e.g. $toolsDir/bash/modules
+                        #     e.g. $toolsDir/secure
+                        __current_module_dir="$__module_dir"
+                    elif [ -f "$__module_dir/tools/bash/bashrc" ]; then
+                        # This is more likely to come up in tools for specific topics, like in ~/work/
+
+                        __current_module_dir="$__module_dir/tools"
+                    fi
+
+                    if [ -n "$__current_module_dir" ]; then
+                        # If we have found a module in this directory, load it in.
+                        . "$__current_module_dir/bash/bashrc"
+                    fi
+                    unset __current_module_dir
+                fi
+            done
+        fi # end directory check
+    done
+
+    # Axe loop variables.
+    unset __module_location __module_dir __current_module_dir
+
+else
+    printf '$toolsDir variable is incorrectly set! Tools file not found at "%s/"\n' "$toolsDir"
+fi
+
+
