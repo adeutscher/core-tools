@@ -80,7 +80,7 @@ __build_prompt() {
   # - Shorter directory path
   # - (slightly) shorter SSH path.
   # - Shorten username to one letter
-  local typing_space=$(($(stty size | cut -d' ' -f 2)-$(__strlen "$(pwd | sed "s|^$HOME|H|g")$(hostname -s)$USER")-${ssh_space_count:-0}+${vc_count:-0}-7))
+  local typing_space=$(($(stty size | cut -d' ' -f 2)-$(__strlen "$(pwd | sed "s|^$HOME|H|g")$(hostname -s)$USER")-${ssh_space_count:-0}-${vc_count:-0}-7))
   # Typing space takes into account:
   # - Path length, accounting for a tilde in home directory
   # - Username length
@@ -88,7 +88,6 @@ __build_prompt() {
   # - SSH address
   # - Formatting characters (static 7 for now)
   # - Version control information
-
   local box_colour="$(__prompt_box_colour)"
 
   # Build
@@ -172,7 +171,7 @@ __get_fs(){
         df -TP . 2> /dev/null | awk '{ print $2 }' | tail -n1
     else
         # Default to ext4 to make non-Unix green.
-        echo "ext4"
+        printf "ext4"
     fi
 }
 
@@ -218,7 +217,7 @@ __prompt_file_system_colour(){
             # NFS is also a remote network file system.
             printf "$Colour_BIBlue"
             ;;
-        *fat*|ntfs*|fuseblk)
+        *fat*|ntfs*|udf|fuseblk)
             # Red Text.
             # FAT Filesystem most likely to be removable device.
             #     Lazy pattern assumes that no other family of file system will have 'fat' anywhere in it.
@@ -227,6 +226,7 @@ __prompt_file_system_colour(){
             #     Late addition. After seeing an NTFS filesystem listed as 'fuseblk',
             #       I'm starting to second-guess if the 'ntfs*' clause is necessary.
             #       More double-checking necessary, eventually.
+            # UDF Filesystem is most likely a mounted ISO or similar.
             printf "$Colour_BIRed"
             ;;
         *tmpfs*|sysfs|proc)

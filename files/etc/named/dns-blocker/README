@@ -1,0 +1,7 @@
+
+The .txt files required in order to run generate.sh.
+If they are not already here, then you are probably looking at a public posting of this repository and will need to re-download it the file(s).
+
+mvps-hosts.txt <- http://winhelp2002.mvps.org/hosts.txt (Source of MVPS hosts list)
+steve-black-hosts.txt <- https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+someonewhocares-hosts.txt <- Output of the following: curl http://someonewhocares.org/hosts/zero/ | grep "^0\.0\.0\.0" > someonewhocares-hosts.txt

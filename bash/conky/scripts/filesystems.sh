@@ -120,10 +120,10 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         # For the moment, I am using the presence of the "nointr" flag on a mount (currently unimplemented in SAMBA) to symbolize a faraway connection.
         # TODO: Find a more reliable marker.
         # I am considering shifting to the intr/nointr flags, which are NYI at the moment according to https://www.samba.org/samba/docs/man/manpages-3/mount.cifs.8.html
-        if ! ( ( [[ "${fs_type}" =~ "cifs" ]] || [[ "${fs_type}" =~ "nfs" ]] ) && grep -qw "nointr" <<< "$fs_options" ) ; then
-            printf " Usage: \${fs_used ${fs}}/\${fs_size ${fs}} - \${fs_used_perc ${fs}}%% \${fs_bar 6 ${fs}}\n"
-        else
+        if ( ( [[ "${fs_type}" =~ "cifs" ]] || [[ "${fs_type}" =~ "nfs" ]] ) && grep -qw "nointr" <<< "$fs_options" ); then
             extra_text=" (far)"
+        elif [[ "${fs_type}" != "iso9660" ]]; then
+            printf " Usage: \${fs_used ${fs}}/\${fs_size ${fs}} - \${fs_used_perc ${fs}}%% \${fs_bar 6 ${fs}}\n"
         fi
 
         # Print remote location for CIFS.

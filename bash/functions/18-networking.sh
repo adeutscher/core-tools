@@ -95,6 +95,7 @@ public-ip(){
         fi
     else
         error "Public IP is currently unknown."
+        return 1
     fi
 }
 

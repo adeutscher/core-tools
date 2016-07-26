@@ -1,0 +1,15 @@
+0.0.0.0 ps4ux.com
+0.0.0.0 securepccleaner.com
+0.0.0.0 support.eshield.com
+0.0.0.0 search.eshield.com
+0.0.0.0 leovegas.com
+0.0.0.0 www.leovegas.com
+
+0.0.0.0 ads.thehiveworks.com # Various webcomics
+0.0.0.0 b.thehiveworks.com # Various webcomics
+
+0.0.0.0 i.connatix.com # Ads seen on bulbapedia
+0.0.0.0 cdn.connatix.com # Connatix CDN
+0.0.0.0 connatix.com # In for a penny...
+
+0.0.0.0 instaflappy.com # FlappyBird popup

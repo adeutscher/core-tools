@@ -13,6 +13,7 @@ build-tmux(){
         # Imitate laptop colouring
         bg=colour34
         fg=colour220
+        status_fg="black"
         style=laptop
     ;;
     "server."*)

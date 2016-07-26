@@ -122,7 +122,7 @@ if qtype ssh; then
           # Print divided configurations
           for subConfigFile in "$moduleSSHDir/config.d/"*; do
             if [ -f "$subConfigFile" ]; then
-              printf "###\n# Sub-config \"%s\" for %s\n###\n\n" "$(basename "${subConfigFile}")" "$moduleSSHDir" >> "$sshConfig"
+              printf "###\n# Sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}"  "$moduleSSHDir" >> "$sshConfig"
               cat "$subConfigFile" 2> /dev/null >> "$sshConfig";
             fi
           done
@@ -159,7 +159,7 @@ if qtype ssh; then
           # Print divided configurations
           for subConfigFile in "$moduleSSHDir/config.d/"*; do
             if [ -f "$subConfigFile" ]; then
-              printf "###\n# Sub-config \"%s\" for $moduleSSHDir\n###\n\n" "$(basename "${subConfigFile%.*}")" >> "$sshConfig.new"
+              printf "###\n# Sub-config \"%s\" for $moduleSSHDir\n###\n\n" "${subConfigFile##*/}" >> "$sshConfig.new"
               cat "$subConfigFile" 2> /dev/null >> "$sshConfig.new";
             fi
           done

@@ -1,0 +1,5 @@
+msedge.net # Required for outlook.live.com
+a-msedge.net # Required for outlook.live.com
+
+mobileads.msn.com # Gets the addresses of ads to display. Crashes W10 puzzle games if blocked, but does not generate more ads because it does not directly host them (glorified phonebook).
+

@@ -27,7 +27,7 @@ for device in ${devices}; do
             fi
         fi
 
-        report="${report} ${entry}"
+        report="${report}${entry}"
         # Cache entry for later.
         mkdir -p "$tempRoot/cache/bluetooth"
         printf "${entry}" > "$tempRoot/cache/bluetooth/$device.txt"     

@@ -73,7 +73,7 @@ __function_greatgrandparent(){
 
 __message_get_location(){
     if [ -n "$0" ] && grep -Pqv '^\-?bash$' <<< "$0"; then
-        printf '['"$Colour_BIGreen"'%s'"$Colour_Off"']' "$(basename "$0")"
+        printf '['"$Colour_BIGreen"'%s'"$Colour_Off"']' ${0##*/}
     elif [ -n "$(__function_grandparent)" ]; then
         printf '['"$Colour_BIBlue"'%s'"$Colour_Off"']' "$(__function_grandparent)"
     fi

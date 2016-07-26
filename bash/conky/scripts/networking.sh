@@ -30,14 +30,29 @@ exclude_list="lo"
 # Gateway Discovery #
 #####################
 
+gateway_count=0
+gateway_spacing=10 # For " Gateway: "
 for ip in $(route -n | awk '{ if($3 == "0.0.0.0"){ print $2 } }' | sort -n); do
-    tentative_gateway="$tentative_gateway, \${color #${colour_network_address}}$ip\$color"
-done
+    gateway_count=$((gateway_count+1))
 
-# Need to divide by two because the formatting of each IP will
-#     count as two words as seen by wc command.
-# Also need to account for potential trimming in the future
-gateway_count="$((($(wc -w <<< "$tentative_gateway") - 1 ) / 2 ))"
+    if [ "$gateway_count" -ge 3 ]; then
+        # Conky is set to only print "multiple" if there are 3 or more gateways present.
+        # Break out and don't bother doing more processing that will not be displayed past 3.
+        break
+    fi
+
+    tentative_length=$(expr length "$ip")
+
+    # Note: May need to add a bit of extra padding for spaces to the left side of the below IF statement
+    #   if I decide that you want to display more than 2 gateways before busting out the "multiple" label in the future.
+    if [ "$(($tentative_length+$gateway_spacing))" -gt $characterWidthLimit ]; then
+        gateway_spacing=$(($tentative_length+10))
+        tentative_gateway="$tentative_gateway,\n           \${color #${colour_network_address}}$ip\$color"
+    else
+        gateway_spacing=$(($tentative_length+$gateway_spacing+2))
+        tentative_gateway="$tentative_gateway, \${color #${colour_network_address}}$ip\$color"
+    fi
+done
 
 if [ "$gateway_count" -gt "0" ]; then
     tentative_gateway="$(sed 's/^,\ //' <<< "$tentative_gateway")"
@@ -49,10 +64,11 @@ if [ "$gateway_count" -gt "0" ]; then
     elif [ "$gateway_count" -eq 1 ]; then
         gateway="Gateway: $tentative_gateway"
     else
-        # Remaining case: More than one gateway, but under threshold.
+        # Remaining case: More than one gateway, but under threshold (threshold is currently 3).
         gateway="Gateways: $tentative_gateway"
     fi
 else
+    # No gateways at all
     gateway="No Gateway"
 fi
 
