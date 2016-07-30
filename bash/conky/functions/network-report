@@ -1,6 +1,6 @@
 
 # Print a report of the reachable devices (by ping or arping) on your network.
-# To use this, load in both this file of network-report functions and 'common'
+# To use this, load in both this file of network-report functions and 'common' ('common' should be loaded first)
 # This process *will* take more than a second on average, so it's recommended that this be placed in a "report script" call.
 #
 # Command format:
@@ -22,6 +22,11 @@
 #     then it is interpreted as a disconnect and removed from the listing.
 # This approach has a major shortcoming in that it takes a while for an ARP table entry to become incomplete.
 # Because of this drawback, arp parsing is delegated to a report job that will try arping-ing a host before it is added to the list.
+
+# If the network labels function has not already been loaded, then load it.
+if ! qtype __get_mac_record; then
+    . functions/network-labels
+fi
 
 prep(){
 

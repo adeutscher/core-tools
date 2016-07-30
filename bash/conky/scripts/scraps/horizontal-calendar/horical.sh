@@ -1,6 +1,9 @@
 #!/bin/bash
 # a script to display a horizontal calendar on conky (hence the name horical :D)
 # if you need to ask something, contact me via email nhianho@gmail.com
+
+# Horizontal calendar found on /r/conkyporn
+
 TODAY=`date +%d`
 TOPLINE=" "
 OVER=" "

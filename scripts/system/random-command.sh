@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# A silly script to print out random command names. Might help to inspire ideas.
+
 prep(){
     rawTempFile=$(mktemp)
     filteredTempFile=$(mktemp)
@@ -31,7 +33,7 @@ done
 
 cat $rawTempFile | uniq | sort > $filteredTempFile
 rm $rawTempFile 2> /dev/null
-if [ -n "$stream" ]; then
+if (( "$stream" )); then
 
     trap close INT
 

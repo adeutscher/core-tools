@@ -64,16 +64,6 @@ if qtype tmux; then
 	}
 fi
 
-# Conky
-# Checking for Unix for good measure.
-# Off the top of my head, most of our functions would
-#     absolutely crash and burn under Windows via MobaXterm.
-if __is_unix && qtype conky; then
-   alias conky-restart="killall conky 2> /dev/null; conky-start"
-   alias conky-start="\"$toolsDir/bash/conky/start.sh\" 2> /dev/null >&2 &"
-   alias conky-debug="\"$toolsDir/bash/conky/start.sh\" debug"
-fi
-
 # Alias for our most-used rsync switches. 
 alias rsync="rsync -av --progress"
 
@@ -81,22 +71,10 @@ alias rsync="rsync -av --progress"
 # More Misc. Functions #
 ########################
 
-# Download music from YouTube via youtube-dl
-if qtype youtube-dl && qtype avconv; then
-    # If avconv is not available,
-    #     then assume that we aren't able to convert our downloaded file(s) to mp3.
-    alias youtube='youtube-dl --audio-quality 0 --audio-format mp3 -x'
-fi
-
 # epochtime: report number of seconds since the Epoch
 # AKA: Unix Timestamp
 alias epochtime='date +%s'
 alias unixtime=epochtime
-
-# Burn an ISO to a device in the CD drive
-if __is_unix; then
-    alias burn='time wodim -v dev=/dev/cdrom speed=8 -eject'
-fi
 
 ##########################
 # Parsing functions #
@@ -137,24 +115,47 @@ alias csed='sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g"'
 
 # Xargs Aliases
 alias xargs-0="xargs -0"
-# The below two aliases will not work under Windows via MobaXterm.
 if __is_unix; then
+
+    # The below two aliases will not work under Windows via MobaXterm.
     alias xargs-n="xargs -d '\n'"
     alias xargs-i="xargs -I{}"
+
+    # Burn an ISO to a device in the CD drive
+    alias burn='time wodim -v dev=/dev/cdrom speed=8 -eject'
+
+    # For wine. Only make winetricks available in the prompt if wine is actually installed and the script exists.
+    # I would also be very confused if wine were available on a Windows system, so placing this with in an __is_unix check.
+    if qtype wine && [ -x "$toolsDir/scripts/utils/winetricks" ]; then
+        alias winetricks="$toolsDir/scripts/utils/winetricks"
+    fi
+
+    # Download music from YouTube via youtube-dl
+    if qtype youtube-dl && qtype avconv; then
+        # If avconv is not available,
+        #     then assume that we aren't able to convert our downloaded file(s) to mp3.
+        alias youtube='youtube-dl --audio-quality 0 --audio-format mp3 -x'
+    fi
+
+    # Conky
+    # Off the top of my head, most of our functions would
+    #     absolutely crash and burn under Windows via MobaXterm,
+    #     so this is definitely a Linux-only thing.
+    if qtype conky; then
+       alias conky-command="\"$toolsDir/bash/conky/start.sh\""
+       alias conky-restart="conky-command -r 2> /dev/null >&2 &"
+       alias conky-start="conky-command 2> /dev/null >&2 &"
+       alias conky-debug="conky-command -d"
+    fi
+
 fi
 
 # For Passwords #
 alias mkpasswd='mkpasswd -m sha-512'
 
-# For wine. Only make winetricks available in the prompt if wine is actually installed and the script exists.
-if qtype wine && [ -x "$toolsDir/scripts/utils/winetricks" ]; then
-    alias winetricks="$toolsDir/scripts/utils/winetricks"
-fi
-
 ########
 # Super-duper-lazy sleep functions
 ########
-
 
 sleep-minutes(){
     # Not an integer.

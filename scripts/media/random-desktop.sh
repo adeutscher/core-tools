@@ -62,15 +62,15 @@ for opt in $(getopt ":fhsv" $@); do
 done
 
 # If the image directory does not exist, do not bother continuing the script.
-if [ -z "$imageDir" ]; then
-    [ -n "$verbose" ] && printf "\$imageDir variable is blank. No image directory specified...\n"
+if [ -z "$imageDir" ] && (( "$verbose" )); then
+    printf "\$imageDir variable is blank. No image directory specified...\n"
     exit 1
 fi
 
-if [ ! -d "$imageDir" ]; then
-    [ -n "$verbose" ] && printf "Image directory not found at %s\n" "$imageDir"
+if [ ! -d "$imageDir" ] && (( "$verbose" )); then
+    printf "Image directory not found at %s\n" "$imageDir"
     exit 1 
-fi 
+fi
 
 # Define functions
 __set_env(){
@@ -125,7 +125,7 @@ __select_random_background(){
         newBg=$(cat "$backgroundIndexFile" | shuf -n 1)
         if [ -n "$newBg" ]; then
 
-            if [ -n "$verbose" ]; then
+            if (( "$verbose" )); then
                 printf "Setting new background: %s\n" "$newBg"
             fi
 

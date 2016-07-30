@@ -1,10 +1,11 @@
 #!/bin/sh
 
-# Get the name of tools directory.
-# Script is currently stored in 'scripts/setup/'
+# Get the path to the tools directory.
+# Script is currently stored in 'scripts/setup/', relative to the root of the tools directory.
+# No need to resolve the path with readlink.
 toolsDir=$(dirname $0)/../..
 
-setup(){    
+setup(){
 
     cd "$toolsDir"
 
@@ -17,7 +18,6 @@ setup(){
         local global=1
     fi
     
-
     # Using the WINDIR environment variable as a lazy litmus test for
     #   whether or not we're in a Windows machine using MobaXterm.
     if [ -n "$WINDIR" ]; then
@@ -37,10 +37,7 @@ setup(){
                 exit 3
             fi
 
-            if [ -z "$global" ]; then
-                # Local
-                local file="$HOME/.bashrc"
-            else
+            if (( $global )); then
                 # Global
                 # The global file varies from distribution or distribution.
                 # /etc/bashrc - Fedora/CentOS
@@ -55,7 +52,11 @@ setup(){
                     printf "Unable to find a global BASH profile file to attach the tools loader to.\n"
                     exit 2
                 fi
+            else
+                # Local
+                local file="$HOME/.bashrc"
             fi
+
             ;;
         *)
             printf "Unsupported shell: %s\n" "$SHELL" >&2

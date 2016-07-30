@@ -1,0 +1,72 @@
+# Look in a data file in the secure/ directory to try to resolve MAC addresses to a computer name.
+# If the file doesn't exist or there is no entry, print nothing and let above logic handle it.
+
+# To use this, load in both this file of network-labels functions and 'common' ('common' should be loaded first, as this file assumes that the common items are present)
+
+# Example record line (plus header):
+#     owner,type,mac,label,general-location,specific-location,description,notes
+#     redacted-name,Bluetooth,18:2a:7b:3d:aa:bb,WiiU Pro,Home,Bookshelf,Used for games,purchased last year
+__get_mac_record(){
+    if [ -n "$1" ]; then
+        grep -Pim1 "^([^,]*,){2}$1," "$tempRoot/../network-index.csv" 2> /dev/null || grep -Pim1 "^([^,]*,){2}$1," $toolsRoot/secure/files/tool-data/network-index.csv 2> /dev/null | tee -a "$tempRoot/../network-index.csv"
+    fi
+}
+
+# fetch description field
+__get_mac_description(){
+    if [ -n "$1" ]; then
+        __get_mac_record "$1" | cut -d',' -f 7
+    fi
+}
+
+# fetch label field
+__get_mac_label(){
+    if [ -n "$1" ]; then
+        __get_mac_record "$1" | cut -d',' -f 4
+    fi
+}
+
+# fetch general location field
+__get_mac_general_location(){
+    if [ -n "$1" ]; then
+        __get_mac_record "$1" | cut -d',' -f 5
+    fi
+}
+
+# fetch notes field
+__get_mac_notes(){
+    if [ -n "$1" ]; then
+        __get_mac_record "$1" | cut -d',' -f 8
+    fi
+}
+
+# fetch owner field
+__get_mac_owner(){
+    if [ -n "$1" ]; then
+        __get_mac_record "$1" | cut -d',' -f 1
+    fi
+}
+
+# fetch specific location field
+__get_mac_specific_location(){
+    if [ -n "$1" ]; then
+        __get_mac_record "$1" | cut -d',' -f 6
+    fi
+}
+
+# fetch type field
+__get_mac_type(){
+    if [ -n "$1" ]; then
+        __get_mac_record "$1" | cut -d',' -f 2
+    fi
+}
+
+__get_mac_vendor_inner(){
+    if [ -n "$1" ] && [ -f "$toolsRoot/secure/files/tool-data/vendor-mac.psv" ]; then
+        grep -im1 "^${1:0:8}" "$tempRoot/../vendor-mac.psv" 2> /dev/null ||  grep -im1 "^${1:0:8}" "$toolsRoot/secure/files/tool-data/vendor-mac.psv" | tee -a "$tempRoot/../vendor-mac.psv" 2> /dev/null
+    fi
+}
+
+__get_mac_vendor(){
+    __get_mac_vendor_inner "$1" | cut -d'|' -f 2
+}

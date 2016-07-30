@@ -40,77 +40,7 @@ characterWidth=37
 # Putting two phrasings in to cover an edge case in networking that I don't fully understand at the moment.
 characterWidthLimit=$(($characterWidth+1))
 
-# Defining functions here in case they need to be used in multiple scripts. #
-
-# Look in a data file in the secure/ directory to try to resolve MAC addresses to a computer name.
-# If the file doesn't exist or there is no entry, print nothing and let above logic handle it.
-# Example record line (plus header):
-#     owner,type,mac,label,general-location,specific-location,description,notes
-#     redacted-name,Bluetooth,18:2a:7b:3d:aa:bb,WiiU Pro,Home,Bookshelf,Used for games,purchased last year
-__get_mac_record(){
-    if [ -n "$1" ]; then
-        grep -Pim1 "^([^,]*,){2}$1," "$tempRoot/../network-index.csv" 2> /dev/null || grep -Pim1 "^([^,]*,){2}$1," $toolsRoot/secure/files/tool-data/network-index.csv 2> /dev/null | tee -a "$tempRoot/../network-index.csv"
-    fi
-}
-
-# fetch description field
-__get_mac_description(){
-    if [ -n "$1" ]; then
-        __get_mac_record "$1" | cut -d',' -f 7
-    fi
-}
-
-# fetch label field
-__get_mac_label(){
-    if [ -n "$1" ]; then
-        __get_mac_record "$1" | cut -d',' -f 4
-    fi
-}
-
-# fetch general location field
-__get_mac_general_location(){
-    if [ -n "$1" ]; then
-        __get_mac_record "$1" | cut -d',' -f 5
-    fi
-}
-
-# fetch notes field
-__get_mac_notes(){
-    if [ -n "$1" ]; then
-        __get_mac_record "$1" | cut -d',' -f 8
-    fi
-}
-
-# fetch owner field
-__get_mac_owner(){
-    if [ -n "$1" ]; then
-        __get_mac_record "$1" | cut -d',' -f 1
-    fi
-}
-
-# fetch specific location field
-__get_mac_specific_location(){
-    if [ -n "$1" ]; then
-        __get_mac_record "$1" | cut -d',' -f 6
-    fi
-}
-
-# fetch type field
-__get_mac_type(){
-    if [ -n "$1" ]; then
-        __get_mac_record "$1" | cut -d',' -f 2
-    fi
-}
-
-__get_mac_vendor_inner(){
-    if [ -n "$1" ] && [ -f "$toolsRoot/secure/files/tool-data/vendor-mac.psv" ]; then
-        grep -im1 "^${1:0:8}" "$tempRoot/../vendor-mac.psv" 2> /dev/null ||  grep -im1 "^${1:0:8}" "$toolsRoot/secure/files/tool-data/vendor-mac.psv" | tee -a "$tempRoot/../vendor-mac.psv" 2> /dev/null
-    fi
-}
-
-__get_mac_vendor(){
-    __get_mac_vendor_inner "$1" | cut -d'|' -f 2
-}
+# Also defining functions here in case they need to be used in multiple scripts. #
 
 # Colour network addresses
 colour_network_address(){
@@ -170,6 +100,16 @@ colour_percent_desc(){
     fi
 }
 
+qtype(){
+   # The type command's 'silent' switch has some wording that throws me for a loop, so making this instead.
+   # Super-lazy.
+   if [ -n "$1" ]; then
+       type $@ 2> /dev/null >&2
+       return $?
+   fi
+   return 1
+}
+
 shorten_string(){
   # If the first argument is a string that is longer than the threshold, then print a shortened string and an elipsis.
 
@@ -190,8 +130,8 @@ shorten_string(){
   fi
 }
 
-# If the timeout command is available, use it. Otherwise, run the command anyways.
-if type timeout 2> /dev/null >&2; then
+# If the timeout command is available, then use it. Otherwise, run the command anyways.
+if qtype timeout; then
     # This was originally added for df, which has
     #   a run time of near-instant (as all commands in conky scripts should be)
     #   or near-infinity (if it was trying to poll a network file system).

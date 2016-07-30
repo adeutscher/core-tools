@@ -25,8 +25,6 @@ if qtype ssh; then
 
   # Other SSH Commands
 
-  alias sandbox-setup='ssh-copy-id -i ~/.ssh/keys/vm.pub'
-
   ssh-compile-config(){
 
     # Set the destination SSH config in a variable.
@@ -87,6 +85,8 @@ if qtype ssh; then
         local totalConfigCount=$(($totalConfigCount+1))
 
         local moduleSSHMarker="$toolDir-marker"
+        # Get a checksum from all loaded files.
+        # README.txt files in config.d/ are actually skipped by this function, but skipping them AND not putting in a required file extension would be a pain.
         local checksum=$(md5sum "$moduleSSHConfig" "$moduleSSHDir/config.d/"* "$moduleSSHDir/hosts/config-$HOSTNAME" 2> /dev/null | md5sum | cut -d' ' -f1)
 
         if [ -f "$sshConfig" ]; then
@@ -121,6 +121,12 @@ if qtype ssh; then
 
           # Print divided configurations
           for subConfigFile in "$moduleSSHDir/config.d/"*; do
+
+            if [[ "${subConfigFile##*/}" =~ ^README.txt$ ]]; then
+                # Silently skip a README.txt file.
+                continue
+            fi
+
             if [ -f "$subConfigFile" ]; then
               printf "###\n# Sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}"  "$moduleSSHDir" >> "$sshConfig"
               cat "$subConfigFile" 2> /dev/null >> "$sshConfig";
@@ -180,7 +186,10 @@ if qtype ssh; then
           notice "$(printf "No changes to SSH config from ${Colour_FilePath}%s${Colour_Off}" "$moduleSSHDirDisplay/")"
         fi 
 
-      fi # End check for configuration file existing.
+      else
+        # Only making the lack of a configuration give notice (as opposed to a warning or error). I think that this message is more likely to be a silly FYI than a serious error.
+        notice "$(printf "No SSH configuration located at ${Colour_BIGreen}%s${Colour_Off}" "$(sed "s|^$HOME|~|" <<< "$moduleSSHConfig")")"
+      fi # End the else of the check for configuration file existing. 
     done # End config loop.
 
     if [ "$updatedConfigCount" -eq 0 ]; then
@@ -215,7 +224,6 @@ if qtype ssh; then
             chown $USERNAME -R ${sshConfigDir}/* 2> /dev/null
         fi
     fi
-   
   }
 
 fi # end SSH client check

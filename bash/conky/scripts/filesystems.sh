@@ -79,6 +79,9 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
     fs_type=$(cut -d' ' -f3 <<< "${fs_data}")
     fs_source=$(cut -d' ' -f4  <<< "${fs_data}" | sed 's/\\040/ /g' )
     fs_options=$(cut -d' ' -f5  <<< "${fs_data}" | sed 's/\\040/ /g' )
+    # Set default options
+    print_usage=1
+    unset extra_text
 
     # Substitute home directory path for '~' and shorten.
     fs_title="$(shorten_string "$(sed "s|^$HOME|\\~|g" <<< "$fs")" "$((36-$(expr length "$fs_type")))")"
@@ -115,14 +118,43 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         # If df/findmnt reports disk usage as a "-", then we will not be able to get these numbers through conky either.
         # If the file system is not supported by conky, do not try to print usage information.
 
-        # If the file system is not a far-away network file system, then show the usage bar.
-        # Far-away file systems could cause conky to seize up, especially if bandwidth is taxed.
-        # For the moment, I am using the presence of the "nointr" flag on a mount (currently unimplemented in SAMBA) to symbolize a faraway connection.
-        # TODO: Find a more reliable marker.
-        # I am considering shifting to the intr/nointr flags, which are NYI at the moment according to https://www.samba.org/samba/docs/man/manpages-3/mount.cifs.8.html
-        if ( ( [[ "${fs_type}" =~ "cifs" ]] || [[ "${fs_type}" =~ "nfs" ]] ) && grep -qw "nointr" <<< "$fs_options" ); then
-            extra_text=" (far)"
-        elif [[ "${fs_type}" != "iso9660" ]]; then
+
+        # If the file system is a far-away network file system like NFS or CIFS, do not show the usage bar.
+        # Far-away file systems could cause conky to seize up, especially if bandwidth is taxed or if access to the network is killed without unmounting.
+        # Removing the usage bar removes conky from caring at all about the status of the connection.
+        # Does not account for some wise guy using nbd-client/nbd-server to directly mount a remote hard drive...
+
+        # Most of the time for me, a faraway file system is a over a VPN connection to a distant location.
+        # For now, a far-away network file system is identified as any connection that has to go through a gateway.
+
+        # TODO: Find a way to recycle the original idea of using a per-mount flag, but this time to mark a "near-ish" server that needs to go through a gateway BUT has a reliably low latency that showing the usage bar wouldn't be the end of the world for performance.
+        # TODO: Apply this new far-away approach to NFS as well. Need to check if the fs option is different.
+        if [[ "${fs_type}" =~ "cifs" ]]; then
+            if [ -z "$localNetworks" ]; then
+                # Only get a list of networks if we need to (i.e. if a CIFS system is mounted)
+                # This avoids calling twice if we have multiple CIFS shares mounted.
+
+                # Ideally, we would only need to use the gateway column out of the route command to get a faraway network.
+                # However, VPN through openconnect (client for Cisco AnyConnect) pulls some sort of shenanigans
+                #     that I don't fully understand at the moment to have our remote networks still display a gateway of 0.0.0.0.
+                # Since openconnect does this, we will also limit local networks to anything without a tun_ (VPN interface)
+                #     or tap_ adapter (alternate VPN adapter. This was going to be an acceptable gap, but we may as well filter it if we're already here)
+                # The only gap this would leave would be a super-duper low latency VPN that I wanted to still get usage information for. So a rediculously tiny gap.
+                localNetworks="$(route -n | awk '{ if($2 == "0.0.0.0" && $8 !~ /^t(un|ap)/ ){ print $1 } }' | grep -e "^[1-9]" | cut -d. -f-3)"
+            fi
+
+            # Get share network (with escaped "." characters)
+            shareNetwork=$(grep -o "addr=[^,]*" <<< "${fs_options}" | cut -d= -f2 | cut -d. -f-3 | sed "s/\./\./g")
+
+            if ! grep -qm1 "^$shareNetwork$" <<< "$localNetworks"; then
+                extra_text=" (far)"
+                print_usage=0
+            fi    
+        elif [[ "${fs_type}" =~ ^iso9660$ ]]; then  
+            print_usage=0
+        fi
+
+        if (( $print_usage )); then
             printf " Usage: \${fs_used ${fs}}/\${fs_size ${fs}} - \${fs_used_perc ${fs}}%% \${fs_bar 6 ${fs}}\n"
         fi
 
@@ -130,12 +162,9 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         if [[ "${fs_type}" =~ "cifs" ]]; then
 
                 remote_point="$(shorten_string "${fs_source}" 31)"
-
                 printf " Share%s: \${color #${colour_network}}%s\$color\n" "$extra_text" "$(shorten_string ${remote_point} 23)"
         fi
         # TODO: Do similarly to print the remote location for NFS.
-
-        unset extra_text
     fi
 done
 

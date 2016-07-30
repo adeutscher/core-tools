@@ -2,7 +2,8 @@
 
 # This script was made to solve two use cases:
 #   - My locally-running DNS server on old-laptop would sometimes not bind to the bridge interface that my KVM guests live on due to differences in execution order.
-#   - Making sure that my DNS is set up correctly before connecting to the home VPN so that I can resolve home addresses while still being able to resolve any addresses specific to my location.
+#   - Making sure that my DNS is set up correctly before connecting to a VPN (home or otherwise) so that I can resolve addresses on the VPN domain while still being able to resolve any addresses specific to my location (e.g. resolve work domain names at work.
+#       - The downside of this approach is that I need to manually add every custom LAN domain, and need to add hosts entries for any exceptions (if the LAN domain is the same as the public domain). Since I've only had to do this for a small number of domains so far, this is acceptable.
 
 # Colors
 BLUE='\033[1;94m'

@@ -21,6 +21,7 @@ fi
 # Uptime and Battery (where applicable) #
 #########################################
 
+# Assume that the only possible battery paths are BAT0 and BAT1 until proven otherwise.
 if [ -f "/sys/class/power_supply/BAT0/uevent" ]; then
     . /sys/class/power_supply/BAT0/uevent 2> /dev/null
 elif [ -f "/sys/class/power_supply/BAT1/uevent" ]; then
@@ -55,9 +56,7 @@ printf "\${color grey}Swap Usage:\$color \$swap/ \$swapmax - \$swapperc%% \${swa
 # CPU Display and Process Info #
 ################################
 
-# Mercury and Outpost have a segfault if it is asked for a CPU bar too early after starting or reloading the configuration. No idea why.
-# Affected systems actually work with the CPU bar after about 2 seconds, but giving myself some buffer room for configuration fiddling.
-# If this pops up on even more systems, consider making the 30s check apply to all systems so that we don't have to edit every hostname in.
+# Some systems have a segfault if it is asked for a CPU bar too early after starting or reloading the configuration. No idea why.
 cpu_bar_threshold="30"
 if [ "$(ps -p $PPID -o etime= | awk -F ':' '{if (NF == 2) { print $1*60 + $2 } else if (NF == 3) { split($1, a, "-"); if (a[2] > 0) { print ((a[1]*24+a[2])*60 + $2) * 60 + $3; } else { print ($1*60 + $2) * 60 + $3; } } }'  )" -gt "${cpu_bar_threshold}" ]; then
 

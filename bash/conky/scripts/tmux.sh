@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Check to see if tmux is installed before we do anything
+# Check to see if tmux is installed before we do anything at all
 if type tmux 2> /dev/null >&2; then
 
     . functions/common 2> /dev/null

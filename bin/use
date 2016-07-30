@@ -1,5 +1,8 @@
 #!/usr/bin/python
  
+# A silly bit of fiddling with the idea of having a universal "open" button for the command line.
+# Would probably be much better off as a BASH script someday...
+
 import sys,re,subprocess
  
 if len(sys.argv) == 1:

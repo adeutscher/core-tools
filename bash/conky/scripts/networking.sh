@@ -16,7 +16,8 @@ bridge_members=$(brctl show | sed -e '/bridge name/d' -e 's/\t/\ /g' | awk '{ if
 exclude_list="lo"
 # Notes on exclude_list
 ## Space-separated list. For example: "lo eth0 eth1"
-## Have not tested with aliases (e.g. eth0 being blocked but not eth0:0)
+## With the current approach, this would skip aliases entirely (e.g. blocking eth0 would block eth0:0),
+##    and does not work in reverse since individual aliases are not checked (e.g. eth0:0 could not be specifically blocked)
 
 . functions/common 2> /dev/null
 
@@ -283,6 +284,14 @@ ephemeral_lower=$(cat "$ephemeral_file" | awk '{ print $1 }')
 # Collect connections from netstat, then format with awk
 connections_in=$(netstat -tun | grep ESTABLISHED  | awk '{ split($4,l,":"); split($5,r,":"); if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 == "tcp")){ print " ${color #'${colour_network_address}'}" r[1] "${color}->${color #'${colour_network_address}'}" l[1] "${color} ("$1"/"l[2]")" }; }' | sort -k2,2 -k3,3n |  uniq -c | grep --colour=never -v '127\.0\.0\.1' | awk '{ count=$1; $1=""; print $0; if (count > 1){ print "    Count: "count }}')
 # A connection is considered incoming if the local port is below the lowest ephemeral port number AND the remote port is above the lowest ephemeral port number.
+# TCP connections are somewhat excused and do not require the remote port to always be within the range.
+# Excluding localhost connections, since it could get a bit rediculous.
+# I *could* also filter out connections where the source address is the same as the destination address, but I choose not to at this time. Maybe some different colouring in the future?
+# Confirming that UDP "connections" can actually show up and get printed out correctly, though I had to make a situation with nc to have an example to double-check.
+# Reminder for re-testing (binds to udp/1234):
+## Server (conky machine): nc -u -l 1234 > /dev/null
+## Client: cat /dev/zero | nc -u any-address-but-localhost 1234 
+
 if [ -n "$connections_in" ]; then
     # Print a separate header and report content.
     printf "\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Incoming Connections\$font\$color\$hr\n${connections_in}"

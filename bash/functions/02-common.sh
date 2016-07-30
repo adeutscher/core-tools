@@ -101,13 +101,13 @@ warning(){
 #####################
 
 qtype(){
-   # The type command's 'silent' switch has some wording that throws me for a loop, so making this instead.
+   # The help text on the type command's 'silent' switch has some wording that throws me for a loop, so making this instead.
    # Super-lazy.
    if [ -n "$1" ]; then
        type $@ 2> /dev/null >&2
        return $?
    fi
-   return 1  
+   return 1
 }
 
 # Internal function to add a directory to the path
