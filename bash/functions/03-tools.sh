@@ -100,14 +100,24 @@ if type -ftptP git 2> /dev/null >&2; then
     #################
     # Git functions are experimental at this stage.
 
+    # A general note on git:
+    ## The switches used for working with a git repository when not directly in it are different between Debian-based Ubuntu and RHEL-based Fedora. Unsure about what the favoured approach is in other distributions.
+    ## Arbitrarily defaulting to assuming Debian at the moment in update-git-repo, but __is_git_repo will only return an error code of zero if it thinks that it is running on either a RHEL-based or Debian-based machine.
+
     __is_git_repo(){
-        local __no=0
+        # Default, assume not a directory
+        local __no=1
 
         if [ -n "$1" ] && [ -d "$1/.git" ]; then
-            git -C "$1" status 2> /dev/null >&2 || local __no=1
+            if __is_rhel; then
+                git -C "$1" status 2> /dev/null >&2 && local __no=0
+            elif __is_debian; then
+                git --git-dir="$1/.git" --work-tree="$1" status 2> /dev/null >&2 && local __no=0
+            fi
         fi
+ 
 
-        [ "$__no" -gt 0 ] && [ -n "$2" ] && error "$(printf "$Colour_FilePath%s$Colour_Off does not appear to be a readable Git checkout!" "$1")"
+        (( "$__no" )) && [ -n "$2" ] && error "$(printf "$Colour_FilePath%s$Colour_Off does not appear to be a readable Git checkout!" "$1")"
 
         return $__no
     }
@@ -119,7 +129,7 @@ if type -ftptP git 2> /dev/null >&2; then
         local repoDirDisplay="$(sed "s|^$HOME|~|" <<< "$repoDir")"
 
         # Confirm that we have git.
-        if ! type -ftptP git 2> /dev/null >&2; then
+        if ! qtype git; then
             error "Git is not detected on this machine. How exactly did you check this directory out?"
             return 1
         fi
@@ -145,7 +155,13 @@ if type -ftptP git 2> /dev/null >&2; then
 
         local __num=1
 
-        local repoUrl="$(git -C "$repoDir" remote -v | grep "(fetch)$" | awk 'BEGIN { count=0; remote="-" } { count=count+1; remote=$2 } END { if(count <= 1 && remote != "-" ){ print remote } else if(count > 1){ print "multiple" } }')"
+        if __is_rhel; then
+            local repoUrl="$(git -C "$repoDir" remote -v | grep "(fetch)$" | awk 'BEGIN { count=0; remote="-" } { count=count+1; remote=$2 } END { if(count <= 1 && remote != "-" ){ print remote } else if(count > 1){ print "multiple" } }')"
+        else
+            # Fallback to assuming debian behavior.
+            local repoUrl="$(git --git-dir="$repoDir/.git" --work-tree="$repoDir" remote -v | grep "(fetch)$" | awk 'BEGIN { count=0; remote="-" } { count=count+1; remote=$2 } END { if(count <= 1 && remote != "-" ){ print remote } else if(count > 1){ print "multiple" } }')"
+        fi
+
         if [ -z "$repoUrl" ]; then
             error "$(printf "Was unable to determine our upstream URL from our workspace: $Colour_FilePath%s$Colour_Off" "$repoDirDisplay")"
             return 5
@@ -165,14 +181,11 @@ if type -ftptP git 2> /dev/null >&2; then
             notice "$(printf "Updating repository ($Colour_FilePath%s$Colour_Off<-${Colour_NetworkAddress}%s/${Colour_Off})" "$repoDirDisplay" "$repoUrlDisplay")"
         fi
 
-        
-        # SVN workspace is checked out from a network location.
-
         # Get our test domain name to try and resolve it.
         # If the domain name can be resolved, then it is assumed to be reachable.
         local repoDomain=$(cut -d'/' -f 3 <<< "$repoUrl")
         if [ -z "$repoDomain" ]; then
-            # If we can't tell the repository domain with `svn info`, then the svn command won't be able to tell either.
+            # If we can't tell the repository domain, then we have nothing to go on.
             error "$(printf "Was unable to determine our repository domain from our workspace: $Colour_FilePath%s$Colour_Off" "$repoDirDisplay")"
             return 6
         fi
@@ -184,7 +197,7 @@ if type -ftptP git 2> /dev/null >&2; then
         elif ! qtype host; then
             warning "$(printf "The ${Colour_Command}host${Colour_Off} command was not detected on this machine.")"
             warning "Continuing, but unable to verify that we can resolve the domain name for our SVN repository."
-        elif ! timeout 1 host ${repoDomain} 2> /dev/null >&2; then   
+        elif ! timeout 1 host ${repoDomain} 2> /dev/null >&2; then
             # Note: This check will not account for cached entries in the local BIND server (if applicable)
             # Note: Avoiding "for" phrasing in non-comments to appease pluma colouring.
             error "$(printf "$Colour_Command%s$Colour_Off was unable to resolve the address of ${Colour_NetworkAddress}%s$Colour_Off. Quitting...\n" "host" "$repoDomain")"
@@ -192,10 +205,28 @@ if type -ftptP git 2> /dev/null >&2; then
         fi # end else block executed after doing "pre-flight" checks for reaching the repository server.
 
         # Track old and new revisions (at least on our current branch).
-        local oldCommit="$(git -C "$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+        if __is_rhel; then
+            local oldCommit="$(git -C "$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+        else
+            # Assume Debian-ness as a fallback.
+            local oldCommit="$(git --git-dir="$repoDir/.git" --work-tree="$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+        fi
+
         # Update directory.
-        if git -C "$repoDir" pull; then
-            local newCommit="$(git -C "$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+        if __is_rhel; then
+            git -C "$repoDir" pull && local updateSuccess=1
+        else
+            # Assume Debian-ness if not RHEL-based for now.
+            git --git-dir="$repoDir/.git" --work-tree="$repoDir" pull && local updateSuccess=1
+        fi
+
+        if (( "$updateSuccess" )); then
+            if __is_rhel; then
+                local newCommit="$(git -C "$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+            else
+                # Assume Debian-ness as a fallback.
+                local newCommit="$(git --git-dir="$repoDir/.git" --work-tree="$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+            fi
             if [[ "$oldCommit" != "$newCommit" ]]; then
                 success "$(printf "Repository directory updated (${Colour_Bold}%d${Colour_Off} to ${Colour_Bold}r%s${Colour_Off})." "$oldCommit" "$newCommit")"
             else

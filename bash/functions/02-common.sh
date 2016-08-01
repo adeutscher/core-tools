@@ -26,6 +26,16 @@ __is_mac(){
     return $?
 }
 
+__is_debian(){
+    [ -f "/etc/debian_version" ] && return 0
+    return 1
+}
+
+__is_rhel(){
+    [ -f "/etc/redhat-release" ] && return 0
+    return 1
+}
+
 # OS-specific aliases
 
 if ! __is_unix; then

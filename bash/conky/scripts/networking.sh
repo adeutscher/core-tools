@@ -20,6 +20,7 @@ exclude_list="lo"
 ##    and does not work in reverse since individual aliases are not checked (e.g. eth0:0 could not be specifically blocked)
 
 . functions/common 2> /dev/null
+. functions/network-labels 2> /dev/null
 
 ########################
 ########################

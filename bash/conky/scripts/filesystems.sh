@@ -84,7 +84,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
     unset extra_text
 
     # Substitute home directory path for '~' and shorten.
-    fs_title="$(shorten_string "$(sed "s|^$HOME|\\~|g" <<< "$fs")" "$((36-$(expr length "$fs_type")))")"
+    fs_title="$(shorten_string "$(sed "s|^$HOME|\\~|g" <<< "$fs")" "$((34-$(expr length "$fs_type")))")"
 
     # If the target directory does not even exist, do not bother continuing through the loop.
     # Made for static systems, since some target file systems are dynamically listed off of find command.
