@@ -1,4 +1,10 @@
 
+# Cover PATH management and obselete ~/.local/bin a bit.
+
+__add_to_path "$toolsDir/bin"
+__add_to_path "$toolsDir/bin/$HOSTNAME"
+__add_to_path "$HOME/.local/bin" # TODO: This may be redundant. Double-check on more distributions.
+
 # In lieu of setting a million symlinks up in bin/ or ~/.local/bin,
 #     experimenting using aliases for one-off programs instead.
 

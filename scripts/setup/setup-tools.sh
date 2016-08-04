@@ -74,8 +74,10 @@ setup(){
 
 #####################################
 # $marker
-if printf "\$-" | grep -q i; then
-    toolsDir="$(pwd)"
+export toolsDir="$(pwd)"
+if printf "\$-" | grep -q i || ( printf "\$TERM" | grep -q '^dumb$' ); then
+    # Load tools if we are in an interactive shell or if we are running a script from
+    # both from within a "dumb" shell and within our tools directory (suggesting a Desktop Startup Script).
     if [ -f "\$toolsDir/bash/bashrc" ]; then
         . \$toolsDir/bash/bashrc
     fi

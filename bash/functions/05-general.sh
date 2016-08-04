@@ -7,11 +7,6 @@
 # Can be summed up as "anything that I don't consider large enough to get its own file".
 
 
-__add_to_path "$toolsDir/bin"
-__add_to_path "$toolsDir/bin/$HOSTNAME"
-__add_to_path "$HOME/.local/bin"
-
-
 export EDITOR=vi
 export SVN_EDITOR=vi
 

@@ -180,9 +180,15 @@ if (( ! "$DEBUG" )); then
 
   # I have observed the HDD system starting conky properly with only a 3s delay sometimes if
   #    the computer has been on for a while (drawing the line at 10 minutes), so leaving the uptime check in for the moment.
-  if [ -f "/sys/block/sda/queue/rotational" ] && [ "$(cat /sys/block/sda/queue/rotational)" -gt 0 ] && [[ "$TERM" =~ ^dumb$ ]] && [ "$(grep -om1 "^[^\.]*" < /proc/uptime)" -lt 600 ]; then
+  if [ -f "/sys/block/sda/queue/rotational" ] && [ "$(cat /sys/block/sda/queue/rotational)" -gt 0 ] && [[ "$TERM" =~ ^dumb$ ]]; then
     # Will be experimenting with exactly how little of a delay I can get away with over time, but this is good enough for an initial commit of the feature.
-    countdown=25
+    if [ "$(grep -om1 "^[^\.]*" < /proc/uptime)" -lt 600 ]; then
+        # Desktop login on fresh boot ( uptime < 10min )
+        countdown=25
+    else
+        # Desktop login on older boot ( uptime >= 10min )
+        countdown=5
+    fi
   else
     countdown=3
   fi
