@@ -50,6 +50,10 @@ if type -ftptP git 2> /dev/null >&2 || type -ftptP git 2> /dev/null >&2; then
     ###########################
 
     update-tools(){
+
+        # Confirm SSH permissions in advance, because some tools might be git repos with SSH remotes.
+        ssh-fix-permissions
+
         local tools="$(compgen -A function update-tools-)"
         local toolsCount="$(wc -w <<< "$tools")"
 
@@ -65,6 +69,9 @@ if type -ftptP git 2> /dev/null >&2 || type -ftptP git 2> /dev/null >&2; then
             "$updateFunction"
         done
         unset updateFunction
+
+        # Double-check that SSH permissions are still solid.
+        ssh-fix-permissions
 
         # Only re-compile SSH config after we've cycled through all possible repositories to source from.
         # Making a separate update-tools-_ function for SSH would execute in an unreliable order,
@@ -101,25 +108,56 @@ if type -ftptP git 2> /dev/null >&2; then
     # Git functions are experimental at this stage.
 
     # A general note on git:
-    ## The switches used for working with a git repository when not directly in it are different between Debian-based Ubuntu and RHEL-based Fedora. Unsure about what the favoured approach is in other distributions.
-    ## Arbitrarily defaulting to assuming Debian at the moment in update-git-repo, but __is_git_repo will only return an error code of zero if it thinks that it is running on either a RHEL-based or Debian-based machine.
+    ## The switches used for working with a git repository when not directly in it are different between 1.X and 2.X versions of git,
 
     __is_git_repo(){
         # Default, assume not a directory
         local __no=1
 
         if [ -n "$1" ] && [ -d "$1/.git" ]; then
-            if __is_rhel; then
-                git -C "$1" status 2> /dev/null >&2 && local __no=0
-            elif __is_debian; then
-                git --git-dir="$1/.git" --work-tree="$1" status 2> /dev/null >&2 && local __no=0
-            fi
+            git-remote "$1" status 2> /dev/null >&2 && local __no=0
         fi
  
 
         (( "$__no" )) && [ -n "$2" ] && error "$(printf "$Colour_FilePath%s$Colour_Off does not appear to be a readable Git checkout!" "$1")"
 
         return $__no
+    }
+
+    git-remote(){
+
+
+        # Switches on git 2.X to access a git checkout elsewhere on your file system
+        #   are a bit different than 1.X
+
+        # The purpose of this function is to not have to juggle distributions each time
+        #   that I want to handle a remote checkout (will deal with exceptions on a case-by-case basis).
+        # I also want to avoid 'cd'-ing into the directory if possible (in case I ctrl-c out of git and get planted there).
+
+        if [ -z "$2" ] || [ ! -d "$1" ]; then
+            return 1
+        fi
+
+        local repoDir="$(readlink -f "$1")"
+        shift
+        if git --version | grep -q "^git version 2\."; then
+            # Git 2.X
+            git -C "$repoDir" $@
+        else
+            # Git 1.X
+            if ! git --version | grep -q "^git version 1.7.1"; then
+                git --git-dir="$repoDir/.git" --work-tree="$repoDir" $@
+            else
+                # Found a problem with 1.7.1 (CentOS 6) where
+                # pulling would fail.
+                # Hitting the problem with a hammer and using 'cd'.
+                # Will make the check more strict if we discover other problem cases.
+                local OLD_OLDPWD="$OLDPWD"
+                cd "$repoDir" && git $@
+                cd "$OLDPWD"
+                OLDPWD="$OLD_OLDPWD"
+            fi
+        fi
     }
     
     update-git-repo(){
@@ -131,6 +169,7 @@ if type -ftptP git 2> /dev/null >&2; then
         # Confirm that we have git.
         if ! qtype git; then
             error "Git is not detected on this machine. How exactly did you check this directory out?"
+            # For someone to run into this, someone would have had to uninstalled git after loading their BASH session.
             return 1
         fi
 
@@ -155,12 +194,9 @@ if type -ftptP git 2> /dev/null >&2; then
 
         local __num=1
 
-        if __is_rhel; then
-            local repoUrl="$(git -C "$repoDir" remote -v | grep "(fetch)$" | awk 'BEGIN { count=0; remote="-" } { count=count+1; remote=$2 } END { if(count <= 1 && remote != "-" ){ print remote } else if(count > 1){ print "multiple" } }')"
-        else
-            # Fallback to assuming debian behavior.
-            local repoUrl="$(git --git-dir="$repoDir/.git" --work-tree="$repoDir" remote -v | grep "(fetch)$" | awk 'BEGIN { count=0; remote="-" } { count=count+1; remote=$2 } END { if(count <= 1 && remote != "-" ){ print remote } else if(count > 1){ print "multiple" } }')"
-        fi
+        local repoUrl="$(git-remote "$repoDir" remote -v | grep "(fetch)$" | awk 'BEGIN { count=0; remote="-" } { count=count+1; remote=$2 } END { if(count <= 1 && remote != "-" ){ print remote } else if(count > 1){ print "multiple" } }')"
+        local remote="$(git-remote "$repoDir" remote | head -n1)"
+        local branch="$(git-remote "$repoDir" branch | grep "^*" | head -n1 | cut -d' ' -f2)"
 
         if [ -z "$repoUrl" ]; then
             error "$(printf "Was unable to determine our upstream URL from our workspace: $Colour_FilePath%s$Colour_Off" "$repoDirDisplay")"
@@ -183,7 +219,13 @@ if type -ftptP git 2> /dev/null >&2; then
 
         # Get our test domain name to try and resolve it.
         # If the domain name can be resolved, then it is assumed to be reachable.
-        local repoDomain=$(cut -d'/' -f 3 <<< "$repoUrl")
+        if grep -qP "^(https?|git)://" <<< "$repoUrl"; then
+            # HTTP Clone
+            local repoDomain=$(cut -d'/' -f 3 <<< "$repoUrl")
+        else
+            # SSH Clone
+            local repoDomain=$(cut -d':' -f 1 <<< "$repoUrl" | cut -d'@' -f2)
+        fi
         if [ -z "$repoDomain" ]; then
             # If we can't tell the repository domain, then we have nothing to go on.
             error "$(printf "Was unable to determine our repository domain from our workspace: $Colour_FilePath%s$Colour_Off" "$repoDirDisplay")"
@@ -192,11 +234,11 @@ if type -ftptP git 2> /dev/null >&2; then
 
         # Check to see if we can resolve a domain address address.
         if __pgrep '^(([0-9]){1,3}\.){3}([0-9]{1,3})$' <<< "$repoDomain"; then
-            warning "SVN workspace was checked out from an IP address."
+            warning "Git workspace was checked out from an IP address."
             warning "Continuing under the assumption that it is reachable."
         elif ! qtype host; then
             warning "$(printf "The ${Colour_Command}host${Colour_Off} command was not detected on this machine.")"
-            warning "Continuing, but unable to verify that we can resolve the domain name for our SVN repository."
+            warning "Continuing, but unable to verify that we can resolve the domain name for the upstream git repository."
         elif ! timeout 1 host ${repoDomain} 2> /dev/null >&2; then
             # Note: This check will not account for cached entries in the local BIND server (if applicable)
             # Note: Avoiding "for" phrasing in non-comments to appease pluma colouring.
@@ -205,30 +247,19 @@ if type -ftptP git 2> /dev/null >&2; then
         fi # end else block executed after doing "pre-flight" checks for reaching the repository server.
 
         # Track old and new revisions (at least on our current branch).
-        if __is_rhel; then
-            local oldCommit="$(git -C "$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
-        else
-            # Assume Debian-ness as a fallback.
-            local oldCommit="$(git --git-dir="$repoDir/.git" --work-tree="$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+        local oldCommit="$(git-remote "$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+
+        if git --version | grep -q "git version 1\."; then
+            # Need to add another switch for older git versions
+            local oldGitSwitch=-u
         fi
 
         # Update directory.
-        if __is_rhel; then
-            git -C "$repoDir" pull && local updateSuccess=1
-        else
-            # Assume Debian-ness if not RHEL-based for now.
-            git --git-dir="$repoDir/.git" --work-tree="$repoDir" pull && local updateSuccess=1
-        fi
+        if git-remote "$repoDir" pull $oldGitSwitch $remote $branch; then
+            local newCommit="$(git-remote "$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
 
-        if (( "$updateSuccess" )); then
-            if __is_rhel; then
-                local newCommit="$(git -C "$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
-            else
-                # Assume Debian-ness as a fallback.
-                local newCommit="$(git --git-dir="$repoDir/.git" --work-tree="$repoDir" branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
-            fi
             if [[ "$oldCommit" != "$newCommit" ]]; then
-                success "$(printf "Repository directory updated (${Colour_Bold}%d${Colour_Off} to ${Colour_Bold}r%s${Colour_Off})." "$oldCommit" "$newCommit")"
+                success "$(printf "Repository directory updated (${Colour_Bold}%s${Colour_Off} to ${Colour_Bold}r%s${Colour_Off})." "$oldCommit" "$newCommit")"
             else
                 success "$(printf "Current branch is already up to date, or was checked out to a specific revision. At ${Colour_Bold}%s${Colour_Off}." "$oldCommit")"
             fi

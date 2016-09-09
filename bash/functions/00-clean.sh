@@ -1,23 +1,13 @@
-# This file is for cleaning out definitions that may interfere when reloading.
-# So far, this has only come up for functions that have the same name as former aliases.
+# This file is for unsetting unwanted alias/function definitions.
 
-unalias update-tools 2> /dev/null
-unalias reload-tools 2> /dev/null
+# Functions or aliases may be removed if they do one of the following:
+#   - Interfere with the reloading process
+#     - This usually happens if I have recently re-made an alias as a function.
+#     - These removals will themselves be removed if I am 100% positive that nothing is using the old definitions.
+#   - Are an unwanted function/alias from outside of my tools modules.
 
-# 2016-01-06
-unalias encrypt-rsa 2> /dev/null
-unalias vnc-quick-write 2> /dev/null
-
-# 2016-01-26
-unalias rdp 2> /dev/null
-
-# 2016-02-03
-unalias vnc-quick-read 2> /dev/null
-
-# 2016-02-22
-# Added after implementing distributed SSH config, SSH will no longer be a SVN checkout.
-unset -f update-tools-ssh 2> /dev/null
-
-# 2016-03-07
-# Changed wine-games from an alias to a function.
-unalias wine-games 2> /dev/null
+# 2016-09-06
+# Fighting Fedora 24 deprecation nudging by unsetting the 'ifconfig' and 'service' functions.
+# These functions print complain (rightly) about the function being deprecated and exit out without doing anything.
+# Note: There is also a function to override 'yum', but I am happy with leaving that in.
+unset -f ifconfig service

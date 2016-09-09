@@ -24,15 +24,36 @@ if [ -d "$toolsDir" ]; then
         . "$toolsDir/bash/functions/hosts/$HOSTNAME.sh"
     fi
 
+    if [ -d "$toolsDir/.svn" ]; then
+        # SVN checkout of tools will have additional locations.
+        # We will not be nesting modules within other checkouts for Git, so do not bother looking.
+        svnDirs="$toolsDir/secure $toolsDir/modules $toolsDir/bash/modules"
+        # If not an SVN checkout, assuming git.
+    fi
+
+    if ! grep -q "^$toolsDir$" <<< "$HOME/tools"; then
+        # I would often do an SVN checkout of the core tools to $HOME/tools.
+        # Git clones that will never need modules may also get this treatment.
+        # Adding in this check to avoid an endless loop.
+        searchDirs="$HOME/tools"
+    fi
+
     # Cycle through each possible location for variable-location modules.
-    # Just in '~/work/' and 'bash/modules/' for now.
     # Each path added here should be an absolute path in order to
     #     make __module_dir (and by extension, the things that take its values) absolute paths.
-    for __module_location in "$toolsDir/secure" "$HOME/work" "$toolsDir/modules" "$toolsDir/bash/modules"; do
-        if [ -d "$__module_location" ]; then
+    for __module_location in "$searchDirs" $svnDirs "$HOME/work"; do
+        if [ -z "$__module_location" ] || [[ "$toolsDir" == "$__module_location" ]]; then
+            continue # Skip empty or avoid loop.
+        elif [ -d "$__module_location" ]; then
             for __module_dir in $__module_location $__module_location/*; do
                 # Reminder: This will be an absolute path.
                 # Double-check that the module-directory exists (/* would be included)
+
+                if [[ "$toolsDir" == "$__module_dir" ]]; then
+                    # Avoid infinite loop
+                    continue
+                fi
+
                 if [ -d "$__module_dir" ]; then
                     if [ -f "$__module_dir/bash/bashrc" ]; then
                         # Can come up in general modules or the shortcut directory 'secure/.
@@ -56,7 +77,7 @@ if [ -d "$toolsDir" ]; then
     done
 
     # Axe loop variables.
-    unset __module_location __module_dir __current_module_dir
+    unset __module_location __module_dir __current_module_dir svnDirs
 
 else
     printf '$toolsDir variable is incorrectly set! Tools file not found at "%s/"\n' "$toolsDir"

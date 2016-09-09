@@ -126,7 +126,7 @@ qtype(){
 #     but there is still no penalty for having a a non-existant directory.
 __add_to_path(){
     if !  __pgrep -m1 "(^|:)$1($|:)" <<< "$PATH"; then
-        PATH=$1:$PATH
+        PATH=$PATH:$1
         return 0
     fi
     return 1

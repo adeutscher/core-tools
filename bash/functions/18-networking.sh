@@ -136,7 +136,8 @@ wifi-list-raw(){
 
     # I made this function to cover the fact that scanning through nmcli doesn't print an access point's BSSID.
     # In addition, nmcli requires the NetworkManager service to be running in the first place in order to work.
-
+    # NOTE: The output of scanning with `iw` is not considered to be stable by the developers maintaining it.
+    #       This function may break over time.
     if [ -z "$1" ]; then
         error "Usage: wifi-list-raw interface"
         return 1

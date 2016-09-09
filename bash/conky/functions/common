@@ -58,25 +58,26 @@ colour_network_address(){
 # Method for colouring network interfaces.
 colour_interface(){
     if [ -n "${1}" ]; then
-        case "${1}" in
-        tun*|tap*|bnep*|usb*)
-            # Temporary interfaces provided by software (e.g. OpenVPN, phone tethering)
-            iface_colour=$colour_red
-            ;;
-        br*)
+
+		if [ -d "/sys/class/net/$1/bridge" ]; then
             # Bridges get to be special.
-            # This is mostly because old-laptop's bridge is a local-only thing.
             iface_colour=$colour_local_path
-            ;;
-        vnet*)
-            # KVM guests are also special.
-            iface_colour=$colour_kvm
-            ;;
-        *)
-            # Fall back to the generic networking colour for everything else.
-            iface_colour=$colour_network
-            ;;
-        esac
+        else
+            case "${1}" in
+            tun*|tap*|bnep*|usb*)
+                # Temporary interfaces provided by software (e.g. OpenVPN, phone tethering)
+                iface_colour=$colour_red
+                ;;
+            vnet*)
+                # KVM guests are also special.
+                iface_colour=$colour_kvm
+                ;;
+            *)
+                # Fall back to the generic networking colour for everything else.
+                iface_colour=$colour_network
+                ;;
+            esac
+        fi
         printf "\${color #${iface_colour}}${1}\$color\n"
     fi
 }

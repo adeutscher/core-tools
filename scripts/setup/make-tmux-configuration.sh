@@ -16,6 +16,8 @@ build-tmux(){
         status_fg="black"
         style=laptop
     ;;
+    "server-b."*)
+    ;&
     "server."*)
         # Imitate gray brick colouring
         bg=colour244

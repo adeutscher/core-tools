@@ -19,8 +19,8 @@ exclude_list="lo"
 ## With the current approach, this would skip aliases entirely (e.g. blocking eth0 would block eth0:0),
 ##    and does not work in reverse since individual aliases are not checked (e.g. eth0:0 could not be specifically blocked)
 
-. functions/common 2> /dev/null
-. functions/network-labels 2> /dev/null
+. functions/common
+. functions/network-labels
 
 ########################
 ########################

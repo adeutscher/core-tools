@@ -1,9 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 
 # Get the path to the tools directory.
 # Script is currently stored in 'scripts/setup/', relative to the root of the tools directory.
 # No need to resolve the path with readlink.
-toolsDir=$(dirname $0)/../..
+toolsDir="$(readlink -f "$(dirname $0)/../..")"
 
 setup(){
 
@@ -12,10 +12,11 @@ setup(){
     if pwd | grep -Pq "$HOME($|/)"; then
         # Setting up the tools locally for a user.
         local marker="$(whoami)-tools-marker"
+        global=0
     else
         # Setting up tools in a common directory (implied to be system-wide)
         local marker="core-tools-marker"
-        local global=1
+        global=1
     fi
     
     # Using the WINDIR environment variable as a lazy litmus test for
@@ -75,9 +76,9 @@ setup(){
 #####################################
 # $marker
 export toolsDir="$(pwd)"
-if printf "\$-" | grep -q i || ( printf "\$TERM" | grep -q '^dumb$' ); then
+if printf "\$-" | grep -q i || ( [ -z "\$SSH_CLIENT" ] && printf "\$TERM" | grep -q '^dumb$' ); then
     # Load tools if we are in an interactive shell or if we are running a script from
-    # both from within a "dumb" shell and within our tools directory (suggesting a Desktop Startup Script).
+    #     from within a "dumb" shell with no value to $SSH_CLIENT (suggesting a Desktop Startup Script).
     if [ -f "\$toolsDir/bash/bashrc" ]; then
         . \$toolsDir/bash/bashrc
     fi

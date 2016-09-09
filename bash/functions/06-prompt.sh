@@ -251,10 +251,14 @@ __prompt_file_system_colour(){
 __prompt_hostname_colour (){
     # Colour hostname field.
     # REMINDER: Place specific hostnames BEFORE wildcard hostnames.
-    case "$HOSTNAME" in
-        old-laptop.*|laptop.*|keystone.*)
+    case "${DISPLAY_HOSTNAME:-$HOSTNAME}" in
+        laptop.*|nuc.*|keystone.*)
             # Desktop systems should be in green.
             printf "$Colour_BIGreen"
+            ;;
+        datacomm)
+            # Organization's datacomm machines should be purple.
+            printf "$Colour_BIPurple"
             ;;
         work-?*.domain.lan|*.work.lan|*.work.lan|*.sandbox.lan)
             # Work/Experimental systems should be in red.
@@ -276,7 +280,7 @@ __prompt_hostname_colour (){
 }
 
 __prompt_username_colour (){
-    case "$(whoami)" in
+    case "${DISPLAY_USER:-$(whoami)}" in
         "redacted-username"|"redacted-name")
             printf "$Colour_BIBlue"
             ;;

@@ -5,6 +5,9 @@
 # Restrict in the super-duper-off-chance that we're on a machine with no SSH client.
 if qtype ssh; then
 
+  # We do not want a GUI prompt for credentials when doing something like pushing with git.
+  unset GIT_ASKPASS SSH_ASKPASS
+
   # Standard switches for SSH via alias:
   alias ssh='ssh -2 -4'
   # SSH with X forwarding.
@@ -86,7 +89,8 @@ if qtype ssh; then
 
         local moduleSSHMarker="$toolDir-marker"
         # Get a checksum from all loaded files.
-        # README.txt files in config.d/ are actually skipped by this function, but skipping them AND not putting in a required file extension would be a pain.
+        # README files in config.d/ are actually skipped by this function,
+        #   but skipping them AND not putting in a required file extension would be a pain.
         local checksum=$(md5sum "$moduleSSHConfig" "$moduleSSHDir/config.d/"* "$moduleSSHDir/hosts/config-$HOSTNAME" 2> /dev/null | md5sum | cut -d' ' -f1)
 
         if [ -f "$sshConfig" ]; then
@@ -122,8 +126,8 @@ if qtype ssh; then
           # Print divided configurations
           for subConfigFile in "$moduleSSHDir/config.d/"*; do
 
-            if [[ "${subConfigFile##*/}" =~ ^README.txt$ ]]; then
-                # Silently skip a README.txt file.
+            if grep -qi "README" <<< "${subConfigFile##*/}"; then
+                # Silently skip any file with "README" anywhere in its name.
                 continue
             fi
 
@@ -164,6 +168,12 @@ if qtype ssh; then
 
           # Print divided configurations
           for subConfigFile in "$moduleSSHDir/config.d/"*; do
+
+            if grep -qi "README" <<< "${subConfigFile##*/}"; then
+                # Silently skip any file with "README" anywhere in its name.
+                continue
+            fi
+
             if [ -f "$subConfigFile" ]; then
               printf "###\n# Sub-config \"%s\" for $moduleSSHDir\n###\n\n" "${subConfigFile##*/}" >> "$sshConfig.new"
               cat "$subConfigFile" 2> /dev/null >> "$sshConfig.new";
@@ -211,6 +221,21 @@ if qtype ssh; then
   }
 
   ssh-fix-permissions(){
+        local tools="$(compgen -A function ssh-fix-permissions-)"
+
+        if [ -z "$tools" ]; then
+            # No fixer functions detected.
+            return 1
+        fi
+
+        for permissionFunction in $tools; do
+            "$permissionFunction"
+        done
+        unset permissionFunction
+
+  }
+
+  ssh-fix-permissions-core(){
     # Confirm permissions out of ~/.ssh/
     # Assuming that the source files from individual modules are properly secured by their appropriate update functions.
     local sshConfigDir=$HOME/.ssh

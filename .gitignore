@@ -1,0 +1,15 @@
+
+# Temporary files called up by vi.
+*.swp
+# Python bytecode
+*.pyc
+
+# OS generated files (though very few Linux items) #
+# ##################################################
+ .DS_Store
+ .DS_Store?
+ ._*
+ .Spotlight-V100
+ .Trashes
+ ehthumbs.db
+ Thumbs.db

@@ -137,6 +137,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
                 # Ideally, we would only need to use the gateway column out of the route command to get a faraway network.
                 # However, VPN through openconnect (client for Cisco AnyConnect) pulls some sort of shenanigans
                 #     that I don't fully understand at the moment to have our remote networks still display a gateway of 0.0.0.0.
+                # Note: When checking on this later, I was not able to reproduce the route wackiness. Still leaving this special case in.
                 # Since openconnect does this, we will also limit local networks to anything without a tun_ (VPN interface)
                 #     or tap_ adapter (alternate VPN adapter. This was going to be an acceptable gap, but we may as well filter it if we're already here)
                 # The only gap this would leave would be a super-duper low latency VPN that I wanted to still get usage information for. So a rediculously tiny gap.
@@ -168,3 +169,18 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
     fi
 done
 
+# Experimental: RAID rebuild display.
+# Only interested in RAID arrays that are rebuilding for the moment.
+# A stable array is not newsworthy.
+if [ -r "/proc/mdstat" ]; then
+  # Assumed format of output heading into awk (if we have output at all):
+  # md0 : active raid1 sdc1[1] sdb1[0]
+  #       2930134464 blocks super 1.2 [2/2] [UU]
+  #       [===============>.....]  resync = 79.1% (2319136896/2930134464) finish=115.7min speed=87983K/sec
+  resyncing_arrays="$(cat "/proc/mdstat" | sed -e '/^unused devices:/d' | grep -A2 "^[a-z]" | grep -B2 "resync =" | awk -F' ' 'BEGIN{stage=1}{if(stage==1){device=$1;type=$4;stage=2} else if(stage==2){stage=3} else if(stage==3){stage=1; split($6,s,"="); if(s[2]){sub(/\.[0-9]*/, "", s[2])}; print " '"\${color $colour_local_path}"'/dev/" device "'"\${color}"'(" type "): "  $4 "(ETC: " s[2] ")"} }')"
+
+  # We *could* have awk print out the information in CSV format in order to be able to colour different values differently without a massive nightmare of an awk script.
+  if [ -n "$resyncing_arrays" ]; then
+    printf "\${color #${colour_local_path}}\${font Neuropolitical:size=16:bold}Resyncing RAID Arrays\$font\$color\$hr\n%s" "$resyncing_arrays"
+  fi
+fi
