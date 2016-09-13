@@ -3,6 +3,14 @@
 build-tmux(){
 
     case "$HOSTNAME" in
+    "datacomm")
+        # Follow the example of the purple hostname promt that machines named 'datacomm' get.
+        # Chosen for its similarity to the purple given to the hostname for 'datacomm' in the prompt.
+        # However, I am not keen on spending the time to find exactly the right hue, so purple-ish will have to do.
+        bg=colour134
+        fg=colour195
+        style=Datacomm
+    ;;
     "nuc."*)
         # Imitate nuc colouring
         bg=colour15
@@ -25,7 +33,7 @@ build-tmux(){
         active_fg=white
         style=server
     ;;
-    "keystone"*)
+    "machine-a"*)
         bg=yellow
         fg=red
         style="Desktop Machine"

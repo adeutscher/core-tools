@@ -58,7 +58,7 @@ draft-report(){
               local mac="$(cut -d' ' -f 2 <<< "$line")"
               local data="$(sed 's/#/\\#/g' <<< "$(shorten_string "$(__get_mac_label "$mac")" 30)")"
               if [ -z "$data" ]; then
-                  local data="$(sed 's/#/\\#/g' <<< (shorten_string "$(__get_mac_vendor "$mac")" 25))"
+                  local data="$(sed 's/#/\\#/g' <<< $(shorten_string "$(__get_mac_vendor "$mac")" 25))"
                   if [ -n "$data" ]; then
                       local header="Vendor:"
                   fi

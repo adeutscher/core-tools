@@ -252,7 +252,7 @@ __prompt_hostname_colour (){
     # Colour hostname field.
     # REMINDER: Place specific hostnames BEFORE wildcard hostnames.
     case "${DISPLAY_HOSTNAME:-$HOSTNAME}" in
-        laptop.*|nuc.*|keystone.*)
+        laptop.*|nuc.*|machine-a.*)
             # Desktop systems should be in green.
             printf "$Colour_BIGreen"
             ;;
@@ -264,9 +264,9 @@ __prompt_hostname_colour (){
             # Work/Experimental systems should be in red.
             printf "$Colour_BIRed"
             ;;
-        "keystone")
+        "machine-a")
             # Windows systems should be in purple (for now).
-            # Note: Windows!keystone's full hostname is just "keystone", unlike its Linux version
+            # Note: Windows!machine-a's full hostname is just "machine-a", unlike its Linux version
             printf "$Colour_BIPurple"
             ;;
         *.domain.lan|*.domain-b.lan)

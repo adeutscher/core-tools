@@ -13,9 +13,9 @@ bridges=$(find -L /sys/class/net/ -maxdepth 2 -name bridge 2> /dev/null | cut -d
 bridge_members=$(brctl show | sed -e '/bridge name/d' -e 's/\t/\ /g' | awk '{ if(NF > 1){ $1="";$2="";$3="" } print $0 }' | tr '\n' ' ')
 
 # List of interfaces to exclude from listing.
-exclude_list="lo"
+exclude_list="lo $CONKY_IGNORE_INTERFACES"
 # Notes on exclude_list
-## Space-separated list. For example: "lo eth0 eth1"
+## Space-delimited list. For example: "lo eth0 eth1"
 ## With the current approach, this would skip aliases entirely (e.g. blocking eth0 would block eth0:0),
 ##    and does not work in reverse since individual aliases are not checked (e.g. eth0:0 could not be specifically blocked)
 
@@ -47,9 +47,9 @@ for ip in $(route -n | awk '{ if($3 == "0.0.0.0"){ print $2 } }' | sort -n); do
 
     # Note: May need to add a bit of extra padding for spaces to the left side of the below IF statement
     #   if I decide that you want to display more than 2 gateways before busting out the "multiple" label in the future.
-    if [ "$(($tentative_length+$gateway_spacing))" -gt $characterWidthLimit ]; then
-        gateway_spacing=$(($tentative_length+10))
-        tentative_gateway="$tentative_gateway,\n           \${color #${colour_network_address}}$ip\$color"
+    if [ "$(($tentative_length+$gateway_spacing))" -ge $characterWidthLimit ]; then
+        gateway_spacing=$(($tentative_length+12))
+        tentative_gateway="$tentative_gateway,\n             \${color #${colour_network_address}}$ip\$color"
     else
         gateway_spacing=$(($tentative_length+$gateway_spacing+2))
         tentative_gateway="$tentative_gateway, \${color #${colour_network_address}}$ip\$color"

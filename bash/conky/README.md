@@ -20,7 +20,7 @@ Switches:
 
 ### Variables
 
-Conky only uses one variable for the moment:
+Conky uses the following environment variables:
 
 * The `$CONKY_SCREEN` environment variable controls which screen that the display will appear in the bottom-right corner of.
   * Use `xrandr` to list your connected displays. Example values:
@@ -28,4 +28,6 @@ Conky only uses one variable for the moment:
     * DVI-1
     * HDMI-0
   * If no value `CONKY_SCREEN` `-s` switch is given, then the default screen is your primary display.
-
+* Set `CONKY_IGNORE_INTERFACES` to tell `conky` to ignore a given interface.
+  * `CONKY_IGNORE_INTERFACES` should be a space-delimited list.
+  * Example content to ignore both `wlan0` and `wlan1`: `export CONKY_IGNORE_INTERFACES="wlan0 wlan1"`
