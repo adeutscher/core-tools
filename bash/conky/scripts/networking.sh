@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# If CONKY_DISABLE_NETWORK evaluates to true, then exit immediately.
+if (( "$CONKY_DISABLE_NETWORK" )); then
+    exit 0
+fi
+
 # Collecting most of our lists in advance.
 # List of all interfaces
 interfaces=$(ip a s | grep -e "^[0-9]*:"  | awk '{ print $2 }' | sed -e 's/://g' -e 's/@.*//g' | sort)

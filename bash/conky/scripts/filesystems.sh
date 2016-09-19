@@ -1,12 +1,14 @@
 #!/bin/bash
 
-. functions/common 2> /dev/null
-
-
+# If CONKY_DISABLE_FILES evaluates to true, then exit immediately.
 # All of our file system parsing revolves around parsing /proc/1/mountinfo.
-# If this file cannot be reached (I cannot imagine that it would not exist altogether), then do not bother continuing.
-# Do not print an error if this is the case.
-[ -r "/proc/1/mountinfo" ] || exit 0
+#   If this file cannot be reached (I cannot imagine that it would not exist altogether), then do not bother continuing either.
+#   Do not print an error in either case.
+if (( "$CONKY_DISABLE_FILES" )) || [ ! -r "/proc/1/mountinfo" ]; then
+    exit 0
+fi
+
+. functions/common 2> /dev/null
 
 #############
 # Inventory #
@@ -112,7 +114,13 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         # Until another option shows up to solve the above hurdles, I will NOT be covering CIFS bind mounts.
         # Will just have to suffer through redundant information if we run across this edge case.
 
-        printf " Bind: \${color #${fs_colour}}%s\$color\n" "$(shorten_string "${fs_bind_location}" 32)"
+        # Get the path to parent file system (as the "fs_source" variable will be to a device file like /dev/sda1 or /dev/mapper/machine-home).
+        # This is necessary because "fs_bind_location" will not display the entire file path.
+        # For example: Say that /home is a separate file system from / and /home/user is bind-mounted to /mnt.
+        #     In that example, "fs_bind_location" would only show "/user"
+        fs_bind_parent="$(findmnt -D "$fs_source" | grep "$fs_source[^\[]" | awk -F' ' '{ if($7 != "/"){ print $7 }}' )"
+        printf " Bind: \${color #${fs_colour}}%s\$color\n" "$(shorten_string "${fs_bind_parent}${fs_bind_location}" 29)"
+        # Note: In cases of multiple binds (e.g. A is bound to B, and B is bound to C), mountinfo will still show the original parent.
 
     elif [[ "$fs_type" != "-" ]]; then
         # If df/findmnt reports disk usage as a "-", then we will not be able to get these numbers through conky either.

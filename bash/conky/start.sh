@@ -150,54 +150,52 @@ else
     location=tools
 fi
 
+# I have observed Conky not showing when run as a
+#     startup application for a login after a fresh boot
+#     (signing in immediately after the prompt showed up)
+#     if I call it up too quickly. It would still show up as
+#     a running process, suggesting that something with my display was wonky.
 
-if (( ! "$DEBUG" )); then
+# Conky would always show up without troubles on a
+#     laptop using the original 3s delay. The 3s delay
+#     was originally in there from some vague memory of
+#     this sort of problem in the pre-version-control days
+#     when my documentation was even worse.
 
-  # I have observed Conky not showing when run as a
-  #     startup application for a login after a fresh boot
-  #     (signing in immediately after the prompt showed up)
-  #     if I call it up too quickly. It would still show up as
-  #     a running process, suggesting that something with my display was wonky.
+# My current theory is that the speed difference between the laptop's SSD
+#     and machine B's HDD is enough to delay the script before the X display
+#     can perform some necessary shenanigans (See also: https://xkcd.com/963/)
 
-  # Conky would always show up without troubles on a
-  #     laptop using the original 3s delay. The 3s delay
-  #     was originally in there from some vague memory of
-  #     this sort of problem in the pre-version-control days
-  #     when my documentation was even worse.
+# The current experiment is to implement a longer startup delay for systems
+#     not using an SSD. If this comment survives to be submitted, then it was a success!
 
-  # My current theory is that the speed difference between the laptop's SSD
-  #     and machine B's HDD is enough to delay the script before the X display
-  #     can perform some necessary shenanigans (See also: https://xkcd.com/963/)
+# sda is assumed to be the only disk that matters for the moment (though we'll still double-check that we have one).
+# Food for thought: The value of /sys/block/___/queue/rotational seems to be 1 for everything but SSDs (so far, though it'd still need to be confirmed that it is a relevent SSD...).
+# Also check to see if the TERM variable has a value of "dumb", suggesting a startup application instead of a terminal.
 
-  # The current experiment is to implement a longer startup delay for systems
-  #     not using an SSD. If this comment survives to be submitted, then it was a success!
-
-
-
-  # sda is assumed to be the only disk that matters for the moment (though we'll still double-check that we have one).
-  # Food for thought: The value of /sys/block/___/queue/rotational seems to be 1 for everything but SSDs (so far, though it'd still need to be confirmed that it is a relevent SSD...). 
-  # Also check to see if the TERM variable has a value of "dumb", suggesting a startup application instead of a terminal.
-
-  # I have observed the HDD system starting conky properly with only a 3s delay sometimes if
-  #    the computer has been on for a while (drawing the line at 10 minutes), so leaving the uptime check in for the moment.
-  if [ -f "/sys/block/sda/queue/rotational" ] && [ "$(cat /sys/block/sda/queue/rotational)" -gt 0 ] && [[ "$TERM" =~ ^dumb$ ]]; then
+# I have observed the HDD system starting conky properly with only a 3s delay sometimes if
+#    the computer has been on for a while (drawing the line at 10 minutes), so leaving the uptime check in for the moment.
+if [[ "$TERM" =~ ^dumb$ ]]; then
+  if [ -f "/sys/block/sda/queue/rotational" ] && [ "$(cat /sys/block/sda/queue/rotational)" -gt 0 ]; then
     # Will be experimenting with exactly how little of a delay I can get away with over time, but this is good enough for an initial commit of the feature.
     if [ "$(grep -om1 "^[^\.]*" < /proc/uptime)" -lt 600 ]; then
-        # Desktop login on fresh boot ( uptime < 10min )
-        countdown=25
+      # Desktop login on fresh boot ( uptime < 10min )
+      countdown=25
     else
-        # Desktop login on older boot ( uptime >= 10min )
-        countdown=5
+      # Desktop login on older boot ( uptime >= 10min )
+      countdown=5
     fi
   else
+    # /dev/sda is not an HDD
     countdown=3
   fi
-
   # Justified delay
   message="$(printf "Conky should appear in %ds..." "$countdown")"
-else
-  # Start debug mode with no delay
+elif (( "$DEBUG" )); then
   message="Running conky in debug mode..."
+else
+  message="Starting conky..."
+  countdown=0
 fi
 
 # Try running notify-send, ignoring all error messages
@@ -206,11 +204,7 @@ timeout 0.5 notify-send --icon=esd "$(printf "%s\nLocation: %s" "$message" "$loc
 # Print the message to stdout for good measure.
 echo "$message"
 
-if (( ! "$DEBUG" )); then
-    # Standard mode
-    # Sleep and start
-    sleep $countdown && conky -c conkyrc -a bottom_right -x $posX -y $posY &
-else
+if (( "$DEBUG" )); then
     # Debug mode
     # If we're in debug mode, run conky immediately in the foreground.
 
@@ -219,6 +213,10 @@ else
 
     # Start conky
     conky -c conkyrc -a bottom_right -x $posX -y $posY
+else
+    # Standard mode
+    # Sleep and start
+    sleep $countdown && conky -c conkyrc -a bottom_right -x $posX -y $posY &
 fi
 
 cd "$OLDPWD"

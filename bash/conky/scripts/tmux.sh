@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Check to see if tmux is installed before we do anything at all
-if type tmux 2> /dev/null >&2; then
+# Also skip if CONKY_DISABLE_TMUX evaluates to true.
+if type tmux 2> /dev/null >&2 && ! (( $CONKY_DISABLE_TMUX )); then
 
     . functions/common 2> /dev/null
 

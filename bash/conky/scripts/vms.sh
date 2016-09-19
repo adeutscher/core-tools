@@ -1,17 +1,20 @@
 #!/bin/bash
 
+# If CONKY_DISABLE_VMS evaluates to true, then exit immediately.
+# Also do this if virsh is not installed or we do not think that we will be able to use it on our local machine.
+if (( "$CONKY_DISABLE_VMS" )) || ! type virsh 2> /dev/null >&2 || ! egrep -qwm1 '(wheel|libvirt|adm|root)' <<< "$(groups)"; then
+  exit 0
+fi
+
 . functions/common 2> /dev/null
 
 #########################################
 # LibVirt Host (tested with KVM guests) #
 #########################################
 
-# Confirm that virsh is available, and 
-#   attempt to confirm that the user is a member
-#   of a possible group with access to run virsh
-#   without needing to escalate their permissions.
-# Potential groups for conky are ranked in terms of least to most likely for me to be using.
-if which virsh 2> /dev/null >&2 && egrep -qm1 '(^|\ )(wheel|libvirt|adm|root)($|\ )' <<< "$(groups)"; then
+# Leaving this redundant if statement in for the moment
+# Once I add support for other VM types, I'd have to put it right back in anyways.
+if qtype virsh then
     # Put initial listing in CSV format.
     vm_listing="$(virsh --connect "qemu:///system" list | tail -n +3 | sed -e '/^$/d' -e '/^\-/d' | awk -F' ' '{print $1","$2","$3" "}')"
     

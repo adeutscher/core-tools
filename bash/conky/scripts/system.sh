@@ -6,7 +6,7 @@
 # Header #
 ##########
 
-printf "\${color #${colour_header}}\${font Neuropolitical:size=16:bold}\$nodename\$font\$color\${hr}\n"
+printf "\${color #${colour_header}}\${font Neuropolitical:size=16:bold}%s\$font\$color\${hr}\n" "${DISPLAY_HOSTNAME:-\$nodename}"
 
 ########
 # Time #

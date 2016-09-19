@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# If CONKY_DISABLE_BLUETOOTH evaluates to true, then exit immediately
+# Also do this if hcitool command is not available
+if (( $CONKY_DISABLE_BLUETOOTH )) || ! type hcitool 2> /dev/null >&2; then
+  exit 0
+fi
+
 # Load common utilities
 . functions/common 2> /dev/null
 . functions/network-labels 2> /dev/null

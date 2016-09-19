@@ -1,0 +1,1 @@
+../scripts/programming/format-code.sh

@@ -1,6 +1,9 @@
 # Look in a data file in the secure/ directory to try to resolve MAC addresses to a computer name.
 # If the file doesn't exist or there is no entry, print nothing and let above logic handle it.
 
+eval 'network_index="${CONKY_NETWORK_INDEX:-$secureToolsDir/files/tool-data/network-index.csv}"'
+eval 'network_cache="${CONKY_NETWORK_CACHE:-$tempRoot/../network-index.csv}"'
+
 # To use this, load in both this file of network-labels functions and 'common' ('common' should be loaded first, as this file assumes that the common items are present)
 
 # Example record line (plus header):
@@ -10,7 +13,7 @@ __get_mac_record(){
     if [ -n "$1" ]; then
         # Try cache and then try for a secure tools checkout (not mourning an error if secureToolsDir does not exist.
         # secureTools dir should still be loaded even if this is run as part of a startup script.
-        grep -Pim1 "^([^,]*,){2}$1," "$tempRoot/../network-index.csv" 2> /dev/null || grep -Pim1 "^([^,]*,){2}$1," $secureToolsDir/files/tool-data/network-index.csv 2> /dev/null | tee -a "$tempRoot/../network-index.csv"
+        grep -Pim1 "^([^,]*,){2}$1," "$network_cache" 2> /dev/null || grep -Pim1 "^([^,]*,){2}$1," "$network_index" 2> /dev/null | tee -a "$network_cache"
     fi
 }
 
