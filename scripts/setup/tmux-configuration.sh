@@ -2,7 +2,7 @@
 
 build-tmux(){
 
-    case "$HOSTNAME" in
+    case "${DISPLAY_HOSTNAME:-$HOSTNAME}" in
     "datacomm")
         # Follow the example of the purple hostname promt that machines named 'datacomm' get.
         # Chosen for its similarity to the purple given to the hostname for 'datacomm' in the prompt.

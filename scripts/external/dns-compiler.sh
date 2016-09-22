@@ -246,6 +246,10 @@ __get_checksum(){
   md5sum "$DNS_COMPILER_TARGET" 2> /dev/null
 }
 
+# TODO: If dynamic adding through rndc were working,
+#         then we would also remove each domain in our CSV from BIND9
+#         before removing them from the CSV
+#       We would also not care at all about the number removed.
 __purge_interface(){
   # Remove references to an interface from source files
   if [ -n "$1" ] && [ -f "$DNS_COMPILER_DATA" ] && [ -r "$DNS_COMPILER_DATA" ]; then
@@ -280,6 +284,8 @@ __compile(){
     # Might be a side-effect of late-night coding, but I cannot see why head is required here in the case of dupes...
     local interface="$(cut -d',' -f1 <<< "$domain_entry" | head -n1)"
     local nameserver="$(cut -d',' -f3 <<< "$domain_entry" | head -n1)"
+
+    # TODO: If zone addition through rndc were working, we would instead be removing the domain (for good measure) and adding it here.
     printf 'zone "%s" { type forward; forwarders { %s; }; forward only; }; // Interface: %s\n' "$domain" "$nameserver" "$interface" >> "$DNS_COMPILER_TARGET"
   done
   
@@ -309,6 +315,8 @@ __do_disconnect(){
   fi
 }
 
+# Reload BIND9.
+# TODO: If dynamic adding through rndc were working, this function would be entirely unavailable
 __reload(){
   if [[ "$OLD_DATA_CHECKSUM" != "$(__get_checksum)" ]] && named-checkconf 2> /dev/null >&2; then
     systemctl restart named >&2 2> /dev/null &

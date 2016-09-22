@@ -52,6 +52,8 @@ case "$extension" in
   .c)
     ;&
   .cpp)
+    ;&
+  .h)
     switches="--style=linux -xj -c --lineend=linux -n"
     ;;
   *)

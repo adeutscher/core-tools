@@ -51,10 +51,19 @@ Conky uses the following environment variables:
   * Set `CONKY_DISABLE_BLUETOOTH` to **1** to disable the display of
       connected Bluetooth devices.
   * Set `CONKY_DISABLE_VMS` to **1** to skip the VM display in `scripts/vms.sh`
-  
-  
 
 ## `virsh`
+
+In order to use `virsh` to list virtual machines, it's assumed that the user
+    has permissions to list VMs in a terminal. I do this by creating
+    a PolKit rule like this one in a `.rules` file in `/etc/polkit-1/rules.d/`:
+
+    polkit.addRule(function(action, subject) {
+        if (action.id == "org.libvirt.unix.manage" &&
+            subject.isInGroup("wheel")) {
+                return polkit.Result.YES;
+        }
+    });
 
 ## Network Labels
 
@@ -65,4 +74,4 @@ Below is a sample of the format used by the files specified in the
   `CONKY_NETWORK_INDEX` and `$CONKY_NETWORK_CACHE` environment variables:
 
     owner,type,mac,label,general-location,specific-location,description,notes
-    redacted-name,Bluetooth,18:2a:7b:3d:aa:bb,WiiU Pro,Home,Bookshelf,Used for games,purchased 2014
+    Bob,Bluetooth,18:2a:7b:3d:aa:bb,WiiU Pro,Home,Bookshelf,Used for games,purchased 2014
