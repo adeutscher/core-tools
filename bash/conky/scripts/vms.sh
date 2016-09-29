@@ -14,7 +14,7 @@ fi
 
 # Leaving this redundant if statement in for the moment
 # Once I add support for other VM types, I'd have to put it right back in anyways.
-if qtype virsh then
+if qtype virsh; then
     # Put initial listing in CSV format.
     vm_listing="$(virsh --connect "qemu:///system" list | tail -n +3 | sed -e '/^$/d' -e '/^\-/d' | awk -F' ' '{print $1","$2","$3" "}')"
     
@@ -34,10 +34,11 @@ if qtype virsh then
                 ;;
             *)
                 case_colour="${colour_alert}"
+                ;;
             esac
             
             # Search through the XML configuration for interface names.
-            raw_vm_ifaces=$(virsh --connect "qemu:///system" dumpxml "${vm_name}" | grep vnet | cut -d"'" -f 2)
+            raw_vm_ifaces="$(virsh --connect "qemu:///system" dumpxml "${vm_name}" | grep vnet | cut -d"'" -f 2)"
             
             # Print initial VM data.
             printf " \${color #${colour_kvm}}${vm_name}\$color (${vm_id}, \${color #${case_colour}}${vm_state}\$color"

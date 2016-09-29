@@ -211,22 +211,28 @@ __prompt_file_system_colour(){
     fi
 
     case "${__fs}" in
+        "ext"*|xfs)
+            # Green text.
+            # Ext_ file systems are most likely a local drive.
+            printf "$Colour_BIGreen"
+            ;;
         cifs|nfs*)
             # Blue text
             # CIFS is a remote network file system.
             # NFS is also a remote network file system.
             printf "$Colour_BIBlue"
             ;;
-        *fat*|ntfs*|udf|fuseblk)
+        *fat*|ntfs*|udf|fuseblk|hfsplus)
             # Red Text.
             # FAT Filesystem most likely to be removable device.
             #     Lazy pattern assumes that no other family of file system will have 'fat' anywhere in it.
-            # NTFS Filesystem on a Windows system are most likely to be removable device.
+            # NTFS Filesystem from a Windows system, most likely to be removable device and not a fixture.
             # fuseblk filesystems are some variety of removable device.
             #     Late addition. After seeing an NTFS filesystem listed as 'fuseblk',
             #       I'm starting to second-guess if the 'ntfs*' clause is necessary.
             #       More double-checking necessary, eventually.
             # UDF Filesystem is most likely a mounted ISO or similar.
+            # HFS+ is from an OSX drive, most likely a removable device on Linux
             printf "$Colour_BIRed"
             ;;
         *tmpfs*|sysfs|proc)
@@ -235,11 +241,6 @@ __prompt_file_system_colour(){
             # Sysfs file systems are a kernel construct.
             # Sysfs file systems are also a kernel construct.
             printf "$Colour_BIPurple"
-            ;;
-        "ext"*|xfs)
-            # Green text.
-            # Ext_ file systems most likely to be local drive.
-            printf "$Colour_BIGreen"
             ;;
         *)
             # Return to default colour.

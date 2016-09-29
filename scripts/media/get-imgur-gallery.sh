@@ -1,5 +1,46 @@
 
-get-imgur-gallery(){
+# Common message functions.
+
+# Define colours
+if [ -t 1 ]; then
+  Colour_BIBlue='\033[1;34m'
+  Colour_BIGreen='\033[1;32m'
+  Colour_BIRed='\033[1;31m'
+  Colour_BIYellow='\033[1;93m'
+  Colour_Bold='\033[1m'
+  Colour_Off='\033[0m' # No Color
+  
+  Colour_NetworkAddress=$Colour_BIGreen
+  Colour_FilePath=$Colour_BIGreen
+  Colour_Command=$Colour_BIBlue
+fi
+
+error(){
+  printf "$Colour_BIRed"'Error'"$Colour_Off"'['"$Colour_BIGreen"'%s'"$Colour_Off"']: %s\n' "$(basename $0)" "$@"
+}
+
+notice(){
+  printf "$Colour_BIBlue"'Notice'"$Colour_Off"'['"$Colour_BIGreen"'%s'"$Colour_Off"']: %s\n' "$(basename $0)" "$@"
+}
+
+success(){
+  printf "$Colour_BIGreen"'Success'"$Colour_Off"'['"$Colour_BIGreen"'%s'"$Colour_Off"']: %s\n' "$(basename $0)" "$@"
+}
+
+warning(){
+  printf "$Colour_BIYellow"'Warning'"$Colour_Off"'['"$Colour_BIGreen"'%s'"$Colour_Off"']: %s\n' "$(basename $0)" "$@"
+}
+
+# Script functions
+
+check_commands(){
+    if ! type curl wget 2> /dev/null >&2; then
+        error "$(printf "$Colour_Command%s$Colour_Off and $Colour_Command%s$Colour_Off are required for this script." "curl" "wget")"
+        exit 1
+    fi
+}
+
+get_imgur_gallery(){
 
     if [ -d "$HOME/Downloads" ]; then
         local imgurDir="$HOME/Downloads/imgur"
@@ -80,16 +121,16 @@ get-imgur-gallery(){
                 # Perl-style rename command.
 
                 # Correct .png extensions
-                file "$galleryDir/"*.jpg | grep PNG | cut -d':' -f1 | xargs-i rename "s/\.jpg$/\.png/g" "{}"
+                file "$galleryDir/"*.jpg | grep PNG | cut -d':' -f1 | xargs -I{} rename "s/\.jpg$/\.png/g" "{}"
                 # Correct .gif extensions
-                file "$galleryDir/"*.jpg | grep GIF | cut -d':' -f1 | xargs-i rename "s/\.jpg$/\.gif/g" "{}"
+                file "$galleryDir/"*.jpg | grep GIF | cut -d':' -f1 | xargs -I{} rename "s/\.jpg$/\.gif/g" "{}"
 
             else
                 # 3-argument style rename command.
                 # Correct .png extensions
-                file "$galleryDir/"*.jpg | grep PNG | cut -d':' -f1 | xargs-i rename ".jpg" ".png" "{}"
+                file "$galleryDir/"*.jpg | grep PNG | cut -d':' -f1 | xargs -I{} rename ".jpg" ".png" "{}"
                 # Correct .gif extensions
-                file "$galleryDir/"*.jpg | grep GIF | cut -d':' -f1 | xargs-i rename ".jpg" ".gif" "{}"
+                file "$galleryDir/"*.jpg | grep GIF | cut -d':' -f1 | xargs -I{} rename ".jpg" ".gif" "{}"
 
             fi
 
@@ -101,3 +142,7 @@ get-imgur-gallery(){
     # Deal with leak of loop variables.
     unset __path __link
 }
+
+check_commands
+get_imgur_gallery "$@"
+

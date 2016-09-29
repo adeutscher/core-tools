@@ -90,7 +90,7 @@ A few lazy functions for sleeping (each one only accepts integers):
 
 ## Modules
 
-I made a module-based system for storing functions in order to limit uneeded data leaks.
+I made a module-based system for storing functions in order to limit unneeded data leaks.
 
 ### Module Creation
 

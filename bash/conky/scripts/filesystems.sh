@@ -61,7 +61,7 @@ fi
 #   - /run/cmanager/fs and /run/lock, two tmpfs directories on Ubuntu systems
 #   - gvfsd file system at /run/user/$UID/gvfs
 # This should cover all other system-specific, temporary (USB drives, SD cards), or network, network file systems, etc.
-extra_file_systems="$(cut -d' ' -f $cut_fields < /proc/1/mountinfo | egrep ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf) ' | egrep -v '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/user/\d?|/gvfs|/run/cmanager/fs|/run/lock|/home | / / ))' | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
+extra_file_systems="$(cut -d' ' -f $cut_fields < /proc/1/mountinfo | egrep ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf|hfsplus) ' | egrep -v '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/user/\d?|/gvfs|/run/cmanager/fs|/run/lock|/home | / / ))' | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
 
 ##########
 # Header #
@@ -137,7 +137,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
 
         # TODO: Find a way to recycle the original idea of using a per-mount flag, but this time to mark a "near-ish" server that needs to go through a gateway BUT has a reliably low latency that showing the usage bar wouldn't be the end of the world for performance.
         # TODO: Apply this new far-away approach to NFS as well. Need to check if the fs option is different.
-        if [[ "${fs_type}" =~ "cifs" ]]; then
+        if [[ "${fs_type}" =~ (cifs|nfs\d{1,}) ]]; then
             if [ -z "$localNetworks" ]; then
                 # Only get a list of networks if we need to (i.e. if a CIFS system is mounted)
                 # This avoids calling twice if we have multiple CIFS shares mounted.
@@ -153,6 +153,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
             fi
 
             # Get share network (with escaped "." characters)
+            # Assumes /24 networks for the moment
             shareNetwork=$(grep -o "addr=[^,]*" <<< "${fs_options}" | cut -d= -f2 | cut -d. -f-3 | sed "s/\./\./g")
 
             if ! grep -qm1 "^$shareNetwork$" <<< "$localNetworks"; then
@@ -169,9 +170,11 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
 
         # Print remote location for CIFS.
         if [[ "${fs_type}" =~ "cifs" ]]; then
-
                 remote_point="$(shorten_string "${fs_source}" 31)"
                 printf " Share%s: \${color #${colour_network}}%s\$color\n" "$extra_text" "$(shorten_string ${remote_point} 23)"
+        elif [[ "${fs_type}" =~ nfs4 ]]; then
+                remote_point="$(shorten_string "${fs_source}" 31)"
+                printf " Dir%s: \${color #${colour_network}}%s\$color\n" "$extra_text" "$(shorten_string ${remote_point} 28)"
         fi
         # TODO: Do similarly to print the remote location for NFS.
     fi

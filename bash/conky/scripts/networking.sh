@@ -288,10 +288,11 @@ fi
 ephemeral_file="/proc/sys/net/ipv4/ip_local_port_range"
 ephemeral_lower=$(cat "$ephemeral_file" | awk '{ print $1 }')
 # Collect connections from netstat, then format with awk
-connections_in=$(netstat -tun | grep ESTABLISHED  | awk '{ split($4,l,":"); split($5,r,":"); if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 == "tcp")){ print " ${color #'${colour_network_address}'}" r[1] "${color}->${color #'${colour_network_address}'}" l[1] "${color} ("$1"/"l[2]")" }; }' | sort -k2,2 -k3,3n |  uniq -c | grep --colour=never -v '127\.0\.0\.1' | awk '{ count=$1; $1=""; print $0; if (count > 1){ print "    Count: "count }}')
+connections_in=$(netstat -tun | grep ESTABLISHED  | awk '{ split($4,l,":"); split($5,r,":"); if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 == "tcp") && ! (r[2] == 2049 && $1 == "tcp")){ print " ${color #'${colour_network_address}'}" r[1] "${color}->${color #'${colour_network_address}'}" l[1] "${color} ("$1"/"l[2]")" }; }' | sort -k2,2 -k3,3n |  uniq -c | grep --colour=never -v '127\.0\.0\.1' | awk '{ count=$1; $1=""; print $0; if (count > 1){ print "    Count: "count }}')
 # A connection is considered incoming if the local port is below the lowest ephemeral port number AND the remote port is above the lowest ephemeral port number.
 # TCP connections are somewhat excused and do not require the remote port to always be within the range.
 # Excluding localhost connections, since it could get a bit rediculous.
+# The special case with TCP/2049 is due to NFS mounting using a rediculously low local port (e.g. client's TCP/696 to server's TCP/2049).
 # I *could* also filter out connections where the source address is the same as the destination address, but I choose not to at this time. Maybe some different colouring in the future?
 # Confirming that UDP "connections" can actually show up and get printed out correctly, though I had to make a situation with nc to have an example to double-check.
 # Reminder for re-testing (binds to udp/1234):
