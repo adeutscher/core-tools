@@ -48,13 +48,13 @@ fi
 
 # Confirm that the requested interface even exists before we try to use sudo.
 if ! ip a s "$interface" 2> /dev/null >&2; then
-    error "$(printf "No '$BOLD%s$NC' interface found.\n" "$interface")" >&2
+    error "$(printf "No $BOLD%s$NC interface found." "$interface")" >&2
     exit 2
 fi
 
 # Confirm that the given interface is actually a wireless interface
 if type iw 2> /dev/null >&2 && ! iw dev | grep -q "Interface $interface"; then
-    error "$(printf '$BOLD%s$NC not actually a wireless interface. Abort!\n' "$interface")" >&2
+    error "$(printf "$BOLD%s$NC not actually a wireless interface. Abort!" "$interface")" >&2
     exit 2
 fi
 

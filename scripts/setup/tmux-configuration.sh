@@ -1,12 +1,20 @@
 #!/bin/bash
 
+check-commands(){
+  # No harm in setting up a tmux config with no tmux command,
+  #   but we will give a quick reminder.
+  if ! type tmux 2> /dev/null >&2; then
+    printf "Reminder: tmux is not yet installed on this machine!\n"
+  fi
+}
+
 build-tmux(){
 
     case "${DISPLAY_HOSTNAME:-$HOSTNAME}" in
     "datacomm")
         # Follow the example of the purple hostname promt that machines named 'datacomm' get.
         # Chosen for its similarity to the purple given to the hostname for 'datacomm' in the prompt.
-        # However, I am not keen on spending the time to find exactly the right hue, so purple-ish will have to do.
+        # I am not keen on spending the time to find exactly the right hue, so purple-ish will have to do.
         bg=colour134
         fg=colour195
         style=Datacomm
@@ -37,6 +45,13 @@ build-tmux(){
         bg=yellow
         fg=red
         style="Desktop Machine"
+    ;;
+    "spare"*)
+        bg=green
+        fg=colour208 # orange
+        active_fg="black"
+        status_fg="$active_fg"
+        style="Spare Machine"
     ;;
     *)
         # If we cannot track down a specific hostname, try to style based on operating system
@@ -80,4 +95,5 @@ EOF
     
 }
 
+check-commands
 build-tmux

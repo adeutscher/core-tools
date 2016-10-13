@@ -7,4 +7,4 @@
 # Compile information for test network report.
 # This is a periodic job because a timed-out arping will take much too long (1s per failure)
 
-network_report br9 "$HOSTNAME Test Network"
+network_report br9 "${DISPLAY_HOSTNAME:-$HOSTNAME} Test Network"

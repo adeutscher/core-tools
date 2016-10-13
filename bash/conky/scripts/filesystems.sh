@@ -76,8 +76,21 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
     fs_data="$(sed 's/\\236/ /g' <<< "$raw_fs_data")"
 
     # FS Stored in /proc/1/mountinfo
-    fs_bind_location=$(cut -d' ' -f1  <<< "${fs_data}" | sed 's/\\040/ /g' )
     fs=$(cut -d' ' -f2  <<< "${fs_data}" | sed 's/\\040/ /g' )
+
+    if grep -Pqwm1 "$fs" <<< "$CONKY_IGNORE_FS"; then
+        # Skip ignored file system.
+        # Note: Might not play nicely with particular wacky
+        #         mount points with spaces in the path at the moment
+        #       Example: If someone had mount points at "/var/doom"
+        #                  and "/var/doom gloom" but only wanted to
+        #                  ignore "/var/doom"
+        #       Assuming that kind of case to be rediculously
+        #         rare for the moment.
+        continue
+    fi
+
+    fs_bind_location=$(cut -d' ' -f1  <<< "${fs_data}" | sed 's/\\040/ /g' )
     fs_type=$(cut -d' ' -f3 <<< "${fs_data}")
     fs_source=$(cut -d' ' -f4  <<< "${fs_data}" | sed 's/\\040/ /g' )
     fs_options=$(cut -d' ' -f5  <<< "${fs_data}" | sed 's/\\040/ /g' )

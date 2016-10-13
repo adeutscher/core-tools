@@ -11,6 +11,7 @@ spawn "bluetoothctl"
 expect "bluetooth" {
     send "agent KeyboardOnly\n"
     send "default-agent\n"
+    sleep 0.005
     send "disconnect $bssid\n"
     sleep 0.005
     send "exit\n"

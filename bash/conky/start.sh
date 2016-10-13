@@ -15,7 +15,7 @@ usage(){
                 Note: Overrides CONKY_SCREEN value.
     -d          Debug mode (will not run as a backup process or copy to tmpfs)
     -r          Restart by killing existing conky instances
-                Note: This is done just by running "killall conky" for the moment.
+                Note: Done just by running "killall conky" for the moment.
                 Would not play nice with multiple simultaneous configurations.
 EOF
 }
@@ -76,8 +76,8 @@ handle_arguments(){
 
 get_pos(){
 
-    gapX=10
-    gapY=35
+    gapX=${CONKY_PADDING_X:-10}
+    gapY=${CONKY_PADDING_Y:-35}
 
     if [ "$(xrandr --current 2> /dev/null | grep " connected" | wc -l)" -eq 1 ]; then
         posX=$gapX
@@ -94,8 +94,10 @@ get_pos(){
         fi
 
         if [ -z "$primary_monitor_info" ]; then
-            # If no valid output from CONKY_SCREEN attempt, or if xrandr does not clearly say which is the 'primary' monitor, 
-            #     then simply go with the first connected one.
+            # If no valid output from CONKY_SCREEN attempt,
+            #     or if xrandr does not clearly say which is
+            #     the 'primary' monitor, then simply go with
+            #     the first connected one.
             local primary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 " connected" | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
         fi
 
@@ -106,6 +108,7 @@ get_pos(){
         local offY="$(cut -d'+' -f3 <<< "$primary_monitor_info")"
 
         if [ -n "$totalX" ] && [ -n "$totalY" ] && [ -n "$mainX" ] && [ -n "$mainY" ] && [ -n "$offX" ] && [ -n "$offY" ]; then
+            # Uncomment below for debugging
             #echo "$totalX- ($mainX+$offX) + $gapX"
             #echo "$totalY- ($mainY+$offY) + $gapY"
             posX="$(($totalX- ($mainX+$offX) + $gapX))"
