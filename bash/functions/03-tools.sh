@@ -233,7 +233,7 @@ if type -ftptP git 2> /dev/null >&2; then
         fi
 
         # Check to see if we can resolve a domain address address.
-        if __pgrep '^(([0-9]){1,3}\.){3}([0-9]{1,3})$' <<< "$repoDomain"; then
+        if grep -qP '^(([0-9]){1,3}\.){3}([0-9]{1,3})$' <<< "$repoDomain"; then
             warning "Git workspace was checked out from an IP address."
             warning "Continuing under the assumption that it is reachable."
         elif ! qtype host; then
@@ -346,7 +346,7 @@ if type -ftptP svn 2> /dev/null >&2; then
             notice "$(printf "Updating repository ($Colour_FilePath%s$Colour_Off<-${Colour_NetworkAddress}%s/${Colour_Off})" "$repoDirDisplay" "$repoUrlDisplay")"
         fi
 
-        if __pgrep '^file:///' <<< "$repoUrl"; then
+        if grep '^file:///' <<< "$repoUrl"; then
             if [ -d "$repoUrlDisplay" ]; then
                 if [ -r "$repoUrlDisplay" ]; then
                     notice "SVN workspace is checked out from a local path."
@@ -372,7 +372,7 @@ if type -ftptP svn 2> /dev/null >&2; then
             fi
 
             # Check to see if we can resolve a domain address address.
-            if __pgrep '^(([0-9]){1,3}\.){3}([0-9]{1,3})$' <<< "$repoDomain"; then
+            if grep -qP '^(([0-9]){1,3}\.){3}([0-9]{1,3})$' <<< "$repoDomain"; then
                 warning "SVN workspace was checked out from an IP address."
                 warning "Continuing under the assumption that it is reachable."
             elif ! qtype host; then

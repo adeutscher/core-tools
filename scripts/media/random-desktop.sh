@@ -78,7 +78,7 @@ __set_env(){
     # Replace old environment variables.
 
     # If a PID was not provided, get one from the first session that pgrep finds.
-    pid=${1:-$(pgrep '(gnome|mate)-session' | head -n1)}
+    pid=${1:-$(pgrep -U "$(whoami)" '(gnome|mate)-session' | head -n1)}
 
     # mate-session and gnome-session are reliable processes to search for to get our D-Bus session from.
     if [ -n "$pid" ]; then
@@ -95,7 +95,7 @@ __select_random_background(){
 
     # Confirm one more time that we have the variables that we need.
     # If we do not have the variables by this point, skip this block and exit out
-    if pgrep "(mate|gnome)-session" 2> /dev/null >&2; then
+    if pgrep -U "$(whoami)" "(mate|gnome)-session" 2> /dev/null >&2; then
 
         # Preserve old value of DBUS_SESSION_BUS_ADDRESS to re-export after the script is complete.
         if [ -n "$DBUS_SESSION_BUS_ADDRESS" ]; then
@@ -129,7 +129,7 @@ __select_random_background(){
                 printf "Setting new background: %s\n" "$newBg"
             fi
 
-            for __pid in $(pgrep "(mate|gnome)-session"); do
+            for __pid in $(pgrep -U "$(whoami)" "(mate|gnome)-session"); do
 
                 __set_env $__pid
 

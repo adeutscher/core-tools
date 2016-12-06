@@ -44,12 +44,6 @@ if ! __is_unix; then
     alias timeout="timeout -t"
 fi
 
-if __is_mac; then
-    alias __pgrep="grep -qE"
-else
-    alias __pgrep="grep -qP"
-fi
-
 ###########################
 # Function Name Functions #
 ###########################
@@ -125,7 +119,7 @@ qtype(){
 # The purpose of this function is to cut down on redundant clutter to the PATH variable,
 #     but there is still no penalty for having a a non-existant directory.
 __add_to_path(){
-    if !  __pgrep -m1 "(^|:)$1($|:)" <<< "$PATH"; then
+    if !  grep -qP -m1 "(^|:)$1($|:)" <<< "$PATH"; then
         PATH=$PATH:$1
         return 0
     fi
