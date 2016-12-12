@@ -236,7 +236,7 @@ cidr-high-dec(){
 
   if ! grep -qP "^\d{1,}$" <<< "$netmask"; then
     # Netmask was not in CIDR format.
-    local netmask=$(printf %.$2f $(bc -l <<< "l(4294967040-$(ip2dec 255.0.0.0))/l(2)"))
+    local netmask=$(printf %.$2f $(bc -l <<< "32-l(4294967295-$(ip2dec "$netmask"))/l(2)"))
   fi
 
   # Subtract 2 for network id and broadcast addresss

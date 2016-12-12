@@ -54,6 +54,16 @@ join(){
        exit 4
     fi
 
+    # Evaluate password length in common area.
+    if [ -n "$password" ]; then
+        # Passphrase must be 8..63 characters
+        password_length="$(($(wc -c <<< "$password")-1))"
+        if [ "$password_length" -lt 8 ] || [ "$password_length" -gt 63 ]; then
+            error "Passphrase must be 8..63 characters" >&2
+            exit 5
+        fi
+    fi
+
     # Naming the temporary configuration file in part off of the interface to allow us to
     #  possibly review configurations for multiple simultaneous instances of wpa-supplicant.
     wpa_config="/tmp/wpa-supplicant-$interface-temp.conf"
@@ -64,30 +74,35 @@ join(){
     # Track exit codes while building our configuration file. If anything fails, exit out.
     result=0
     
-    if [ -z "$password" ]; then
-        # Open network
-        printf 'network={\nssid="%s"\nkey_mgmt=NONE\n}\n' "$ssid" > "$wpa_config"
-        result=$(($? + $result))
+    # Note: wpa_supplicant is confirmed to be case-insensitive.
+    if grep -iPq '^([a-f0-9]{2}[:|-]){5}[a-f0-9]{2}$' <<< "$ssid"; then
+        notice "Our \"SSID\" is actually in the format of a MAC address. Assuming that a specific BSSID was actually requested."
+        prefix="B"
+        if [ -z "$password" ]; then
+            printf 'network={\nbssid=%s\nkey_mgmt=NONE\n}\n' "$ssid" > "$wpa_config"
+        else
+            # Secure network. Manually enter,
+            #   as wpa_password is made for defining networks by SSID.
+            printf 'network={\nbssid=%s\npsk="%s"\n}\n' "$ssid" "$password" > "$wpa_config"
+        fi # End password check's else-statement.
     else
-        # Secure network, need to use a template
-    
-        # Passphrase must be 8..63 characters
-        password_length="$(($(wc -c <<< "$password")-1))"
-        if [ "$password_length" -lt 8 ] || [ "$password_length" -gt 63 ]; then
-            error "Passphrase must be 8..63 characters" >&2
-            exit 5
-        fi
-    
-        # Set up template file
-        
-        wpa_passphrase "$ssid" <<< "$password" > "$wpa_config"
-        result=$(($? + $result))
-    fi # End password check's else-statement.
+        # SSID given
+        if [ -z "$password" ]; then
+            # Open network
+            printf 'network={\nssid="%s"\nkey_mgmt=NONE\n}\n' "$ssid" > "$wpa_config"
+            result=$(($? + $result))
+        else
+            # Secure network, need to use a template
+            wpa_passphrase "$ssid" <<< "$password" > "$wpa_config"
+            result=$(($? + $result))
+        fi # End password check's else-statement.
+    fi # End BSSID/SSID check.
 
     echo "ctrl_interface=/var/run/wpa_supplicant_$interface" >> "$wpa_config"
     result=$(($? + $result))
     echo "ctrl_interface_group=wheel" >> "$wpa_config"
     result=$(($? + $result))
+
 
     if [ "$result" -gt 0 ]; then
         # Cut out if there was an error making our template file.
@@ -96,12 +111,6 @@ join(){
         exit 3
     fi
 
-    # Note: wpa_supplicant is confirmed to be case-insensitive.
-    if grep -iPq '^([a-f0-9]{2}[:|-]){5}[a-f0-9]{2}$' <<< "$ssid"; then
-        notice "Our \"SSID\" is actually in the format of a MAC address. Assuming that a specific BSSID was actually requested."
-        sed -i "s/ssid=\"$ssid\"/bssid=$ssid/g" "$wpa_config"
-        prefix="B"
-    fi
 
     # Print type-specific messages after successfully making the template file.
     if [ -z "$password" ]; then
