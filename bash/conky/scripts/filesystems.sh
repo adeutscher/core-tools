@@ -9,6 +9,7 @@ if (( "$CONKY_DISABLE_FILES" )) || [ ! -r "/proc/1/mountinfo" ]; then
 fi
 
 . functions/common 2> /dev/null
+. functions/network-addresses 2> /dev/null
 
 #############
 # Inventory #
@@ -151,7 +152,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         # TODO: Find a way to recycle the original idea of using a per-mount flag, but this time to mark a "near-ish" server that needs to go through a gateway BUT has a reliably low latency that showing the usage bar wouldn't be the end of the world for performance.
         # TODO: Apply this new far-away approach to NFS as well. Need to check if the fs option is different.
         if [[ "${fs_type}" =~ (cifs|nfs\d{1,}) ]]; then
-            if [ -z "$localNetworks" ]; then
+            if (( ! ${CONKY_ALL_NFS_FAR-0} )) && [ -z "$localNetworks" ]; then
                 # Only get a list of networks if we need to (i.e. if a CIFS system is mounted)
                 # This avoids calling twice if we have multiple CIFS shares mounted.
 
@@ -162,17 +163,29 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
                 # Since openconnect does this, we will also limit local networks to anything without a tun_ (VPN interface)
                 #     or tap_ adapter (alternate VPN adapter. This was going to be an acceptable gap, but we may as well filter it if we're already here)
                 # The only gap this would leave would be a super-duper low latency VPN that I wanted to still get usage information for. So a rediculously tiny gap.
-                localNetworks="$(route -n | awk '{ if($2 == "0.0.0.0" && $8 !~ /^t(un|ap)/ ){ print $1 } }' | grep -e "^[1-9]" | cut -d. -f-3)"
+                for network in $(route -n | awk '{ if($2 == "0.0.0.0" && $8 !~ /^t(un|ap)/ ){ print $1"/"$3 } }'); do
+                    # Convert to numerical values just the once as well.
+                    localNetworks="$localNetworks\n$(cidr-low-dec "$network"),$(cidr-high-dec "$network")"
+                done
             fi
 
-            # Get share network (with escaped "." characters)
-            # Assumes /24 networks for the moment
-            shareNetwork=$(grep -o "addr=[^,]*" <<< "${fs_options}" | cut -d= -f2 | cut -d. -f-3 | sed "s/\./\./g")
+            # Assume remote IP until proven otherwise.
+            extra_text=" (far)"
+            print_usage=0
 
-            if ! grep -qm1 "^$shareNetwork$" <<< "$localNetworks"; then
-                extra_text=" (far)"
-                print_usage=0
-            fi    
+            if (( ${CONKY_ALL_NFS_FAR-0} )); then
+                # Skip these checks entirely if CONKY_ALL_NFS_FAR is set
+                # Intentionally skipping printing "(far)" text.
+                unset extra_text
+            else
+                # Get share IP address
+                shareAddress=$(ip2dec "$(grep -o "addr=[^,]*" <<< "${fs_options}" | cut -d= -f2)")
+
+                if (( $(awk -F, '{if('"$shareAddress"' >= $1 && '"$shareAddress"' <= $2){print "1"; exit(0)}} DONE { print "0" }' <<< "$(printf "$localNetworks")") )); then
+                    unset extra_text
+                    print_usage=1
+                fi
+            fi
         elif [[ "${fs_type}" =~ ^iso9660$ ]]; then  
             print_usage=0
         fi

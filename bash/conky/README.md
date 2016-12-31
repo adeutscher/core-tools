@@ -52,6 +52,8 @@ Conky uses the following environment variables:
   * `CONKY_IGNORE_FS` should be a space-delimited list.
   * Example content to ignore the file systems mounted to `/mnt` and `/srv`:
       `export CONKY_IGNORE_FS="/mnt /srv"`
+* Set `CONKY_ALL_NFS_FAR` to **1** to treat **all** NFS/CIFS mounts as remote by default
+    (i.e. do not print usage info).
 * Set `CONKY_NETWORK_INDEX` and `CONKY_NETWORK_CACHE` to set where
     `conky` for a CSV to use for resolving MAC addresses to
     user-friendly labels (see below for notes on using labels).

@@ -165,11 +165,19 @@ if qtype hostapd && [ -x "$toolsDir/scripts/networking/access-point.sh" ]; then
    # Really should get into the habit of using just "access-point" at some point, though...
    alias ap-host="$toolsDir/scripts/networking/access-point.sh"
 fi
+
+#######################
+# General Wake-On-LAN #
+#######################
+
 # Wake on LAN command is named differently on Debian-based systems.
 # Keeping the form of any aliases consistent across distributions.
 if qtype wakeonlan && ! qtype wol; then
     alias wol=wakeonlan
 fi
+
+# Use custom python script if you need to send from arbitrary interfaces.
+alias wol-manual="$toolsDir/scripts/networking/wol-manual.py"
 
 ################
 # IP Addresses #
@@ -236,7 +244,7 @@ cidr-high-dec(){
 
   if ! grep -qP "^\d{1,}$" <<< "$netmask"; then
     # Netmask was not in CIDR format.
-    local netmask=$(printf %.$2f $(bc -l <<< "32-l(4294967295-$(ip2dec "$netmask"))/l(2)"))
+    local netmask=$(printf %.$2f $(awk '{ print 32-log(4294967295-'"$(ip2dec "$netmask")"')/log(2)}' <<< ""))
   fi
 
   # Subtract 2 for network id and broadcast addresss

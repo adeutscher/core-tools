@@ -120,7 +120,7 @@ if qtype bluetoothctl; then
         android-tether(){
 
             if [ -z "$1" ] || [[ ! "$1" =~ ^([a-zA-Z0-9]{2}:){5}([a-zA-Z0-9]{2}) ]]; then
-                error "Usage: ${Colour_Command}android-tether${Colour_Off} bssid"
+                error "$(printf "Usage: ${Colour_Command}android-tether${Colour_Off} bssid")"
                 return 1
             fi
 
@@ -168,7 +168,7 @@ if qtype bluetoothctl; then
         android-tether-disconnect(){
 
             if [ -z "$1" ] || [[ ! "$1" =~ ^([a-zA-Z0-9]{2}:){5}([a-zA-Z0-9]{2}) ]]; then
-                error "Usage: ${Colour_Command}android-tether-disconnect${Colour_Off} bssid"
+                error "$(printf "Usage: ${Colour_Command}android-tether-disconnect${Colour_Off} bssid")"
                 return 1
             fi
 

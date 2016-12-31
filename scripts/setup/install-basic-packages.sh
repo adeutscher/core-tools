@@ -70,19 +70,27 @@ setup(){
         ;;
     "Fedora release 22"*)
         notice "Trying to install repositories for Fedora 22..."
-        sudo dnf install http://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-22.noarch.rpm 
+        sudo dnf install http://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-22.noarch.rpm
         sudo dnf install http://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-22.noarch.rpm
-        
+
         notice "Trying to install packages for Fedora 22..."
         sudo dnf install tmux nmap subversion git openvpn tigervnc vlc conky
         ;;
     "Fedora release 23"*)
         notice "Trying to install repositories for Fedora 23..."
-        sudo dnf install http://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-23.noarch.rpm 
+        sudo dnf install http://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-23.noarch.rpm
         sudo dnf install http://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-23.noarch.rpm
-        
+
         notice "Trying to install packages for Fedora 23..."
-        sudo dnf install tmux nmap subversion git openvpn tigervnc vlc conky
+        sudo dnf install tmux nmap subversion git openvpn tigervnc vlc conky @mate-desktop geany
+        ;;
+    "Fedora release 24"*)
+        notice "Trying to install repositories for Fedora 24..."
+        sudo dnf install http://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-24.noarch.rpm
+        sudo dnf install http://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-24.noarch.rpm
+
+        notice "Trying to install packages for Fedora 24..."
+        sudo dnf install tmux nmap subversion git openvpn tigervnc vlc conky @mate-desktop geany
         ;;
     *)
         error "$(printf "Unsupported OS: ${BOLD}%s${NC}" "$os")"

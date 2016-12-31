@@ -71,7 +71,7 @@ get_imgur_gallery(){
 
         notice "$(printf "Downloading gallery: $Colour_NetworkAddress%s$Colour_Off (%d of %d)" "$imgurLink" "$gallery_index" "$gallery_total")"
 
-        local __links="$(curl "$imgurLink" | grep unloaded\ thumb-title-embed | cut -d'"' -f 10 | sed 's/^\/\//https:\/\//g' | sed 's/s\./\./g' | grep http)"
+        local __links="$(curl "$imgurLink" | grep "_item: " | sed 's/^\s*_item:\s*//g' | python -c 'import sys,json; print " ".join(["https://i.imgur.com/%s%s" % (i["hash"],i["ext"]) for i in json.loads(sys.stdin.readline())["album_images"]["images"]])' 2> /dev/null)"
 
         if [ "$(wc -w <<< "$__links")" -eq 0 ]; then
             error "$(printf "Found no links in ${Colour_NetworkAddress}%s${Colour_Off}" "$imgurLink")"

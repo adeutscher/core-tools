@@ -74,11 +74,13 @@ if qtype ssh; then
       local noWrite=1
     fi
 
+    local totalModuleCount=0
     local updatedConfigCount=0
     local totalConfigCount=0
 
     for toolDir in $(sort -t ':' -k 1n,2 <<< "$toolDirVariables" | cut -d':' -f2-); do
       
+      local totalModuleCount=$(($totalModuleCount+1))
       local moduleSSHDir="$(eval echo \${$toolDir})/ssh"
       local moduleSSHConfig="$moduleSSHDir/config"
       # Replace $HOME with ~ for display purposes
@@ -204,7 +206,7 @@ if qtype ssh; then
 
     if [ "$updatedConfigCount" -eq 0 ]; then
 
-      notice "$(printf "No updates to write to ${Colour_FilePath}%s${Colour_Off} config (${Colour_Bold}%d${Colour_Off} modules with SSH configurations checked)." "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "$updatedConfigCount")"
+      notice "$(printf "No updates to write to ${Colour_FilePath}%s${Colour_Off} config (${Colour_Bold}%d${Colour_Off}/${Colour_Bold}%d${Colour_Off} modules had SSH configurations to be checked)." "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "$totalConfigCount" "$totalModuleCount")"
 
     elif [ -n "$noWrite" ]; then
       # No-write message

@@ -49,7 +49,7 @@ alias free='free -m -l -t' # show sizes in MB, with verbose information.
 ## Process Management ##
 
 # Print out the time that each process has been running.
-alias ps-time="ps -axwo pid,etime,cmd"
+alias ps-time="ps axwo pid,etime,cmd"
 
 get-env-var(){
     # Retrieve a specific environment variable from a process via procfs

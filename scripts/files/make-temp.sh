@@ -15,6 +15,7 @@ readonly RMDIR=/bin/rmdir
 readonly SED=/bin/sed
 readonly TAIL=/usr/bin/tail
 readonly TOUCH=/bin/touch
+readonly TR=/usr/bin/tr
 
 # Common message functions.
 
@@ -157,7 +158,7 @@ function make_temp {
 
     cd "$WORKINGDIRECTORY"
 
-    CURRENT_DATE=$($DATE +"%F")
+    CURRENT_DATE=$($DATE +"%F-%A" | $TR '[:upper:]' '[:lower:]')
 
     DAILYTEMPDIR="$TEMPDIR/$CURRENT_DATE"
 
@@ -191,7 +192,7 @@ function make_temp {
         #    (as opposed to a re-do on the same day.
         
         # Get the most recent temp folder that is NOT the current daily temp directory.
-        local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
+        local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}(\-[a-z]{3,}day)?' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
         # If static resources exist, carry them forward from the last directory to today.
         if [ -d "$TEMPDIR/$lastDir/static/" ]; then
         
@@ -225,13 +226,13 @@ function make_temp {
 
     # Step 3: Manage the link to our most recent temporary directory (other than the current day's directory).
     if [ -d "$TEMPDIR" ]; then
-        local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
+        local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}(\-[a-z]{3,}day)?' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
 
         # Make sure that the last dir doesn't only contain empty directories.
         # Very much doubt that I'll regret getting rid of a temp directory for its name alone.
         # Keep re-assigning lastDir until we find one with content.
         while [ -n "$lastDir" ] && $RMDIR "$TEMPDIR/$lastDir/"* 2> /dev/null && $RMDIR "$TEMPDIR/$lastDir" 2> /dev/null; do
-            local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
+            local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}(\-[a-z]{3,}day)?' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
         done
 
         # Make sure that we aren't removing and re-adding the very same link.
