@@ -24,15 +24,15 @@ Switches:
 | `-d`        | Debug mode. Runs `conky` in the foreground instead of the normal behavior of working in the background.                               |
 | `-r`        | Restart. Runs `killall` to kill ***all*** `conky` instances before starting this display. Beware if running a separate configuration. |
 
-### Variables
+### Variables (Primary Display)
 
-Conky uses the following environment variables:
+The main `conky` display uses the following environment variables:
 
 * Export a different value to `DISPLAY_HOSTNAME` to change the
     displayed hostname. Useful for if you need to temporarily
     obfuscate your hostname for a screenshot.
 * The `$CONKY_SCREEN` environment variable controls which screen that
-    the display will appear in the bottom-right corner of.
+    the primary `conky` display will appear in the bottom-right corner of.
   * Use `xrandr` to list your connected displays. Example values:
     * DVI-0
     * DVI-1
@@ -40,8 +40,8 @@ Conky uses the following environment variables:
   * If no value is given in either the `CONKY_SCREEN` variable or the
       `-s` switch, then the default screen is your primary display.
 * The `CONKY_PADDING_X` (default **10**) and `CONKY_PADDING_Y`
-    (default **35**) variables determine the offset of your conky
-    display from your chosen screen.
+    (default **35**) variables determine the offset of your primary
+    conky display from your chosen screen.
   * The defaults were chosen to give a sliver of padding from the
       right-hand side of a screen and a MATE panel.
 * Set `CONKY_IGNORE_INTERFACES` to tell `conky` which network interface(s) to ignore.
@@ -71,6 +71,39 @@ Conky uses the following environment variables:
   * Set `CONKY_DISABLE_BLUETOOTH` to **1** to disable the display of
       connected Bluetooth devices.
   * Set `CONKY_DISABLE_VMS` to **1** to skip the VM display in `scripts/vms.sh`
+
+### Tasks Display
+
+This `conky` setup also has an optional tasks display.
+Unlike the primary displays options, this feature is disabled by default.
+
+* Set `$CONKY_ENABLE_TASKS` to **1** to enable the secondary display.
+    Off by defaut. See the ***Calendar*** section for more information
+    on the secondary display.
+* The `$CONKY_SECONDARY_SCREEN` environment variable controls which screen that
+    the `conky` tasks display will appear in the bottom-right corner of.
+  * Use `xrandr` to list your connected displays. Example values:
+    * DVI-0
+    * DVI-1
+    * HDMI-0
+* The `CONKY_SECONDARY_PADDING_X` (default **10**) and `CONKY_SECONDARY_PADDING_Y`
+    (default **35**) variables determine the offset of your secondary
+    `conky` display from your chosen screen.
+  * The defaults were chosen to give a sliver of padding from the
+      left-hand side of a screen and a MATE panel.
+* Set `CONKY_TASKS_FILE` to set the path of the CSV file that the tasks display
+    will read from. See below for format details. The default path is `$HOME/tools/tasks.csv`.
+
+Example format of the CSV file specified by `CONKY_TASKS_FILE`:
+
+    YYYY-MM-DD,HH:MM,LABEL
+
+Example content of the CSV file specified by `CONKY_TASKS_FILE`:
+
+    2017-01-02,16:00,Afternoon appointment
+
+Populating this file is the responsibility of the user,
+    whether manually or through a separate script.
 
 ## `virsh`
 

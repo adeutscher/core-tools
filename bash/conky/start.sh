@@ -20,6 +20,27 @@ usage(){
 EOF
 }
 
+# Set up per-system conkyrc settings.
+do_dynamic_setup(){
+    # * Setting own_window_type to 'desktop' on Fedora 23 (conky 1.9) makes the conky
+    #     display vanish when the desktop is clicked on. Fixed by
+    #     setting to 'override'
+    # * Setting own_window_type to 'override' on Fedora 25 (conky 1.10) makes the
+    #     conky display crash and burn. Fixed by setting to 'desktop', with
+    #     the above clicking issues not showing up.
+    # To solve BOTH of the above problems, making a dynamic conkyrc file.
+    # File contents are based on conky version, at least for the short-term.
+
+    # TODO: Get a better idea about why these problems occur.
+    local window_type="override"
+    if conky --version | head -n1 | grep -qP "^Conky 1\.1\d\."; then
+        # Assuming override crashes, and desktop has no problem
+        local window_type="desktop"
+    fi
+
+    printf "own_window_type %s\n" "$window_type" > $dir/conkyrc.dynamic
+}
+
 handle_arguments(){
 
     # Default values
@@ -74,7 +95,7 @@ handle_arguments(){
     fi
 }
 
-get_pos(){
+get_primary_pos(){
 
     gapX=${CONKY_PADDING_X:-10}
     gapY=${CONKY_PADDING_Y:-35}
@@ -101,10 +122,20 @@ get_pos(){
             local primary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 " connected" | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
         fi
 
+        # Example content of primary_monitor_info:
+        #   1600x900+0+124
+        #   * 1600x900 display
+        #   * Display's left edge is offset 0px from the left of the overall X display.
+        #   * Display's top edge is offset 124px from the top of the overall X display.
+
+        # Width of Display
         local mainX="$(cut -d'x' -f1 <<< "$primary_monitor_info")"
+        # Height of Display
         local mainY="$(cut -d'x' -f2 <<< "$primary_monitor_info" | cut -d'+' -f1)"
 
+        # Left edge's offset from left of overall X display.
         local offX="$(cut -d'+' -f2 <<< "$primary_monitor_info")"
+        # Top edge's offset from top of overall X display.
         local offY="$(cut -d'+' -f3 <<< "$primary_monitor_info")"
 
         if [ -n "$totalX" ] && [ -n "$totalY" ] && [ -n "$mainX" ] && [ -n "$mainY" ] && [ -n "$offX" ] && [ -n "$offY" ]; then
@@ -117,18 +148,90 @@ get_pos(){
             return 1
         fi
     fi
-
 }
 
-handle_arguments $@
+get_secondary_pos(){
 
-if ! get_pos; then
-    message="Failed to get X dimensions! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)"
+    secondaryGapX=${CONKY_SECONDARY_PADDING_X:-10}
+    secondaryGapY=${CONKY_SECONDARY_PADDING_Y:-35}
+
+    if [ "$(xrandr --current 2> /dev/null | grep " connected" | wc -l)" -eq 1 ]; then
+        secondaryPosX=$secondaryGapX
+        secondaryPosY=$secondaryGapY
+    else
+        local totalX="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f1)"
+        local totalY="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f2)"
+
+        # If we have specified a CONKY_SECONDARY_SCREEN variable in our BASH config and such a screen is present, use that one to calculate our offsets.
+        if [ -n "$CONKY_SECONDARY_SCREEN" ]; then
+            local secondary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "^$CONKY_SECONDARY_SCREEN " | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
+        else
+            local secondary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "primary" | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
+        fi
+
+        if [ -z "$secondary_monitor_info" ]; then
+            # If no valid output from CONKY_SECONDARY_SCREEN attempt,
+            #     or if xrandr does not clearly say which is
+            #     the 'primary' monitor, then simply go with
+            #     the first connected one.
+            local secondary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 " connected" | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
+        fi
+
+        # Example content of secondary_monitor_info:
+        #   1600x900+0+124
+        #   * 1600x900 display
+        #   * Display's left edge is offset 0px from the left of the overall X display.
+        #   * Display's top edge is offset 124px from the top of the overall X display.
+
+        # Width of Display
+        local mainX="$(cut -d'x' -f1 <<< "$secondary_monitor_info")"
+        # Height of Display
+        local mainY="$(cut -d'x' -f2 <<< "$secondary_monitor_info" | cut -d'+' -f1)"
+        # Left edge's offset from left of overall X display.
+        local offX="$(cut -d'+' -f2 <<< "$secondary_monitor_info")"
+        # Top edge's offset from top of overall X display.
+        local offY="$(cut -d'+' -f3 <<< "$secondary_monitor_info")"
+
+        if [ -n "$totalX" ] && [ -n "$totalY" ] && [ -n "$mainX" ] && [ -n "$mainY" ] && [ -n "$offX" ] && [ -n "$offY" ]; then
+            # Uncomment below for debugging
+            #echo "$(($offX + $gapX))"
+            #echo "$totalY- ($mainY+$offY) + $gapY"
+            secondaryPosX="$(($offX + $secondaryGapX))"
+            secondaryPosY="$(($totalY- ($mainY+$offY) + $secondaryGapY))"
+        else
+            return 1
+        fi
+    fi
+}
+
+# For killing multiple sessions in debug-mode.
+kill_sessions(){
+  printf "Clearing sessions\n"
+  #killall conky 2> /dev/null
+}
+
+# Exit with a failure message to stdout and an attempt to a desktop environment.
+setup_failure(){
+    message="$1"
 
     printf "%s\n" "$message"
     timeout 0.5 notify-send --icon=important "$message" 2> /dev/null >&2
 
     exit 1
+}
+
+handle_arguments $@
+
+if ! get_primary_pos; then
+    setup_failure "Failed to get X dimensions for primary display! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)"
+fi
+
+if (( ${CONKY_ENABLE_TASKS:-0} )) && ! get_secondary_pos; then
+    setup_failure "Failed to get X dimensions for secondary display! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)"
+fi
+
+if ! do_dynamic_setup; then
+    setup_failure "Unexpected error with dynamicly setting own_window_type"
 fi
 
 # Clear cache.
@@ -212,14 +315,21 @@ if (( "$DEBUG" )); then
     # If we're in debug mode, run conky immediately in the foreground.
 
     # Print off the conky command being used for good measure.
-    printf "\nconky -c conkyrc -a bottom_right -x $posX -y $posY\n\n"
+    printf "\nconky -c conkyrc.primary -a bottom_right -x $posX -y $posY\n\n"
 
-    # Start conky
-    conky -c conkyrc -a bottom_right -x $posX -y $posY
+    # Start conky session(s)
+    if (( ${CONKY_ENABLE_TASKS:-0} )); then
+      printf "\nconky -c conkyrc.secondary -a bottom_left -x $secondaryPosX -y $secondaryPosY\n\n"
+      conky -c conkyrc.secondary -a bottom_left -x $secondaryPosX -y $secondaryPosY &
+    fi
+    conky -c conkyrc.primary -a bottom_right -x $posX -y $posY
 else
     # Standard mode
     # Sleep and start
-    sleep $countdown && conky -c conkyrc -a bottom_right -x $posX -y $posY &
+    sleep $countdown && conky -c conkyrc.primary -a bottom_right -x $posX -y $posY &
+    if (( ${CONKY_ENABLE_TASKS:-0} )); then
+        sleep $countdown && conky -c conkyrc.secondary -a bottom_left -x $secondaryPosX -y $secondaryPosY &
+    fi
 fi
 
 cd "$OLDPWD"

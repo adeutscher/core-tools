@@ -199,3 +199,22 @@ wait-for-pid(){
     sleep 1
   done
 }
+
+#########
+# Silly #
+#########
+
+# Surviving silly aliases that were not converted to scripts.
+alias ffs='sudo'
+
+# Only load on Ubuntu/Debian
+if qtype apt-get && [ -f "/etc/debian_version" ]; then
+  alias batman='sudo apt-get update'
+  alias robin='sudo apt-get upgrade'
+fi
+
+# Silly telnet movies.
+if qtype telnet; then
+  alias telnet-nyan="telnet nyancat.dakko.us; reset"
+  alias telnet-sw="telnet towel.blinkenlights.nl; reset"
+fi

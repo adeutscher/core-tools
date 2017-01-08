@@ -34,8 +34,8 @@ warning(){
 # Script functions
 
 check_commands(){
-    if ! type curl wget 2> /dev/null >&2; then
-        error "$(printf "$Colour_Command%s$Colour_Off and $Colour_Command%s$Colour_Off are required for this script." "curl" "wget")"
+    if ! type curl 2> /dev/null >&2; then
+        error "$(printf "$Colour_Command%s$Colour_Off is required for this script." "curl")"
         exit 1
     fi
 }
@@ -71,7 +71,7 @@ get_imgur_gallery(){
 
         notice "$(printf "Downloading gallery: $Colour_NetworkAddress%s$Colour_Off (%d of %d)" "$imgurLink" "$gallery_index" "$gallery_total")"
 
-        local __links="$(curl "$imgurLink" | grep "_item: " | sed 's/^\s*_item:\s*//g' | python -c 'import sys,json; print " ".join(["https://i.imgur.com/%s%s" % (i["hash"],i["ext"]) for i in json.loads(sys.stdin.readline())["album_images"]["images"]])' 2> /dev/null)"
+        local __links="$(curl -s "$imgurLink" | grep "_item: " | sed 's/^\s*_item:\s*//g' | python -c 'import sys,json; print " ".join(["https://i.imgur.com/%s%s" % (i["hash"],i["ext"]) for i in json.loads(sys.stdin.readline())["album_images"]["images"]])' 2> /dev/null)"
 
         if [ "$(wc -w <<< "$__links")" -eq 0 ]; then
             error "$(printf "Found no links in ${Colour_NetworkAddress}%s${Colour_Off}" "$imgurLink")"
@@ -82,14 +82,16 @@ get_imgur_gallery(){
         for __link in $__links; do
             local link_index=$((${link_index:-0}+1))
             local iTotal=$(($iTotal + 1))
+            # If a file is to be downloaded, then it will be written to this path.
+            local targetFile="$galleryDir/$(printf "%04d-%s" "$link_index" "${__link##*/}")"
             if [ "$(find "$galleryDir" -name "*${__link##*/}" | wc -l)" -gt 0 ]; then
                 # Avoiding duplicates, and also cover the poster adding an image in front of the current image between postings (e.g. 001-A.png becoming 002-A.png).
-                # Will also cover regular duplicates without even having to bother wget (e.g. 001-A.png in an unchanged gallery).
+                # Will also cover regular duplicates without even having to bother trying (e.g. 001-A.png in an unchanged gallery).
                 # Trusting that imgur will not let a user upload a different image and give it the same unique name (TODO: Confirm this)
                 success "$(printf "Image was already downloaded: $Colour_NetworkAddress%s$Colour_Off (%d of %d)" "$__link" "$link_index" "$link_total")"
                 # A duplicate still counts as a success.
                 local iSuccessful=$(($iSuccessful + 1))
-            elif wget -nc -O "$galleryDir/$(printf "%04d-%s" "$link_index" "${__link##*/}")" "$__link"; then
+            elif curl -s "$__link" > "$targetFile"; then
                 # Note : Non-clobber exits are counted as successes
                 success "$(printf "Successfully downloaded image: $Colour_NetworkAddress%s$Colour_Off (%d of %d)" "$__link" "$link_index" "$link_total")"
                 local iSuccessful=$(($iSuccessful + 1))
