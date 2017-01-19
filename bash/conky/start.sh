@@ -20,6 +20,12 @@ usage(){
 EOF
 }
 
+# Variables for configuration files
+CONKYRC_PRIMARY_TEMPLATE=conkyrc.primary
+CONKYRC_PRIMARY=".$CONKYRC_PRIMARY_TEMPLATE"
+CONKYRC_SECONDARY_TEMPLATE=conkyrc.secondary
+CONKYRC_SECONDARY=".$CONKYRC_SECONDARY_TEMPLATE"
+
 # Set up per-system conkyrc settings.
 do_dynamic_setup(){
     # * Setting own_window_type to 'desktop' on Fedora 23 (conky 1.9) makes the conky
@@ -33,12 +39,21 @@ do_dynamic_setup(){
 
     # TODO: Get a better idea about why these problems occur.
     local window_type="override"
-    if conky --version | head -n1 | grep -qP "^Conky 1\.1\d\."; then
+    if conky --version | head -n1 | grep -qiP "^Conky 1\.1\d\."; then
         # Assuming override crashes, and desktop has no problem
         local window_type="desktop"
     fi
 
-    printf "own_window_type %s\n" "$window_type" > $dir/conkyrc.dynamic
+    cd "$configDir" || return 1
+
+    cp -f "$CONKYRC_PRIMARY_TEMPLATE" "$CONKYRC_PRIMARY"
+
+    sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "$CONKYRC_PRIMARY"
+
+    if (( ${CONKY_ENABLE_TASKS:-0} )); then
+        cp -f "$CONKYRC_SECONDARY_TEMPLATE" "$CONKYRC_SECONDARY"
+        sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "$CONKYRC_SECONDARY"
+    fi
 }
 
 handle_arguments(){
@@ -230,10 +245,6 @@ if (( ${CONKY_ENABLE_TASKS:-0} )) && ! get_secondary_pos; then
     setup_failure "Failed to get X dimensions for secondary display! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)"
 fi
 
-if ! do_dynamic_setup; then
-    setup_failure "Unexpected error with dynamicly setting own_window_type"
-fi
-
 # Clear cache.
 rm -rf "$tempRoot/cache"
 # Re-make cache, plus reports directory
@@ -254,6 +265,11 @@ else
     printf "Starting conky from regular location.\n"
     cd "$dir"
     location=tools
+fi
+
+# Need to run dynamic setup after determining our run directory
+if ! do_dynamic_setup; then
+    setup_failure "Unexpected error with dynamicly setting own_window_type"
 fi
 
 # I have observed Conky not showing when run as a
@@ -315,20 +331,20 @@ if (( "$DEBUG" )); then
     # If we're in debug mode, run conky immediately in the foreground.
 
     # Print off the conky command being used for good measure.
-    printf "\nconky -c conkyrc.primary -a bottom_right -x $posX -y $posY\n\n"
+    printf "\nconky -c '$CONKYRC_PRIMARY' -a bottom_right -x $posX -y $posY\n\n"
 
     # Start conky session(s)
     if (( ${CONKY_ENABLE_TASKS:-0} )); then
-      printf "\nconky -c conkyrc.secondary -a bottom_left -x $secondaryPosX -y $secondaryPosY\n\n"
-      conky -c conkyrc.secondary -a bottom_left -x $secondaryPosX -y $secondaryPosY &
+      printf "\nconky -c '$CONKYRC_SECONDARY' -a bottom_left -x $secondaryPosX -y $secondaryPosY\n\n"
+      conky -c "$CONKYRC_SECONDARY" -a bottom_left -x $secondaryPosX -y $secondaryPosY &
     fi
-    conky -c conkyrc.primary -a bottom_right -x $posX -y $posY
+    conky -c "$CONKYRC_PRIMARY" -a bottom_right -x $posX -y $posY
 else
     # Standard mode
     # Sleep and start
-    sleep $countdown && conky -c conkyrc.primary -a bottom_right -x $posX -y $posY &
+    sleep $countdown && conky -c "$CONKYRC_PRIMARY" -a bottom_right -x $posX -y $posY &
     if (( ${CONKY_ENABLE_TASKS:-0} )); then
-        sleep $countdown && conky -c conkyrc.secondary -a bottom_left -x $secondaryPosX -y $secondaryPosY &
+        sleep $countdown && conky -c "$CONKYRC_SECONDARY" -a bottom_left -x $secondaryPosX -y $secondaryPosY &
     fi
 fi
 

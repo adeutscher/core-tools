@@ -65,7 +65,7 @@ uppercase no
 use_spacer none
 show_graph_scale no
 show_graph_range no
-text_buffer_size 2048
+text_buffer_size 4096
 
 # Draw rounded backgrounds with lua.
 
@@ -76,8 +76,8 @@ lua_draw_hook_pre draw_bg
 own_window_transparent yes
 #own_window_colour 1A334C
 
-# Load dynamic settings
-include conkyrc.dynamic
+# Dynamic values
+own_window_type OWN_WINDOW_TYPE
 
 # Colours used by /u/bikes-n-math
 color1 3366FF # Frame colours: light-blue-ish

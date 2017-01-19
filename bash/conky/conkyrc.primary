@@ -72,8 +72,8 @@ lua_draw_hook_pre draw_bg
 own_window_transparent yes
 #own_window_colour 1A334C
 
-# Load dynamic settings
-#include conkyrc.dynamic
+# Dynamic values
+own_window_type OWN_WINDOW_TYPE
 
 TEXT
 ${execp bash scripts/system.sh}
