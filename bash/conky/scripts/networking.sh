@@ -15,7 +15,7 @@ wireless_interfaces=$(find -L /sys/class/net/ -maxdepth 2 -name wireless 2> /dev
 # Bridges
 bridges=$(find -L /sys/class/net/ -maxdepth 2 -name bridge 2> /dev/null | cut -d'/' -f5 | tr '\\\n' ' ')
 # Bridge Members (to do this for a specific bridge, just add an argument to brctl. copy as needed)
-bridge_members=$(brctl show | sed -e '/bridge name/d' -e 's/\t/\ /g' | awk '{ if(NF > 1){ $1="";$2="";$3="" } print $0 }' | tr '\n' ' ')
+bridge_members=$(brctl show 2> /dev/null | sed -e '/bridge name/d' -e 's/\t/\ /g' | awk '{ if(NF > 1){ $1="";$2="";$3="" } print $0 }' | tr '\n' ' ')
 
 # List of interfaces to exclude from listing.
 exclude_list="lo $CONKY_IGNORE_INTERFACES"
@@ -105,7 +105,7 @@ for iface in ${interfaces}; do
         # Do not list information for down interfaces, even if they have addresses
         # Bridges are the exception to this, since we still want to print members.
         continue
-    elif ! ip a s ${iface} 2> /dev/null | grep -qwm1 "inet" && ! [[ "${bridges}" =~ (^|\ )"${iface}"($|\ ) ]] && ! ( [[ "${wireless_interfaces}" =~ (^|\ )"${iface}"($|\ ) ]] && iwconfig ${iface} 2>/dev/null | grep -q "Access Point: [A-F0-9]" ); then
+    elif [ -z "$address" ] && ! [[ "${bridges}" =~ (^|\ )"${iface}"($|\ ) ]] && ! ( [[ "${wireless_interfaces}" =~ (^|\ )"${iface}"($|\ ) ]] && iwconfig ${iface} 2>/dev/null | grep -q "Access Point: [A-F0-9]" ); then
         # Do not print other UP interfaces without addresses.
         # Printing in a separate list.
         # Bridges are the exception to this, since we still want to print members.
@@ -115,7 +115,10 @@ for iface in ${interfaces}; do
         continue
     fi
 
-    # To confirm, if we are still in this loop we are dealing with an UP interface with an IP address
+    # To confirm, if we are still in this loop we are dealing with one of two-three things:
+    # * An UP interface with an IP address
+    # * A DOWN interface that is a bridge
+    # * A DOWN interface that is an associated wireless interface
     if [ -z "$address" ] || [[ "$address" =~ \/ ]]; then
         printf " $(colour_interface ${iface}): $(colour_network_address "${address:-No Address}")"
     else
@@ -164,11 +167,11 @@ for iface in ${interfaces}; do
             printf "$wireless_report\n" | tee "$tempRoot/cache/wlan/$mac.txt"
         fi
 
-        ###################
-        # Bridge Handling #
-        ###################
+    ###################
+    # Bridge Handling #
+    ###################
         
-        # If we're looking at a bridge interface, print member information
+    # If we're looking at a bridge interface, print member information
     elif [ -d "/sys/class/net/${iface}/bridge" ]; then
         members=$(brctl show ${iface} | sed -e '/bridge name/d' -e 's/\t/\ /g' | tr -d \\n | awk '{ $1="";$2="";$3="";print $0 }')
         

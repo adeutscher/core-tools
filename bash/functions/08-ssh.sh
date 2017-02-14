@@ -18,7 +18,7 @@ if qtype ssh; then
   fi
 
   # Standard switches for SSH via alias:
-  alias ssh6='ssh -2 -6'
+  alias ssh6='\ssh -2 -6'
   # SSH with X forwarding.
   if [ -n "$DISPLAY" ]; then
       #   Should only happen if the current machine
@@ -93,7 +93,7 @@ if qtype ssh; then
         # Get a checksum from all loaded files.
         # README files in config.d/ are actually skipped by this function,
         #   but skipping them AND not putting in a required file extension would be a pain.
-        local checksum=$(md5sum "$moduleSSHConfig" "$moduleSSHDir/config.d/"* "$moduleSSHDir/hosts/config-$HOSTNAME" 2> /dev/null | md5sum | cut -d' ' -f1)
+        local checksum=$(md5sum "$moduleSSHConfig" "$moduleSSHDir/config.d/"* "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null | md5sum | cut -d' ' -f1)
 
         if [ -f "$sshConfig" ]; then
           # SSH Configuration exist, probe for existing versions.
@@ -140,9 +140,14 @@ if qtype ssh; then
           done
 
           # Print a special flag for host-specific config. Helps to reduce confusion.
-          if [ -f "$moduleSSHDir/hosts/config-$HOSTNAME" ]; then
-            printf "###\n# Host-specific config for $HOSTNAME\n###\n\n" >> "$sshConfig"
-            cat "$moduleSSHDir/hosts/config-$HOSTNAME" 2> /dev/null >> "$sshConfig";
+          if [ -f "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" ]; then
+            if [[ "$HOSTNAME" != "${HOSTNAME%-*}" ]]; then
+              # Enumerated hostname
+              printf "###\n# Host-specific config for $HOSTNAME (generated for ${HOSTNAME%-*})\n###\n\n" >> "$sshConfig"
+            else
+              printf "###\n# Host-specific config for $HOSTNAME\n###\n\n" >> "$sshConfig"
+            fi
+            cat "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null >> "$sshConfig";
           fi
           # Write tail.
           printf "\n# $moduleSSHMarker-end \n\n" >> "$sshConfig"
@@ -183,9 +188,14 @@ if qtype ssh; then
           done
 
           # Print a special flag for host-specific config. Helps to reduce confusion.
-          if [ -f "$moduleSSHDir/hosts/config-$HOSTNAME" ]; then
-            printf "###\n# Host-specific config for $HOSTNAME\n###\n\n" >> "$sshConfig.new"
-            cat "$moduleSSHDir/hosts/config-$HOSTNAME" 2> /dev/null >> "$sshConfig.new";
+          if [ -f "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" ]; then
+            if [[ "$HOSTNAME" != "${HOSTNAME%-*}" ]]; then
+              # Enumerated hostname
+              printf "###\n# Host-specific config for $HOSTNAME (generated for ${HOSTNAME%-*})\n###\n\n" >> "$sshConfig.new"
+            else
+              printf "###\n# Host-specific config for $HOSTNAME\n###\n\n" >> "$sshConfig.new"
+            fi
+            cat "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null >> "$sshConfig.new";
           fi
           (printf "\n# $moduleSSHMarker-end \n\n"; tail -n "-$(($configLines-$sectionEnd-1))" "$sshConfig") >> "$sshConfig.new"
           mv "$sshConfig.new" "$sshConfig"

@@ -20,8 +20,8 @@ if [ -d "$toolsDir" ]; then
     fi
 
     # Load additional per-host functions.
-    if [ -f "$toolsDir/bash/functions/hosts/$HOSTNAME.sh" ]; then
-        . "$toolsDir/bash/functions/hosts/$HOSTNAME.sh"
+    if [ -f "$toolsDir/bash/functions/hosts/${HOSTNAME%-*}.sh" ]; then
+        . "$toolsDir/bash/functions/hosts/${HOSTNAME%-*}.sh"
     fi
 
     if [ -d "$toolsDir/.svn" ]; then

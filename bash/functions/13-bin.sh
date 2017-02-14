@@ -14,10 +14,10 @@ if [ -x "$HOME/.local/blender/blender" ]; then
 
 fi
 
-if [ -x "$HOME/.local/DiscordCanary/DiscordCanary" ]; then
-
+if [ -x "$HOME/.local/Discord/Discord" ]; then
+    alias discord="$HOME/.local/Discord/Discord"
+elif [ -x "$HOME/.local/DiscordCanary/DiscordCanary" ]; then
     alias discord="$HOME/.local/DiscordCanary/DiscordCanary"
-
 fi
 
 if [ -d "$HOME/.local/eclipse" ]; then

@@ -50,9 +50,13 @@ I've added a number of bells and whistles my prompt:
      * If the previous command exited successfully with an exit code of *0*, then the symbol will be white.
 * Remote SSH client.
   * The remote address will not be displayed if your terminal session was started within a `tmux`, `screen`, or `vnc` session.
-* SVN version information (Credit: Eric Leblond)
-* Git branch and status information (Credit: http://ezprompt.net/)
-  * If you need a reminder of what the red indicators on the `git` part of the prompt mean, use `git-prompt-reminder`.
+  * Alternately print nothing if `PROMPT_IGNORE_SSH` has a value set to it.
+* Version control information (Set a value to `PROMPT_IGNORE_VC` to disable this)
+  * SVN version information (Credit: [Eric Leblond](https://github.com/regit/subversion-prompt))
+  * Git branch and status information (Credit: http://ezprompt.net/)
+     * If you need a reminder of what the red indicators on the `git` part of the prompt mean, use the `git-prompt-reminder` function.
+  * Version control information will not be printed for NFS/CIFS file systems due to performance concerns.
+  * SVN output will take precedence over Git output.
 * Compression. If the prompt gets to be so large that you begin running out of room, then the prompt will be shortened:
   * Hostname will be shortened to one character.
   * Username will be shortened to one character.

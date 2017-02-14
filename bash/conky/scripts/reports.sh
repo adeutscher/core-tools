@@ -20,8 +20,8 @@ fi
 
 # Run host-specific report. Most likely used by stuff in host-specific.sh
 # This is a single file for the moment. IF it is needed, will move to a directory-based approach like with the common reports.
-if [ -f "${reportRoot}/hosts/$HOSTNAME.sh" ]; then
-  bash "${reportRoot}/hosts/$HOSTNAME.sh" 2> /dev/null >&2 &
+if [ -f "${reportRoot}/hosts/${HOSTNAME%-*}.sh" ]; then
+  bash "${reportRoot}/hosts/${HOSTNAME%-*}.sh" 2> /dev/null >&2 &
 fi
 
 #################

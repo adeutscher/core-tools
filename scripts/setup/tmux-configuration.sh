@@ -77,6 +77,8 @@ build-tmux(){
     
 cat << EOF > $HOME/.tmux.conf
 
+## Theming
+
 set-window-option -g status-bg $bg
 set-window-option -g status-fg $fg
 
@@ -90,6 +92,14 @@ set-window-option -g window-status-attr dim
 set-window-option -g window-status-current-fg ${active_fg:-$bg}
 set-window-option -g window-status-current-bg ${active_bg:-$fg}
 set-window-option -g window-status-current-attr bright
+
+## Hotkeys
+
+# Toggle the window's panes between syncing and non-syncing.
+bind M setw synchronize-panes
+
+# Reload
+bind R source-file ~/.tmux.conf
 
 EOF
     

@@ -12,6 +12,8 @@ if __is_unix; then
     # TODO: Refine to be more an alias for tracking running daemons.
     alias lsock='sudo /usr/sbin/lsof -i -n -P'
 
+    # IPv4 Listing
+
     # Incoming connections.
     connections-in(){
         # Display incoming connections (not including localhost)
@@ -68,4 +70,23 @@ if __is_unix; then
         connections-out-all | grep --colour=never -v '127\.0\.0\.1' | egrep -v '\->(10\.[0-9]{1,3}|172\.(1[6-9]|2[1-90]|3[1-2])|\.192\.168)(\.[0-9]{1,3}){2}'
     }
 
+    # IPv6 Listing
+
+    connections-in-ipv6(){
+        # Function for listing incoming IPv6 connections from the command line.
+        # Making this an alias is a nightmare that I didn't want to have to deal with.
+
+        # For the moment, I do not have a BASH method of distinguishing IPv6 subnets, so
+        #   this function will cover ALL incoming IPv6 connections for now.
+        netstat -tun6 | grep ESTABLISHED  | awk 'function join(array, len, sep){ result = array[1]; for (i = 2; i <= len; i++){ result = result sep array[i]; }; return result } { lenl=split($4,l,":"); lenr=split($5,r,":"); portl=l[lenl]; portr=r[lenr]; addrl=join(l, lenl-1, ":"); addrr=join(r, lenr-1, ":"); if(portl < '$(cat /proc/sys/net/ipv4/ip_local_port_range | awk '{ print $1 }')'){ print $1 " " portl " " addrr " -> " addrl " ("$1"/"portl")" }; }' | sort -k1,1 -k2,2n | cut -d' ' -f 3-
+    }
+
+    connections-out-ipv6(){
+        # Function for listing outgoing IPv6 connections from the command line.
+        # Making this an alias is a nightmare that I didn't want to have to deal with.
+
+        # For the moment, I do not have a BASH method of distinguishing IPv6 subnets, so
+        #   this function will cover ALL outgoing IPv6 connections for now.
+        netstat -tun6 | grep ESTABLISHED  | awk 'function join(array, len, sep){ result = array[1]; for (i = 2; i <= len; i++){ result = result sep array[i]; }; return result } { lenl=split($4,l,":"); lenr=split($5,r,":"); portl=l[lenl]; portr=r[lenr]; addrl=join(l, lenl-1, ":"); addrr=join(r, lenr-1, ":"); if(portl > '$(cat /proc/sys/net/ipv4/ip_local_port_range | awk '{ print $1 }')' && ($1 == "tcp6" || portr < '$(cat /proc/sys/net/ipv4/ip_local_port_range | awk '{ print $1 }')')){ print $1 " " portr " " addrl " -> " addrr " ("$1"/"portr")" }; }' | sort -k1,1 -k2,2n | cut -d' ' -f 3-
+    }
 fi

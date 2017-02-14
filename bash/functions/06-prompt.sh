@@ -38,20 +38,49 @@ __build_prompt() {
   # - Checking for variables like TMUX/VNCDESKTOP/etc to be empty. A prompt under tmux/etc will use the SSH_CLIENT
   #     variable from the first session to start the session, and the variable will not be accurate forever.
   # - Note: TERMCAP is set in a screen session.
-  if [ -z "$TMUX" ] && [ -n "$SSH_CLIENT" ] && [ -z "$VNCDESKTOP" ] && [ -z "$TERMCAP" ]; then
+  # Alternately print nothing if PROMPT_IGNORE_SSH has a value set to it.
+  if [ -z "$PROMPT_IGNORE_SSH" ] && [ -z "$TMUX" ] && [ -n "$SSH_CLIENT" ] && [ -z "$VNCDESKTOP" ] && [ -z "$TERMCAP" ]; then
     local ssh_address=$(cut -d' ' -f 1 <<< $SSH_CLIENT)
-    # Note: Extra 5 characters are for " via "
-    local ssh_space_count=$((5 + $(__strlen "$ssh_address")))
+
+    # Assume that SSH address is in a valid IPv4 or IPv6 format.
+    # I think displaying the full IPv6 is a waste of space and harder
+    #   to make heads or tails of at a glance), so simplifying the output.
+
+    # Using a really straightforward regex, since we trust the input format overall.
+    if [[ "$ssh_address" =~ \. ]]; then
+      # IPv4 Address
+      # Note: Extra 5 characters are for " via "
+      local ssh_space_count=$((5 + $(__strlen "$ssh_address")))
+      local ssh_string_long=" via \[$Colour_NetworkAddress\]$ssh_address\[$Colour_Off\]" # Use if on a longer prompt
+      local ssh_string_short="%\[$Colour_NetworkAddress\]$ssh_address\[$Colour_Off\]" # Use if on a shortened prompt
+    elif [[ "$ssh_address" =~ % ]]; then
+      # IPv6 Address with an interface in the address.
+      local ssh_interface=$(cut -d'%' -f2 <<< $ssh_address)
+      # Note: Extra 13 characters are for " (IPv6 from )"
+      local ssh_space_count=$((13 + $(__strlen "$ssh_interface")))
+      local ssh_string_long=" (IPv6 via \[$Colour_Bold\]$ssh_interface\[$Colour_Off\])" # Use if on a longer prompt
+      local ssh_string_short="/IPv6@\[$Colour_Bold\]$ssh_interface\[$Colour_Off\]" # Use if on a shortened prompt
+    else
+      # IPv6 address with no interface
+      # Note: 7 characters for " (IPv6)"
+      local ssh_space_count=7
+      local ssh_string_long=" (IPv6)" # Use if on a longer prompt
+      local ssh_string_short="/IPv6" # Use if on a shortened prompt, to save all of one character
+    fi
   fi
   
   # Intentionally not using a local variable in order to only have to do one call to __get_fs
-  #   (the other potential one being in __promt_file_system_colour).
+  #   (the other potential one being in __prompt_file_system_colour).
   # Probably a bit overly complex.
   __fs="$(__get_fs)"
 
   # If we are on a Linux system, try to get version control information.
-  # Short-term (2016-03-10) fix, as it currently misbehaves in MobaXterm.
-  if __is_unix && ! egrep -q '^(cifs|nfs.*)$' <<< "$fs"; then
+  # __is_unix is a short-term (2016-03-10) fix, as this feature currently misbehaves in MobaXterm.
+  # Do not print version control information when operating on a remote file system like CIFS/NFS.
+  #   - One reason for this is that parsing version control info creates major delays on faraway systems.
+  #   - There woulc also be problems if the .git version on the remote server (if present) is also
+  #         not the version on the current system.
+  if [ -z "$PROMPT_IGNORE_VC" ] && __is_unix && ! [[ "$__fs" =~ ^(cifs$|nfs) ]] <<< "$__fs"; then
     local svn_output="$(__svn_stat)"
     if [ -n "$svn_output" ]; then
       local svn_remote_status=$(cut -d',' -f 1 <<< "$svn_output")
@@ -94,19 +123,13 @@ __build_prompt() {
   if [ "$typing_space" -ge 20 ]; then
     # Regular expanded prompt
     # Start
-    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${DISPLAY_USER:-\u}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'"${DISPLAY_HOSTNAME:-\h}"'\[\033[m\]'
-    if [ -n "$ssh_address" ]; then
-        PS1=$PS1" via \[$Colour_NetworkAddress\]$ssh_address\[$Colour_Off\]"
-    fi
+    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${DISPLAY_USER:-\u}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'"${DISPLAY_HOSTNAME:-\h}"'\[\033[m\]'$ssh_string_long
     PS1=$PS1"\[$box_colour\]][\[\033[m\]\[$(__prompt_file_system_colour)\]\w\[\033[m\]\[$box_colour\]]\[\033[m\]"
   else
     # Compressed prompt
     # Make a bit more typing space in closed quarters
     # Start
-    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${USER:0:1}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'${HOSTNAME:0:1}'\[\033[m\]'
-    if [ -n "$ssh_address" ]; then
-        PS1=$PS1"\[$Colour_Bold\]%\[$Colour_Off\]\[$Colour_NetworkAddress\]$ssh_address\[$Colour_Off\]"
-    fi
+    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${USER:0:1}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'${HOSTNAME:0:1}'\[\033[m\]'$ssh_string_short
     PS1=$PS1"\[$box_colour\]][\[\033[m\]\[$(__prompt_file_system_colour)\]\W\[\033[m\]\[$box_colour\]]\[\033[m\]"
   fi
   
@@ -161,137 +184,134 @@ __build_prompt() {
     ;;
   esac
 
-
   # Tidy up variables
   unset __fs
 }
 
 __get_fs(){
-    if __is_unix; then
-        df -TP . 2> /dev/null | awk '{ print $2 }' | tail -n1
+  if __is_unix; then
+      df -TP . 2> /dev/null | awk '{ print $2 }' | tail -n1
     else
-        # Default to ext4 to make non-Unix green.
-        printf "ext4"
-    fi
+      # Default to ext4 to make non-Unix green.
+    printf "ext4"
+  fi
 }
 
 __prompt_box_colour(){
-    # Get a colour for the prompt box based on operating system hints.
-    case "$(uname)" in
-        Linux)
-            printf "$Colour_BIBlue"
-            ;;
-        FreeBSD)
-            printf "$Colour_BIRed"
-            ;;
-        Darwin)
-            # Mac OSX
-            printf "$Colour_BIYellow"
-            ;;
-        CYGWIN_NT*)
-            # Cygwin (by way of MobaXterm)
-            printf "$Colour_BICyan"
-            ;;
-        *)
-            # Default to just "bold"
-            printf "$Colour_Bold"
-            ;;
-    esac
-
-
+  # Get a colour for the prompt box based on operating system hints.
+  case "$(uname)" in
+  Linux)
+    printf "$Colour_BIBlue"
+    ;;
+  FreeBSD)
+    printf "$Colour_BIRed"
+    ;;
+  Darwin)
+    # Mac OSX
+    printf "$Colour_BIYellow"
+    ;;
+  CYGWIN_NT*)
+    # Cygwin (by way of MobaXterm)
+    printf "$Colour_BICyan"
+    ;;
+  *)
+    # Default to just "bold"
+    printf "$Colour_Bold"
+    ;;
+  esac
 }
 
 # Adjust prompt directory colour based on its file system.
 __prompt_file_system_colour(){
-    # At the moment, __build_prompt also has a file system check.
-    # Use that information if given instead of calculating the same thing twice.
+  # At the moment, __build_prompt also has a file system check.
+  # Use that information if given instead of calculating the same thing twice.
 
-    if [ -z "$__fs" ]; then
-        local fs="$(__get_fs)"
-    fi
+  if [ -z "$__fs" ]; then
+    local fs="$(__get_fs)"
+  fi
 
-    case "${__fs}" in
-        "ext"*|xfs)
-            # Green text.
-            # Ext_ file systems are most likely a local drive.
-            printf "$Colour_BIGreen"
-            ;;
-        cifs|nfs*)
-            # Blue text
-            # CIFS is a remote network file system.
-            # NFS is also a remote network file system.
-            printf "$Colour_BIBlue"
-            ;;
-        *fat*|ntfs*|udf|fuseblk|hfsplus)
-            # Red Text.
-            # FAT Filesystem most likely to be removable device.
-            #     Lazy pattern assumes that no other family of file system will have 'fat' anywhere in it.
-            # NTFS Filesystem from a Windows system, most likely to be removable device and not a fixture.
-            # fuseblk filesystems are some variety of removable device.
-            #     Late addition. After seeing an NTFS filesystem listed as 'fuseblk',
-            #       I'm starting to second-guess if the 'ntfs*' clause is necessary.
-            #       More double-checking necessary, eventually.
-            # UDF Filesystem is most likely a mounted ISO or similar.
-            # HFS+ is from an OSX drive, most likely a removable device on Linux
-            printf "$Colour_BIRed"
-            ;;
-        *tmpfs*|sysfs|proc)
-            # Purple Text.
-            # Any variety of tmpfs should be purple text.
-            # Sysfs file systems are a kernel construct.
-            # Sysfs file systems are also a kernel construct.
-            printf "$Colour_BIPurple"
-            ;;
-        *)
-            # Return to default colour.
-            printf "$Colour_Off"
-            ;;
-    esac
+  case "${__fs}" in
+    "ext"*|xfs)
+      # Green text.
+      # Ext_ file systems are most likely a local drive.
+      printf "$Colour_BIGreen"
+      ;;
+    cifs|nfs*)
+      # Blue text
+      # CIFS is a remote network file system.
+      # NFS is also a remote network file system.
+      printf "$Colour_BIBlue"
+      ;;
+    *fat*|ntfs*|udf|fuseblk|hfsplus)
+      # Red Text.
+      # FAT Filesystem most likely to be removable device.
+      #     Lazy pattern assumes that no other family of file system will have 'fat' anywhere in it.
+      # NTFS Filesystem from a Windows system, most likely to be removable device and not a fixture.
+      # fuseblk filesystems are some variety of removable device.
+      #     Late addition. After seeing an NTFS filesystem listed as 'fuseblk',
+      #       I'm starting to second-guess if the 'ntfs*' clause is necessary.
+      #       More double-checking necessary, eventually.
+      # UDF Filesystem is most likely a mounted ISO or similar.
+      # HFS+ is from an OSX drive, most likely a removable device on Linux
+      printf "$Colour_BIRed"
+      ;;
+    *tmpfs*|sysfs|proc)
+      # Purple Text.
+      # Any variety of tmpfs should be purple text.
+      # Sysfs file systems are a kernel construct.
+      # Sysfs file systems are also a kernel construct.
+      printf "$Colour_BIPurple"
+      ;;
+    *)
+      # Return to default colour.
+      printf "$Colour_Off"
+      ;;
+  esac
 }
 
 __prompt_hostname_colour (){
-    # Colour hostname field.
-    # REMINDER: Place specific hostnames BEFORE wildcard hostnames.
-    case "${DISPLAY_HOSTNAME:-$HOSTNAME}" in
-        laptop.*|nuc.*|machine-a.*)
-            # Desktop systems should be in green.
-            printf "$Colour_BIGreen"
-            ;;
-        datacomm)
-            # Organization's datacomm machines should be purple.
-            printf "$Colour_BIPurple"
-            ;;
-        work-?*.domain.lan|*.work.lan|*.work.lan|*.sandbox.lan)
-            # Work/Experimental systems should be in red.
-            printf "$Colour_BIRed"
-            ;;
-        "machine-a")
-            # Windows systems should be in purple (for now).
-            # Note: Windows!machine-a's full hostname is just "machine-a", unlike its Linux version
-            printf "$Colour_BIPurple"
-            ;;
-        *.domain.lan|*.domain-b.lan)
-            # Other local network machines should be in blue.
-            printf "$Colour_BIBlue"
-            ;;
-        *)
-            printf "$Colour_Off"
-            ;;
-    esac
+  # Colour hostname field.
+  # REMINDER: Place specific hostnames BEFORE wildcard hostnames.
+  case "${DISPLAY_HOSTNAME:-$HOSTNAME}" in
+    laptop.*|nuc.*|machine-a.*)
+      # Desktop systems should be in green.
+      printf "$Colour_BIGreen"
+      ;;
+    datacomm*)
+      # Organization's datacomm machines should be purple.
+      printf "$Colour_BIPurple"
+      ;;
+    work-?*.domain.lan|*.work.lan|*.work.lan|*.sandbox.lan)
+      # Work/Experimental systems should be in red.
+      printf "$Colour_BIRed"
+      ;;
+    "machine-a")
+      # Windows systems should be in purple (for now).
+      # Note: Windows!machine-a's full hostname is just "machine-a", unlike its Linux version
+      printf "$Colour_BIPurple"
+      ;;
+    *.domain.lan|*.domain-b.lan)
+      # Other local network machines should be in blue.
+      printf "$Colour_BIBlue"
+      ;;
+    *)
+      printf "$Colour_Off"
+      ;;
+  esac
 }
 
 __prompt_username_colour (){
-    case "${DISPLAY_USER:-$(whoami)}" in
-        "redacted-username"|"redacted-name")
-            printf "$Colour_BIBlue"
-            ;;
-        "root")
-            printf "$Colour_BIRed"
-            ;;
-        *)
-            printf "$Colour_Off"
-            ;;
-    esac
+  case "${DISPLAY_USER:-$(whoami)}" in
+    "redacted-username"|"redacted-name")
+      printf "$Colour_BIBlue"
+      ;;
+    "root")
+      printf "$Colour_BIRed"
+      ;;
+    *)
+      printf "$Colour_Off"
+      ;;
+  esac
 }
 
 __prompt_ssh_origin (){

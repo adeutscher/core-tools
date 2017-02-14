@@ -12,10 +12,3 @@
 # Note: There is also a function to override 'yum', but I am happy with leaving that in.
 unset -f ifconfig service
 
-# 2016-09-25
-# Moving get-imgur-gallery to be a script as it was before being version-controlled.
-unset -f get-imgur-gallery
-
-#2017-01-03
-# Moving silly functions to individual scripts or other files.
-unset -f wtc wtc-stream maze maze-rainbow
