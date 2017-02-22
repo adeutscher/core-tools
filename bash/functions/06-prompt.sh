@@ -38,8 +38,8 @@ __build_prompt() {
   # - Checking for variables like TMUX/VNCDESKTOP/etc to be empty. A prompt under tmux/etc will use the SSH_CLIENT
   #     variable from the first session to start the session, and the variable will not be accurate forever.
   # - Note: TERMCAP is set in a screen session.
-  # Alternately print nothing if PROMPT_IGNORE_SSH has a value set to it.
-  if [ -z "$PROMPT_IGNORE_SSH" ] && [ -z "$TMUX" ] && [ -n "$SSH_CLIENT" ] && [ -z "$VNCDESKTOP" ] && [ -z "$TERMCAP" ]; then
+  # Alternately print nothing if PROMPT_IGNORE_SSH has a non-zero value set to it.
+  if ! (( "${PROMPT_IGNORE_SSH:-0}" )) && [ -z "$TMUX" ] && [ -n "$SSH_CLIENT" ] && [ -z "$VNCDESKTOP" ] && [ -z "$TERMCAP" ]; then
     local ssh_address=$(cut -d' ' -f 1 <<< $SSH_CLIENT)
 
     # Assume that SSH address is in a valid IPv4 or IPv6 format.
@@ -80,7 +80,8 @@ __build_prompt() {
   #   - One reason for this is that parsing version control info creates major delays on faraway systems.
   #   - There woulc also be problems if the .git version on the remote server (if present) is also
   #         not the version on the current system.
-  if [ -z "$PROMPT_IGNORE_VC" ] && __is_unix && ! [[ "$__fs" =~ ^(cifs$|nfs) ]] <<< "$__fs"; then
+  # Alternately, do not print if PROMPT_IGNORE_VC is set to a non-zero value.
+  if ! (( "${PROMPT_IGNORE_VC:-0}" )) && __is_unix && ! [[ "$__fs" =~ ^(cifs$|nfs) ]] <<< "$__fs"; then
     local svn_output="$(__svn_stat)"
     if [ -n "$svn_output" ]; then
       local svn_remote_status=$(cut -d',' -f 1 <<< "$svn_output")
@@ -272,7 +273,7 @@ __prompt_file_system_colour(){
 __prompt_hostname_colour (){
   # Colour hostname field.
   # REMINDER: Place specific hostnames BEFORE wildcard hostnames.
-  case "${DISPLAY_HOSTNAME:-$HOSTNAME}" in
+  case "${1:-${DISPLAY_HOSTNAME:-$HOSTNAME}}" in
     laptop.*|nuc.*|machine-a.*)
       # Desktop systems should be in green.
       printf "$Colour_BIGreen"
@@ -301,7 +302,7 @@ __prompt_hostname_colour (){
 }
 
 __prompt_username_colour (){
-  case "${DISPLAY_USER:-$(whoami)}" in
+  case "${1:-${DISPLAY_USER:-$(whoami)}}" in
     "redacted-username"|"redacted-name")
       printf "$Colour_BIBlue"
       ;;
@@ -506,4 +507,46 @@ function __parse_git_dirty {
 # Will probably axe it, eventually.
 git-prompt-reminder(){
   notice "$(printf "Git prompt flags: [(${Colour_Bold}>${Colour_Off}:renamed-elements)(${Colour_Bold}*${Colour_Off}:ahead)(${Colour_Bold}+${Colour_Off}:new-file)(${Colour_Bold}?${Colour_Off}:untracked-files)(${Colour_Bold}x${Colour_Off}:deleted-files)(${Colour_Bold}!${Colour_Off}:dirty)]")"
+}
+
+prompt-set-hostname(){
+  if [ -n "$1" ]; then
+    notice "$(printf "Setting prompt hostname: %s%s${Colour_Off}" "$(__prompt_hostname_colour "$1")" "$1")"
+    export DISPLAY_HOSTNAME="$1"
+  else
+    error "No hostname provided."
+  fi
+}
+
+prompt-set-username(){
+  if [ -n "$1" ]; then
+    notice "$(printf "Setting prompt username: %s%s${Colour_Off}" "$(__prompt_username_colour "$1")" "$1")"
+    export DISPLAY_USER="$1"
+  else
+    error "No username provided."
+  fi
+}
+
+prompt-toggle-ssh(){
+  if [ -n "$TMUX" ] || [ -n "$VNCDESKTOP" ] || [ -n "$TERMCAP" ]; then
+    warning "Multiplex session, SSH client address in command prompt is already ignored."
+  elif [ -z "$SSH_CONNECTION" ]; then
+    warning "Not an SSH session."
+  elif [ "${PROMPT_IGNORE_SSH:-0}" -eq 0 ]; then
+    notice "Disabling SSH address display in command."
+    PROMPT_IGNORE_SSH=1
+  else
+    notice "Enabling SSH address display in command prompt."
+    PROMPT_IGNORE_SSH=0
+  fi
+}
+
+prompt-toggle-version-control(){
+  if [ "${PROMPT_IGNORE_VC:-0}" -eq 0 ]; then
+    notice "Disabling version control display on command prompt."
+    PROMPT_IGNORE_VC=1
+  else
+    notice "Enabling version control display on command prompt."
+    PROMPT_IGNORE_VC=0
+  fi
 }

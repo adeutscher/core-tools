@@ -17,49 +17,70 @@ backgroundIndexFile=/tmp/$USER/background-index.txt
 # Set default mode
 mode=new
 
+check-int(){
+  if [ -z "$1" ] || ! grep -qP "^\d{1,}$" <<< "$1"; then
+    return 1
+  fi
+}
+
 # Handle arguments
-for opt in $(getopt ":fhsv" $@); do
+while getopts "d:fhst:v" opt; do
+    # Process CLI flags.
+    case "$opt" in
+    d)
+        # Check if the user is trying to input a directory, overwrite the "imageDir" variable if so.
+        if [ -d "$OPTARG" ]; then
+            # Get the absolute path to our target directory WITHOUT using the 'realpath' command.
+            # 'realpath' is not always available by default on some systems.
+            imageDir="$(readlink -f "$OPTARG")"
+        else
+            printf "Requested image directory does not exist: %s\n" "$OPTARG"
+            haveError=1
+        fi
+        ;;
+    f)
+        if [ -f "$backgroundIndexFile" ]; then
+            rm "$backgroundIndexFile"
+        fi
+        ;;
+    h)
+        printf 'Usage: %s [-d image-directory-path] [-f] [-s] [-v]\n' "$0"
 
-    # Check if the user is trying to input a directory, overwrite the "imageDir" variable if so.
-    if [ -d "$opt" ]; then
-        # Get the absolute path to our target directory WITHOUT using the 'realpath' command.
-        # 'realpath' is not always available by default on some systems.
-        cd "$opt"
-        imageDir=$(pwd)
-        cd "$OLDPWD"
-    else
-        # Process CLI flags.
-        case "$opt" in
-        "-f")
-            if [ -f "$backgroundIndexFile" ]; then
-                rm "$backgroundIndexFile"
-            fi
-            ;;
-        "-h")
-            printf 'Usage: %s [-f] [-s] [-v] [image-directory-path]\n' "$0"
+        # Describe switches.
+        printf 'Switches:\n  -d: Set background directory (will need to flush old index with -f switch).'
+        printf '  -f: Delete the background index, forcing the script to re-scan your directory\n'
+        printf '  -h: Print this menu and exit\n'
+        printf '  -s: Stream mode. Cycle through backgrounds every 4 seconds (use ctrl-c to abort at the desired background)\n'
+        printf '  -t: Set a time delay for stream mode in seconds (must be an integer)\n'
+        printf '  -v: Verbose mode\n'
 
-            # Describe switches.
-            printf 'Switches:\n  -f: Delete the background index, forcing the script to re-scan your directory\n'
-            printf '  -h: Print this menu and exit\n'
-            printf '  -s: Stream mode. Cycle through backgrounds every 4 seconds (use ctrl-c to abort at the desired background)\n'
-            printf '  -v: Verbose mode\n'
-
-            # Describe directory priority.
-            printf 'Note: Priority order for potential background directories:\n'
-            printf '  1. Value of last-read directory in CLI arguments (if two arguments were given, the second would be used)\n'
-            printf '  2. Value of $backgroundDirectory variable (set in .bashrc logic)\n'
-            printf '  3. %s\n' "$defaultImageDir"
-            exit 0
-            ;;
-        "-s")
-            mode=stream            
-            ;;
-        "-v")
-            verbose=1
-            ;;
-        esac
-    fi
+        # Describe directory priority.
+        printf 'Note: Priority order for potential background directories:\n'
+        printf '  1. Value of last-read directory in CLI arguments (if two arguments were given, the second would be used)\n'
+        printf '  2. Value of $backgroundDirectory variable (set in .bashrc logic)\n'
+        printf '  3. %s\n' "$defaultImageDir"
+        exit 0
+        ;;
+    s)
+        mode=stream
+        ;;
+    t)
+        if check-int "$OPTARG" && [ "$OPTARG" -gt 0 ]; then
+            delay=$OPTARG
+        else
+            printf "Invalid time interval for stream mode: %s\n" "$OPTARG"
+            haveError=1
+        fi
+        ;;
+    v)
+        verbose=1
+        ;;
+    esac
 done
+
+if (( ${haveError:-0} )); then
+    exit 1
+fi
 
 # If the image directory does not exist, do not bother continuing the script.
 if [ -z "$imageDir" ] && (( "$verbose" )); then
@@ -160,11 +181,11 @@ __select_random_background(){
 
 case "$mode" in
     "stream")
-        echo "Cycling through backgrounds. You will have about 4 seconds to ctrl-c out and keep the one that you want."
+        printf "Cycling through backgrounds. You will have about %d seconds to ctrl-c out and keep the one that you want.\n" "${delay:-4}"
         trap 'exit 0' INT
         # Shuffle once before we start the sleep-shuffle loop (since it starts with the sleep)
         __select_random_background
-        while sleep 4; do __select_random_background || exit 1; done
+        while sleep ${delay:-4}; do __select_random_background || exit 1; done
        ;;
     *)
         # Default
