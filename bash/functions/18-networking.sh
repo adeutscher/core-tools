@@ -54,12 +54,6 @@ alias http-headerc='curl -I --compress'
 
 alias wgetdir='wget -r -l1 -P035 -nd --no-parent'
 
-# Share a module through Python SimpleHTTPServer module.
-http-quick-share(){
-    notice "$(printf "Sharing $Colour_BIGreen%s$Colour_Off" "$(pwd)/")"
-    python -m SimpleHTTPServer 8080
-}
-
 #######
 # SSL #
 #######
@@ -150,7 +144,7 @@ wifi-list-raw(){
     fi
 
     # TODO: This script does not currently detect WEP input, and will incorectly report it as "OPEN"
-    sudo iw dev "$iface" scan | tac | awk 'BEGIN { defaultSecurity="OPEN"; security=defaultSecurity; } { if($1 == "BSS" && $2 != "Load:" ){ print substr($2,0,17) " (" security "): " ssid; bssid=""; ssid=""; security=defaultSecurity; } if ($1 == "SSID:" ){ for(i = 2; i <= NF; i++){ if(ssid){ ssid=ssid " " $i } else{ ssid=$i } } }; if ($2 == "Authentication" && $5 == "802.1X" ){ security=$5 } if ($1 == "RSN:") { if(security == "WPA1") { security=security " WPA2" } else if(security != defaultSecurity) { security="WPA2 " security } else { security="WPA2" } } if($1 == "WPA:"){ security="WPA1" } }' | sort -k2,2
+    sudo iw dev "$iface" scan | tac | awk 'BEGIN { defaultSecurity="OPEN"; security=defaultSecurity; } { if($1 == "BSS" && $2 != "Load:" ){ print substr($2,0,17) " (" security ", channel " channel "): " ssid; bssid=""; ssid=""; security=defaultSecurity; } if ($1 == "SSID:" ){ for(i = 2; i <= NF; i++){ if(ssid){ ssid=ssid " " $i } else{ ssid=$i } } }; if ($2 == "Authentication" && $5 == "802.1X" ){ security=$5 } if ($1 == "RSN:") { if(security == "WPA1") { security=security " WPA2" } else if(security != defaultSecurity) { security="WPA2 " security } else { security="WPA2" } } if($1 == "WPA:"){ security="WPA1" } if ( $2 == "primary" && $3 == "channel:" ){ channel=$4 } }' | sort -k2,2
 }
 
 ####################

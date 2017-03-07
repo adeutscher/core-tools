@@ -98,9 +98,7 @@ for iface in ${interfaces}; do
         # Ignore interfaces that we've been asked to exclude.
         continue
     elif [[ "${bridge_members}" =~ (^|\ )"${iface}"($|\ ) ]]; then
-        # Do not list information for bridge members.
-        # Bridge members will be shown under the parent interface.
-        continue  
+        bridge_member_with_ip=1
     elif [[ "${down_interfaces}" =~ (^|\ )"${iface}"($|\ ) ]] && ! [[ "${bridges}" =~ (^|\ )"${iface}"($|\ ) ]]; then
         # Do not list information for down interfaces, even if they have addresses
         # Bridges are the exception to this, since we still want to print members.
@@ -119,21 +117,33 @@ for iface in ${interfaces}; do
     # * An UP interface with an IP address
     # * A DOWN interface that is a bridge
     # * A DOWN interface that is an associated wireless interface
-    if [ -z "$address" ] || [[ "$address" =~ \/ ]]; then
-        printf " $(colour_interface ${iface}): $(colour_network_address "${address:-No Address}")"
-    else
-        # If the CIDR-form subnet mask is not already on IP output, then assume that it's a /32.
-        # Most likely a tun_ interface.
+    # * A bridge member with an IP address
+    if ! ((  ${bridge_member_with_ip:-0 } )); then
+        if [ -z "$address" ] || [[ "$address" =~ \/ ]]; then
+            printf " $(colour_interface ${iface}): $(colour_network_address "${address:-No Address}")"
+        else
+            # If the CIDR-form subnet mask is not already on IP output, then assume that it's a /32.
+            # Most likely a tun_ interface.
 
-        # If we can find a case in which the mask is something other than /32, then
-        #     uncomment the commented code in this else statement, and adjust printf appropriately.
-        # Get subnet mask for interface
-        #unset display_mask
-        #mask=$(ip a s ${iface} 2> /dev/null | grep -om1 inet\ [^\/]*\/[0-9]* | cut -d '/' -f 2)
-        #if [ -n "${mask}" ]; then
-        #    display_mask=/${mask}
-        #fi
-        printf " $(colour_interface ${iface}): $(colour_network_address "${address:-No Address}/32")"
+            # If we can find a case in which the mask is something other than /32, then
+            #     uncomment the commented code in this else statement, and adjust printf appropriately.
+            # Get subnet mask for interface
+            #unset display_mask
+            #mask=$(ip a s ${iface} 2> /dev/null | grep -om1 inet\ [^\/]*\/[0-9]* | cut -d '/' -f 2)
+            #if [ -n "${mask}" ]; then
+            #    display_mask=/${mask}
+            #fi
+            printf " $(colour_interface ${iface}): $(colour_network_address "${address:-No Address}/32")"
+        fi
+    # Bridge members
+    else
+        unset bridge_member_with_ip # Unset for next loop
+        # Only go deeper with bridge members if they have addresses, which is unexpected
+        if [ -z "$address" ]; then
+            continue
+        else
+            printf " $(colour_interface ${iface}): \${color #${colour_alert}}Bridge Member w/ IP Address\${color}"
+        fi
     fi
 
     # Unset address-related variable for next loop.
@@ -149,9 +159,9 @@ for iface in ${interfaces}; do
         mac="$(iwconfig ${iface} 2> /dev/null | grep -om1 "Access Point:\ [^\ ]*" | cut -d' ' -f 3)"
         # Attempt to look for a cached copy of the wireless summary to save a bit of time on label/vendor lookups.
         if [ -f "$tempRoot/cache/wlan/$mac.txt" ]; then
-            cat "$tempRoot/cache/wlan/$mac.txt"
+            cat "$tempRoot/cache/wlan/$mac.txt" | sed "s/INTERFACE/${iface}/g"
         else
-        wireless_report=$(printf "  ESSID: \${wireless_essid ${iface}}\\n  BSSID: ${mac} (\${wireless_link_qual ${iface}}%%%%)\n")
+        wireless_report=$(printf "  ESSID: \${wireless_essid INTERFACE}\\n  BSSID: ${mac} (\${wireless_link_qual INTERFACE}%%%%)\n")
             location="$(__get_mac_specific_location "${mac}" 2> /dev/null)"
             if [ -n "${location}" ]; then
                 wireless_report="${wireless_report}\n$(printf "  AP Location: %s\n" "$(shorten_string "${location}" 24)")"
@@ -164,7 +174,7 @@ for iface in ${interfaces}; do
                 fi
             fi
             mkdir -p "$tempRoot/cache/wlan"
-            printf "$wireless_report\n" | tee "$tempRoot/cache/wlan/$mac.txt"
+            printf "$wireless_report\n" | tee "$tempRoot/cache/wlan/$mac.txt" | sed "s/INTERFACE/${iface}/g"
         fi
 
     ###################

@@ -12,3 +12,6 @@
 # Note: There is also a function to override 'yum', but I am happy with leaving that in.
 unset -f ifconfig service
 
+# 2017-03-04
+# Converted http-quick-share to a standalone script to support threading.
+unset -f http-quick-share

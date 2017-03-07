@@ -23,7 +23,7 @@ if __is_unix; then
     connections-in-all(){
         # Function for listing incoming connections from the command line.
         # Making this an alias is a nightmare that I didn't want to have to deal with.
-        netstat -tun | grep ESTABLISHED  | awk '{ split($4,l,":"); split($5,r,":"); if(l[2] < '$(cat /proc/sys/net/ipv4/ip_local_port_range | awk '{ print $1 }')'){ print $1 " " l[2] " " r[1] "->" l[1] " ("$1"/"l[2]")" }; }' | sort -k1,1 -k2,2n | cut -d' ' -f 3-
+        netstat -tun | grep ESTABLISHED  | awk '{ split($4,l,":"); split($5,r,":"); if(l[2] < '$(cat /proc/sys/net/ipv4/ip_local_port_range | awk '{ print $1 }')'){ print $1 " " l[2] " " r[1] "->" l[1] " ("$1"/"l[2] }; }' | sort -k1,1 -k2,2n | cut -d' ' -f 3- | uniq -c | awk -F' ' '{ if($1 > 1){ print $2" "$3", "$1" connections)" } else { print $2" "$3")" } }'
     }
 
     connections-in-lan(){
@@ -50,7 +50,7 @@ if __is_unix; then
     connections-out-all(){
         # Function for listing outgoing connections from the command line.
         # Making this an alias is a nightmare that I didn't want to have to deal with.
-        netstat -tun | grep ESTABLISHED  | awk '{ split($4,l,":"); split($5,r,":"); if(l[2] > '$(cat /proc/sys/net/ipv4/ip_local_port_range | awk '{ print $1 }')' && ($1 == "tcp" || r[2] < '$(cat /proc/sys/net/ipv4/ip_local_port_range | awk '{ print $1 }')')){ print $1 " " r[2] " " l[1] "->" r[1] " ("$1"/"r[2]")" }; }' | sort -k1,1 -k2,2n | cut -d' ' -f 3-
+        netstat -tun | grep ESTABLISHED  | awk '{ split($4,l,":"); split($5,r,":"); if(l[2] > '$(cat /proc/sys/net/ipv4/ip_local_port_range | awk '{ print $1 }')' && ($1 == "tcp" || r[2] < '$(cat /proc/sys/net/ipv4/ip_local_port_range | awk '{ print $1 }')')){ print $1 " " r[2] " " l[1] "->" r[1] " ("$1"/"r[2] }; }' | sort -k1,1 -k2,2n | cut -d' ' -f 3- | uniq -c | awk -F' ' '{ if($1 > 1){ print $2" "$3", "$1" connections)" } else { print $2" "$3")" } }'
     }
 
     connections-out-lan(){
