@@ -252,3 +252,16 @@ cidr-high-dec(){
 
   printf $(($(ip2dec "$network")+(2 ** (32-netmask))-$subtract))
 }
+
+# Translate a MAC address to an IPv6 link-local address.
+# Courtesy of: http://codereview.stackexchange.com/questions/90263/network-mac-address-conversion-to-ipv6-link-local-address
+# Assumes valid input.
+ip6linklocal(){
+  python -c "m=hex(int('$1'.translate(None,' .:-'),16)^0x020000000000)[2:]; print 'fe80::%s:%sff:fe%s:%s' %(m[:4],m[4:6],m[6:8],m[8:12])" 2> /dev/null
+}
+
+# Translate an IPv6 link-local address back to a MAC address.
+# Assumes valid input.
+ip6linklocal-reverse(){
+  python -c "a='$1'; print '%s:%s:%s:%s:%s:%s' % (hex(int(a[6:8], 16)^0x02)[2:],a[8:10],a[11:13],a[18:20],a[21:23], a[23:25])" 2> /dev/null
+}

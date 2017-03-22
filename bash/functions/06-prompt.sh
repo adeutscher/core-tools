@@ -110,7 +110,11 @@ __build_prompt() {
   # - Shorter directory path
   # - (slightly) shorter SSH path.
   # - Shorten username to one letter
-  local typing_space=$(($(stty size | cut -d' ' -f 2)-$(__strlen "$(pwd | sed "s|^$HOME|H|g")$(hostname -s)$USER")-${ssh_space_count:-0}-${vc_count:-0}-7))
+  if ! (( ${PROMPT_ALWAYS_COMPRESS:-0} )); then
+	local typing_space=$(($(stty size | cut -d' ' -f 2)-$(__strlen "$(pwd | sed "s|^$HOME|H|g")$(hostname -s)$USER")-${ssh_space_count:-0}-${vc_count:-0}-7))
+  else
+	local typing_space=0
+  fi
   # Typing space takes into account:
   # - Path length, accounting for a tilde in home directory
   # - Username length
@@ -121,17 +125,17 @@ __build_prompt() {
   local box_colour="$(__prompt_box_colour)"
 
   # Build
-  if [ "$typing_space" -ge 20 ]; then
-    # Regular expanded prompt
-    # Start
-    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${DISPLAY_USER:-\u}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'"${DISPLAY_HOSTNAME:-\h}"'\[\033[m\]'$ssh_string_long
-    PS1=$PS1"\[$box_colour\]][\[\033[m\]\[$(__prompt_file_system_colour)\]\w\[\033[m\]\[$box_colour\]]\[\033[m\]"
-  else
-    # Compressed prompt
+  if [ "${typing_space:-0}" -lt 20 ]; then
+	# Compressed prompt
     # Make a bit more typing space in closed quarters
     # Start
     PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${USER:0:1}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'${HOSTNAME:0:1}'\[\033[m\]'$ssh_string_short
     PS1=$PS1"\[$box_colour\]][\[\033[m\]\[$(__prompt_file_system_colour)\]\W\[\033[m\]\[$box_colour\]]\[\033[m\]"
+  else
+    # Regular expanded prompt
+    # Start
+    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${DISPLAY_USER:-\u}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'"${DISPLAY_HOSTNAME:-\h}"'\[\033[m\]'$ssh_string_long
+    PS1=$PS1"\[$box_colour\]][\[\033[m\]\[$(__prompt_file_system_colour)\]\w\[\033[m\]\[$box_colour\]]\[\033[m\]"
   fi
   
   # Always print version control output if present for now
@@ -524,6 +528,16 @@ prompt-set-username(){
     export DISPLAY_USER="$1"
   else
     error "No username provided."
+  fi
+}
+
+prompt-toggle-compression(){
+  if [ "${PROMPT_ALWAYS_COMPRESS:-0}" -eq 0 ]; then
+    notice "Disabling prompt expansion..."
+    PROMPT_ALWAYS_COMPRESS=1
+  else
+    notice "Re-enabling prompt expansiom..."
+    PROMPT_ALWAYS_COMPRESS=0
   fi
 }
 

@@ -301,7 +301,9 @@ fi
 ephemeral_file="/proc/sys/net/ipv4/ip_local_port_range"
 ephemeral_lower=$(cat "$ephemeral_file" | awk '{ print $1 }')
 # Collect connections from netstat, then format with awk
-connections_in=$(netstat -tun | grep ESTABLISHED  | awk '{ split($4,l,":"); split($5,r,":"); if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 == "tcp") && ! (r[2] == 2049 && $1 == "tcp")){ print " ${color #'${colour_network_address}'}" r[1] "${color}->${color #'${colour_network_address}'}" l[1] "${color} ("$1"/"l[2]")" }; }' | sort -k2,2 -k3,3n |  uniq -c | grep --colour=never -v '127\.0\.0\.1' | awk '{ count=$1; $1=""; print $0; if (count > 1){ print "    Count: "count }}')
+connections_in=$(netstat -Wtun | grep ESTABLISHED  | awk -F' ' '{ match($4,/[1-90]*$/,a); l[2]=a[0]; sub(/:[1-90]*$/,"",$4); l[1]=$4; match($5,/[1-90]*$/,a); r[2]=a[0]; sub(/:[1-90]*$/,"",$5); r[1]=$5; if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 ~ /^tcp/) && ! (r[2] == 2049 && $1 ~ /^tcp/)){ print $1 " " r[1] " " l[1] " " l[2] }; }' \
+	| sort -k2,2 -k3,3n | uniq -c | grep --colour=never -Pvw '(127\.0\.0\.1)|::1)' \
+    | awk '{ if($2 ~ /6$/){ if(length($3) > 25 && $1 > 1){ pad = "\n    (" $2 "/" $5 ", Count: " $1 ")" } else if(length($3) > 25){ pad = "\n    (" $2 "/" $5 ")" } else { pad=" (" $2 "/" $5 ")" }; print " ${color #'${colour_network_address}'}" $3 "${color}" pad; } else { print " ${color #'${colour_network_address}'}" $3 "${color}->${color #'${colour_network_address}'}" $4 "${color} ("$2"/"$5")"; }; if(length($3) <= 25 && $1 > 1){ print "    Count: " $1 }}')
 # A connection is considered incoming if the local port is below the lowest ephemeral port number AND the remote port is above the lowest ephemeral port number.
 # TCP connections are somewhat excused and do not require the remote port to always be within the range.
 # Excluding localhost connections, since it could get a bit rediculous.

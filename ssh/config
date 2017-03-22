@@ -5,7 +5,6 @@
 Host *
 
   #UserKnownHostsFile /dev/null
-  StrictHostKeyChecking no
   ServerAliveInterval 60
 
   #GSSAPIAuthentication no

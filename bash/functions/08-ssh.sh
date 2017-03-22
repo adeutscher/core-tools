@@ -9,22 +9,30 @@ if qtype ssh; then
   unset GIT_ASKPASS SSH_ASKPASS
 
   # Standard switches for SSH via alias:
-  alias ssh='ssh -2 -4'
+  alias ssh='ssh -2'
   # SSH with X forwarding.
   if [ -n "$DISPLAY" ]; then
       #   Should only happen if the current machine
       #   also has a display to forward through.
-      alias sshx='\ssh -2 -4 -Y'
+      alias sshx='\ssh -2 -Y'
   fi
 
-  # Standard switches for SSH via alias:
-  alias ssh6='\ssh -2 -6'
-  # SSH with X forwarding.
-  if [ -n "$DISPLAY" ]; then
-      #   Should only happen if the current machine
-      #   also has a display to forward through.
-      alias ssh6x='\ssh -2 -6 -Y'
-  fi
+  ssh6-local(){
+    # Attempt to connect to a host via SSH over IPv6 by calculating its link-local address from its MAC address.
+     local ip6addr=$(ip6linklocal "$1")
+    if [ -z "$ip6addr" ]; then
+      error "$(printf "Unable to translate MAC address: ${Colour_Bold}%s${Colour_Off}" "$1")"
+      return 1
+    fi
+    shift
+    local __if=$1
+    shift
+    if ! ip a s "$__if" | grep -w inet6 | grep -w link; then
+      error "$(printf "Interface not found or no link-local address: ${Colour_Bold}%s${Colour_Off}" "$__if")"
+      return 1
+    fi
+    ssh6 "$ip6addr%$__if" $@
+  }
 
   # Other SSH Commands
 
