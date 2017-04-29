@@ -109,9 +109,14 @@ fi
 #####################################
 
 if __is_laptop && qtype nmcli; then
-    # Locking these functions to only laptops until I find
-    #     a situation where that is not the case.
+  # Locking these functions to only laptops until I find
+  #     a situation where that is not the case.
 
+  __wifi_interface=$(iwconfig 2> /dev/null | cut -d' ' -f1 | head -n1)
+
+  # Only continue if we actually have a WiFi interface
+  #   (in the off-chance we actually have a laptop without one)
+  if [ -n "$__wifi_interface" ]; then
     # WiFi Toggle
     alias wifi-on='nmcli radio wifi on'
     alias wifi-off='nmcli radio wifi off'
@@ -119,7 +124,10 @@ if __is_laptop && qtype nmcli; then
     alias wifi-list-open="nmcli -p dev wifi list | egrep --color=none '(==|\)|SECURITY|\-\-)[ ]*$' | sed 's/)/, open networks only)/g'"
     alias wifi-join='nmcli con up id'
     alias wifi-connections='nmcli con'
-    alias wifi-disconnect='nmcli dev disconnect wlan0'
+    alias wifi-disconnect="nmcli dev disconnect $__wifi_interface"
+    alias wifi-switch="wifi-disconnect && wifi-join"
+  fi
+  unset __wifi_interface
 fi
 
 ############################
@@ -257,11 +265,24 @@ cidr-high-dec(){
 # Courtesy of: http://codereview.stackexchange.com/questions/90263/network-mac-address-conversion-to-ipv6-link-local-address
 # Assumes valid input.
 ip6linklocal(){
-  python -c "m=hex(int('$1'.translate(None,' .:-'),16)^0x020000000000)[2:]; print 'fe80::%s:%sff:fe%s:%s' %(m[:4],m[4:6],m[6:8],m[8:12])" 2> /dev/null
+  python -c "p='$1'.split(':'); p.insert(3,'ff'); p.insert(4,'fe'); p[0]='%x'%(int(p[0],16)^2); ipp=[''.join(p[i:i+2]) for i in range(0, len(p), 2)]; print 'fe80::%s/64' % (':'.join(ipp))" 2> /dev/null
 }
 
 # Translate an IPv6 link-local address back to a MAC address.
 # Assumes valid input.
 ip6linklocal-reverse(){
-  python -c "a='$1'; print '%s:%s:%s:%s:%s:%s' % (hex(int(a[6:8], 16)^0x02)[2:],a[8:10],a[11:13],a[18:20],a[21:23], a[23:25])" 2> /dev/null
+  python -c "ip='$1';
+s=ip.find('/');
+if s != -1:
+  ip = ip[:s];
+ipp = ip.split(':'); mp=[];
+for ipsp in ipp[-4:]:
+  while len(ipsp) < 4:
+    ipsp = '0' + ipsp
+  mp.append(ipsp[:2])
+  mp.append(ipsp[-2:])
+np='%02x' % (int(mp[0],16)^2)
+del mp[3]
+del mp[3] 
+print ':'.join(mp);"
 }

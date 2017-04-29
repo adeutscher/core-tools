@@ -24,7 +24,7 @@ if qtype curl; then
         local dateString=$(curl -s --user-agent "Clockwork Penguin Legion" "http://girlgeniusonline.com/comic.php" 2> /dev/null | strings | grep -o '<div id="datestring">[^<]*</div>' | head -n1 | sed 's/<[^>]*>//g')
 
         if [ -n "$dateString" ]; then
-            success "$(printf "Current Girl Genius webcomic was published ${Colour_Bold}%s${Colour_Off}\n" "$dateString")"
+            success "$(printf "Current Girl Genius webcomic was published ${Colour_Bold}%s${Colour_Off}" "$dateString")"
         else
             error "Unable to get Girl Genius comic data..."
         fi
@@ -38,7 +38,7 @@ if qtype curl; then
         # Example title: "1011: Red Means Stop"
 
         if [ -n "$latestTitle" ]; then
-            success "$(printf "Current Order of the Stick comic is ${Colour_Bold}#%s${Colour_Off}\n" "$latestTitle")"
+            success "$(printf "Current Order of the Stick comic is ${Colour_Bold}#%s${Colour_Off}" "$latestTitle")"
         else
             error "Unable to get Order of the Stick comic data..."
         fi
@@ -55,7 +55,7 @@ if qtype curl; then
         local title="$(grep -m1 title <<< "$rssContents" | cut -d'>' -f2 | cut -d'<' -f1 | cut -d' ' -f 2-)"
 
         if [ -n "$title" ]; then
-            success "$(printf "Current Questionable Content comic is #${Colour_Bold}%s${Colour_Off}\n" "${title}")"
+            success "$(printf "Current Questionable Content comic is #${Colour_Bold}%s${Colour_Off}" "${title}")"
         else
             error "Unable to get Questionable Content comic data..."
         fi
@@ -69,7 +69,7 @@ if qtype curl; then
         local latestTitle=$(curl -s --user-agent "RaptorOS (SXMgdGhlcmUgYSByYXB0b3IgcmlnaHQgYmVoaW5kIHlvdT8K)" "http://what-if.xkcd.com/" 2> /dev/null | head -n9 | grep -m1 title| cut -d'<' -f 2 | cut -d'>' -f 2 )
 
         if [ -n "$latestTitle" ]; then
-            success "$(printf "Latest XKCD \"What If?\" is: ${Colour_Bold}%s${Colour_Off}\n" "$latestTitle.")"
+            success "$(printf "Latest XKCD \"What If?\" is: ${Colour_Bold}%s${Colour_Off}" "$latestTitle.")"
         else
             error "Unable to get XKCD's \"What If?\" title data..."
         fi

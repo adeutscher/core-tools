@@ -178,11 +178,11 @@ if qtype xfreerdp; then
             shift
             local other_arguments=$@
             if [ -z "${server}" ]; then
-               error "No RDP server specified...\n"
+               error "No RDP server specified..."
                return 1
             fi
 
-            notice "$(printf "Connecting to RDP server at ${Colour_NetworkAddress}${server}${Colour_Off}...\n")"
+            notice "$(printf "Connecting to RDP server at ${Colour_NetworkAddress}%s${Colour_Off}..." "${server}")"
             xfreerdp +auto-reconnect /sec:rdp +clipboard +compression +heartbeat /compression-level:2 /w:${RDP_WIDTH:-1600} /h:${RDP_HEIGHT:-900} /v:${server} ${other_arguments}
             return $?
         }
@@ -192,11 +192,11 @@ if qtype xfreerdp; then
             shift
             local other_arguments=$@
             if [ -z "${server}" ]; then
-                error "No RDP server specified...\n"
+                error "No RDP server specified..."
                 return 1
             fi
 
-            notice "$(printf "Connecting to RDP server at ${Colour_NetworkAddress}${server}${Colour_Off}... (Small Resolution)\n")"
+            notice "$(printf "Connecting to RDP server at ${Colour_NetworkAddress}${server}${Colour_Off}... (Small Resolution)")"
             xfreerdp /sec:rdp +compression +heartbeat /compression-level:2 +clipboard /w:800 /h:600 /v:${server} ${other_arguments}
             return $?
         }
@@ -207,11 +207,11 @@ if qtype xfreerdp; then
             shift
             local other_arguments=$@
             if [ -z "${server}" ]; then
-               error "No RDP server specified...\n"
+               error "No RDP server specified..."
                return 1
             fi
 
-            notice "$(printf "Connecting to RDP server at ${Colour_NetworkAddress}${server}${Colour_Off}...\n")"
+            notice "$(printf "Connecting to RDP server at ${Colour_NetworkAddress}${server}${Colour_Off}...")"
             xfreerdp --sec rdp --plugin cliprdr -g ${RDP_WIDTH:-1600}x${RDP_HEIGHT:-900} ${other_arguments} ${server}
             return $?
         }
@@ -221,11 +221,11 @@ if qtype xfreerdp; then
             shift
             local other_arguments=$@
             if [ -z "${server}" ]; then
-                error "No RDP server specified...\n"
+                error "No RDP server specified..."
                 return 1
             fi
 
-            notice "$(printf "Connecting to RDP server at ${Colour_NetworkAddress}${server}${Colour_Off}... (Small Resolution)\n")"
+            notice "$(printf "Connecting to RDP server at ${Colour_NetworkAddress}${server}${Colour_Off}... (Small Resolution)")"
             xfreerdp --sec rdp --plugin cliprdr -g 800x600 ${other_arguments} ${server} 
             return $?
         }

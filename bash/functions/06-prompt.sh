@@ -104,6 +104,9 @@ __build_prompt() {
     fi # End version control content check
   fi # End file system check for SVN.
 
+  local __host=${DISPLAY_HOSTNAME:-$HOSTNAME}
+  local __host=${__host%%.*}
+
   # Experimental: If the first line of the prompt would offer too little typing room, try shorting the prompt.
   # Would mostly come up when navigating deep directories in a small tmux pane.
   # Amongst our methods are such elements as:
@@ -111,7 +114,7 @@ __build_prompt() {
   # - (slightly) shorter SSH path.
   # - Shorten username to one letter
   if ! (( ${PROMPT_ALWAYS_COMPRESS:-0} )); then
-	local typing_space=$(($(stty size | cut -d' ' -f 2)-$(__strlen "$(pwd | sed "s|^$HOME|H|g")$(hostname -s)$USER")-${ssh_space_count:-0}-${vc_count:-0}-7))
+	local typing_space=$(($(stty size | cut -d' ' -f 2)-$(__strlen "$(pwd | sed "s|^$HOME|H|g")${__host}$USER")-${ssh_space_count:-0}-${vc_count:-0}-7))
   else
 	local typing_space=0
   fi
@@ -129,12 +132,16 @@ __build_prompt() {
 	# Compressed prompt
     # Make a bit more typing space in closed quarters
     # Start
-    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${USER:0:1}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'${HOSTNAME:0:1}'\[\033[m\]'$ssh_string_short
+    local host_char=${DISPLAY_HOSTNAME:0:1}
+    if [ -z "$host_char" ]; then
+      local host_char=${HOSTNAME:0:1}
+    fi
+    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${USER:0:1}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'${host_char:0:1}'\[\033[m\]'$ssh_string_short
     PS1=$PS1"\[$box_colour\]][\[\033[m\]\[$(__prompt_file_system_colour)\]\W\[\033[m\]\[$box_colour\]]\[\033[m\]"
   else
     # Regular expanded prompt
     # Start
-    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${DISPLAY_USER:-\u}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'"${DISPLAY_HOSTNAME:-\h}"'\[\033[m\]'$ssh_string_long
+    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${DISPLAY_USER:-\u}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'"${__host}"'\[\033[m\]'$ssh_string_long
     PS1=$PS1"\[$box_colour\]][\[\033[m\]\[$(__prompt_file_system_colour)\]\w\[\033[m\]\[$box_colour\]]\[\033[m\]"
   fi
   

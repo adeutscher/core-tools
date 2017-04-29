@@ -37,9 +37,18 @@ do_dynamic_setup(){
     # To solve BOTH of the above problems, making a dynamic conkyrc file.
     # File contents are based on conky version, at least for the short-term.
 
+    # To make things even more annoying, my laptop running Fedora 25
+    #  in fact has problems with the desktop mode.
+    # For the moment, only the affected datacomm machines shall go to "desktop" mode.
+
     # TODO: Get a better idea about why these problems occur.
     local window_type="override"
-    if conky --version | head -n1 | grep -qiP "^Conky 1\.1\d\."; then
+
+    # Original version-based check.
+    #if conky --version | head -n1 | grep -qiP "^Conky 1\.1\d\."; then
+
+    # Kludge fix for Datacomm machines.
+    if [[ $HOSTNAME =~ ^datacomm$ ]]; then
         # Assuming override crashes, and desktop has no problem
         local window_type="desktop"
     fi

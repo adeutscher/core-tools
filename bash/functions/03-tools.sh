@@ -96,33 +96,35 @@ else
     alias update-tools="error 'The no version control commands found. Install SVN and/or Git, then run reload-tools.'"
 fi
 
+#################
+# Git Functions #
+#################
+# Git functions are experimental at this stage.
+
+# A general note on git:
+## The switches used for working with a git repository when not directly in it are different between 1.X and 2.X versions of git,
+
+__is_git_repo(){
+    # Default, assume not a directory
+    local __no=1
+
+    if ! qtype git; then
+        [ -n "$2" ] && error "$(printf "$Colour_Command%s$Colour_Off is not installed." "git")"
+        return 1
+    elif [ -n "$1" ] && [ -d "$1/.git" ]; then
+        git-remote "$1" status 2> /dev/null >&2 && local __no=0
+    fi
+
+    (( "$__no" )) && [ -n "$2" ] && error "$(printf "$Colour_FilePath%s$Colour_Off does not appear to be a readable Git checkout!" "$1")"
+    return $__no
+}
+
 # Check to see if Git is even installed.
 # MobaXterm has an alias for saying that SVN isn not found which throws off qtype,
 #     so we need to use specific flags on the type command
 # Assuming that git is similar to this.
 if type -ftptP git 2> /dev/null >&2; then
 
-    #################
-    # Git Functions #
-    #################
-    # Git functions are experimental at this stage.
-
-    # A general note on git:
-    ## The switches used for working with a git repository when not directly in it are different between 1.X and 2.X versions of git,
-
-    __is_git_repo(){
-        # Default, assume not a directory
-        local __no=1
-
-        if [ -n "$1" ] && [ -d "$1/.git" ]; then
-            git-remote "$1" status 2> /dev/null >&2 && local __no=0
-        fi
- 
-
-        (( "$__no" )) && [ -n "$2" ] && error "$(printf "$Colour_FilePath%s$Colour_Off does not appear to be a readable Git checkout!" "$1")"
-
-        return $__no
-    }
 
     git-remote(){
 
@@ -272,21 +274,24 @@ if type -ftptP git 2> /dev/null >&2; then
     }
 fi
 
+#################
+# SVN Functions #
+#################
+
+__is_svn_repo(){
+    if ! qtype svn; then
+        [ -n "$2" ] && error "$(printf "$Colour_Command%s$Colour_Off is not installed." "svn")"
+        return 1
+    elif [ ! -n "$1" ] || [ ! -d "$1/.svn" ] || ! svn info "$1" 2> /dev/null >&2; then
+        [ -n "$2" ] && error "$(printf "$Colour_FilePath%s$Colour_Off does not appear to be a readable SVN checkout!" "$1")"
+        return 1
+    fi
+}
+
 # Check to see if SVN is even installed.
 # MobaXterm has an alias for saying that SVN isn't found which throws off qtype,
 #     so we need to use specific flags on the type command
 if type -ftptP svn 2> /dev/null >&2; then
-
-    #################
-    # SVN Functions #
-    #################
-
-    __is_svn_repo(){
-        if [ ! -n "$1" ] || [ ! -d "$1/.svn" ] || ! svn info "$1" 2> /dev/null >&2; then
-            [ -n "$2" ] && error "$(printf "$Colour_FilePath%s$Colour_Off does not appear to be a readable SVN checkout!" "$1")"
-            return 1
-        fi
-    }
 
     update-svn-repo(){
 

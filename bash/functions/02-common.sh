@@ -120,7 +120,7 @@ qtype(){
 #     but there is still no penalty for having a a non-existant directory.
 __add_to_path(){
     if !  grep -qP -m1 "(^|:)$1($|:)" <<< "$PATH"; then
-        PATH=$PATH:$1
+        PATH=$1:$PATH
         return 0
     fi
     return 1

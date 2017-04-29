@@ -28,7 +28,7 @@ if __is_unix; then
 
     connections-in-lan(){
         # Display incoming connections from LAN addresses.
-        connections-in-all | egrep --colour=none '(10\.[0-9]{1,3}|172\.(1[6-9]|2[1-90]|3[1-2])|\.192\.168)(\.[0-9]{1,3}){2}\->'
+        connections-in-all | egrep --colour=none '(10\.[0-9]{1,3}|172\.(1[6-9]|2[1-90]|3[1-2])|192\.168)(\.[0-9]{1,3}){2}\->'
     }
 
     connections-in-local(){
@@ -38,7 +38,7 @@ if __is_unix; then
 
     connections-in-remote(){
         # Display incoming connections from non-LAN addresses.
-        connections-in-all | grep -v '127\.0\.0\.1' | egrep -v '(10\.[0-9]{1,3}|172\.(1[6-9]|2[1-90]|3[1-2])|\.192\.168)(\.[0-9]{1,3}){2}\->'
+        connections-in-all | grep -v '127\.0\.0\.1' | egrep -v '(10\.[0-9]{1,3}|172\.(1[6-9]|2[1-90]|3[1-2])|192\.168)(\.[0-9]{1,3}){2}\->'
     }
 
     # Outgoing connections
@@ -55,7 +55,7 @@ if __is_unix; then
 
     connections-out-lan(){
         # Display outgoing connections that go to local area network addresses.
-        connections-out-all | egrep --colour=none '\->(10\.[0-9]{1,3}|172\.(1[6-9]|2[1-90]|3[1-2])|\.192\.168)(\.[0-9]{1,3}){2}'
+        connections-out-all | egrep --colour=none '\->(10\.[0-9]{1,3}|172\.(1[6-9]|2[1-90]|3[1-2])|192\.168)(\.[0-9]{1,3}){2}'
     }
     # Alias for connections-out-lan
     alias connections-lan='connections-out-lan'
@@ -67,7 +67,7 @@ if __is_unix; then
 
     connections-out-remote(){
         # Display outgoing connections, excluding localhost and LAN connections.
-        connections-out-all | grep --colour=never -v '127\.0\.0\.1' | egrep -v '\->(10\.[0-9]{1,3}|172\.(1[6-9]|2[1-90]|3[1-2])|\.192\.168)(\.[0-9]{1,3}){2}'
+        connections-out-all | grep --colour=never -v '127\.0\.0\.1' | egrep -v '\->(10\.[0-9]{1,3}|172\.(1[6-9]|2[1-90]|3[1-2])|192\.168)(\.[0-9]{1,3}){2}'
     }
 
     # IPv6 Listing

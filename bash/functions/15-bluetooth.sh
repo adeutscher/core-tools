@@ -35,6 +35,15 @@ if qtype bluetoothctl; then
             else
                 notice "$(printf "Already connected to device: ${Colour_Bold}%s${Colour_Off}" "$1")"
             fi
+
+            # Do not bother continuing if we are already connected.
+            # Not really an error condition.
+            return 0
+
+        elif ! qtype expect; then
+            # Humour the user up to the point of announcing the pending connection to check for the expect command.
+	    error "$(printf "${Colour_Command}%s${Colour_Off} is not installed. Install or connect manually with ${Colour_Command}%s${Colour_Off}" "expect" "bluetoothctl")"
+            return 127
         else
             # Device is not currently connected.
             if [ -n "$label" ]; then

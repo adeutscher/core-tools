@@ -11,7 +11,15 @@ fi
 
 
 get_raspbian(){
-        download_dir=${1:-$HOME}
+	download_dir=$(readlink -f "${1:-$HOME}")
+	if [ -z "$download_dir" ]; then
+            printf "Not a valid directory: $Colour_BIGreen%s/$Colour_Off\n" "$download_dir"
+            exit 1
+	elif ! [ -d "$download_dir" ]; then
+            printf "Not a valid directory: $Colour_BIGreen%s/$Colour_Off\n" "$download_dir"
+            exit 1
+	fi
+
         cd "$download_dir"
         printf "Downloading to $Colour_BIGreen%s/$Colour_Off\n" "$download_dir"
 

@@ -92,7 +92,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
     fi
 
     fs_bind_location=$(cut -d' ' -f1  <<< "${fs_data}" | sed 's/\\040/ /g' )
-    fs_type=$(cut -d' ' -f3 <<< "${fs_data}")
+    fs_type=$(cut -d' ' -f3 <<< "${fs_data}" | sed 's/unknown/???/g')
     fs_source=$(cut -d' ' -f4  <<< "${fs_data}" | sed 's/\\040/ /g' )
     fs_options=$(cut -d' ' -f5  <<< "${fs_data}" | sed 's/\\040/ /g' )
     # Set default options
@@ -113,7 +113,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         fs_colour=${colour_local_path}
     fi
 
-    printf  "\${color #${fs_colour}}${fs_title}\$color (\${color red}\${fs_type ${fs}}\$color)\$color\n"
+    printf  "\${color #${fs_colour}}${fs_title}\$color (\${color red}${fs_type}\$color)\$color\n"
     
     if ! grep -q "^/$" <<< "${fs_bind_location}" && ! [[ "${fs_type}" =~ "cifs" ]]; then
         # Avoid redundant information by treating bind mounts differently.
