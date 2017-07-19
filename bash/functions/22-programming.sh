@@ -1,11 +1,11 @@
 
-# Set LD_LIBARY_PATH for compiled libraries.
+# Set LD_LIBRARY_PATH for compiled libraries.
 if [ "$(__strlen "$LD_LIBRARY_PATH")" -gt 1 ] && \
   ! grep -q "\/usr\/local\/lib" <<< "$LD_LIBRARY_PATH"; then
     # Later note: I'm not sure why I used 'expr' instead of just [ -n ]. Will test later.
     # LD_LIBRARY_PATH has content.
     # Make sure that /usr/local/lib is not already in the path.
-    export LD_LIBARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
 else
     export LD_LIBRARY_PATH=/usr/local/lib
 fi

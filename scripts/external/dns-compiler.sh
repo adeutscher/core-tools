@@ -274,7 +274,7 @@ __compile(){
 
   # Record checksum of data as a global variable before re-compiling.
   OLD_DATA_CHECKSUM=$(__get_checksum)
-  # Truncate target file
+  # Truncate target file for good measure
   > "$DNS_COMPILER_TARGET"
 
     # The extra loop is necessary to make sure that domains from different interfaces do not interfere with each other.
@@ -286,8 +286,8 @@ __compile(){
     local nameserver="$(cut -d',' -f3 <<< "$domain_entry" | head -n1)"
 
     # TODO: If zone addition through rndc were working, we would instead be removing the domain (for good measure) and adding it here.
-    printf 'zone "%s" { type forward; forwarders { %s; }; forward only; }; // Interface: %s\n' "$domain" "$nameserver" "$interface" >> "$DNS_COMPILER_TARGET"
-  done
+    printf 'zone "%s" { type forward; forwarders { %s; }; forward only; }; // Interface: %s\n' "$domain" "$nameserver" "$interface"
+  done | sort | uniq > "$DNS_COMPILER_TARGET"
   
 }
 

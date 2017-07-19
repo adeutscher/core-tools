@@ -51,7 +51,7 @@ if qtype curl; then
         # Get RSS feed. Only need the relatively small number of lines.
         #   The -s switch on curl obscures the error message when head cuts the connection.
         # Switched to feed43 service in r666.
-        local rssContents="$(curl -s --user-agent "Orbital Pizza Delivery Service" "http://feed43.com/questionablecontent.xml" 2> /dev/null | grep -m1 -A3 item)"
+        local rssContents="$(curl -s --user-agent "Orbital Pizza Delivery Service" "https://feed43.com/questionablecontent.xml" 2> /dev/null | grep -m1 -A3 item)"
         local title="$(grep -m1 title <<< "$rssContents" | cut -d'>' -f2 | cut -d'<' -f1 | cut -d' ' -f 2-)"
 
         if [ -n "$title" ]; then
@@ -66,7 +66,7 @@ if qtype curl; then
     comic-whatif(){
 
         #   The -s switch on curl obscures the error message when head cuts the connection.
-        local latestTitle=$(curl -s --user-agent "RaptorOS (SXMgdGhlcmUgYSByYXB0b3IgcmlnaHQgYmVoaW5kIHlvdT8K)" "http://what-if.xkcd.com/" 2> /dev/null | head -n9 | grep -m1 title| cut -d'<' -f 2 | cut -d'>' -f 2 )
+        local latestTitle=$(curl -s --user-agent "RaptorOS (SXMgdGhlcmUgYSByYXB0b3IgcmlnaHQgYmVoaW5kIHlvdT8K)" "https://what-if.xkcd.com/" 2> /dev/null | head -n9 | grep -m1 title| cut -d'<' -f 2 | cut -d'>' -f 2 )
 
         if [ -n "$latestTitle" ]; then
             success "$(printf "Latest XKCD \"What If?\" is: ${Colour_Bold}%s${Colour_Off}" "$latestTitle.")"
@@ -74,67 +74,6 @@ if qtype curl; then
             error "Unable to get XKCD's \"What If?\" title data..."
         fi
 
-    }
-
-    # Dragonball Abridged. Not actually a webcomic, but I don't have a better place for the function and it performs the same commands.
-    comic-dbza-episode(){
-        # Note: The sed before the egrep will strip out all special characters. Could especially backfire with a legitimate '&amp;'.
-        local latest="$(curl -s --user-agent "Muffin Button" "http://teamfourstar.com/series/dragonball-z-abridged/" 2> /dev/null | grep -m1 archivetitle | sed 's/\&[^;]*;//g' | egrep -o '>D(ragonball|BZ)[^<&]*' | cut -d' ' -f4- | sed -e 's/^[ \t]*//' |  sed -e 's/[ \t]*$//')"
-
-        # Attempt to parse out the progress of the next episode.
-        local progressState="$(curl -s --user-agent "Makankōsappō" "http://teamfourstar.com/" | grep -m1 progressmeter | cut -d'"' -f 4 | cut -d'-' -f2)"
-        case "$progressState" in
-        1)
-            __progress="Writing (8%)"
-            ;;
-        2)
-            __progress="Writing (17%)"
-            ;;
-        3)
-            __progress="Writing (25%)"
-            ;;
-        4)
-            __progress="Writing (33%)"
-            ;;
-        5)
-            __progress="Recording (42%)"
-            ;;
-        6)
-            __progress="Recording (50%)"
-            ;;
-        7)
-            __progress="Recording (58%)"
-            ;;
-        8)
-            __progress="Recording (67%)"
-            ;;
-        9)
-            __progress="Editing (75%)"
-            ;;
-        10)
-            __progress="Editing (83%)"
-            ;;
-        11)
-            __progress="Editing (92%)"
-            ;;
-        12)
-            __progress="Editing (99%)"
-            ;;
-        13)
-            __progress="Complete!"
-            ;;
-        esac
-
-        if [ -n "$latest" ]; then
-            success "$(printf "The most recent Dragonball Abridged episode is \""${Colour_Bold}%s${Colour_Off} "$latest")\"."
-
-            if [ -n "$__progress" ]; then
-                success "$(printf "\tProgress on next Dragonball Abridged episode: ${Colour_Bold}%s${Colour_Off}" "$__progress")"
-            fi
-            unset __progress
-        else
-            error "Unable to get Team FourStar episode listings..."
-        fi
     }
 
 fi # end curl check

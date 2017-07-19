@@ -47,10 +47,10 @@ join(){
         exit 3
     fi
 
-    # Access point SSID cannot be more than 33 characters long
+    # Access point SSID cannot be more than 32 characters long
     ssid_length="$(($(wc -c <<< "$ssid")-1))"
-    if [ "$(echo "$ssid" | wc -c)" -gt 33 ]; then
-       error "$(printf "Access point SSID cannot be more than 33 characters long (requested SSID was $BOLD%d$NC characters)." "$ssid_length")" >&2
+    if [ "$(echo "$ssid" | wc -c)" -gt 32 ]; then
+       error "$(printf "Access point SSID cannot be more than 32 characters long (requested SSID was $BOLD%d$NC characters)." "$ssid_length")" >&2
        exit 4
     fi
 

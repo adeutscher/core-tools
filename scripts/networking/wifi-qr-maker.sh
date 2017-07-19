@@ -68,7 +68,7 @@ check-ssid(){
     len="$(expr length "$1")"
 
     if [ "$len" -gt 63 ]; then
-      error "WiFi SSIDs cannot be longer than 33 characters long."
+      error "WiFi SSIDs cannot be longer than 32 characters."
       return 1
     fi
     return 0

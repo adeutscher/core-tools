@@ -26,6 +26,10 @@ CONKYRC_PRIMARY=".$CONKYRC_PRIMARY_TEMPLATE"
 CONKYRC_SECONDARY_TEMPLATE=conkyrc.secondary
 CONKYRC_SECONDARY=".$CONKYRC_SECONDARY_TEMPLATE"
 
+# Store default values in one place.
+DEFAULT_PADDING_X=10
+DEFAULT_PADDING_Y=45
+
 # Set up per-system conkyrc settings.
 do_dynamic_setup(){
     # * Setting own_window_type to 'desktop' on Fedora 23 (conky 1.9) makes the conky
@@ -119,119 +123,78 @@ handle_arguments(){
     fi
 }
 
-get_primary_pos(){
+get_coords(){
+    local __target=$1
+    local __add_x=${2:-0}
+    local __add_y=${3:-0}
+    # Adjust X calculation for secondary bottom-left display.
+    local __is_bl=${4:-0}
 
-    gapX=${CONKY_PADDING_X:-10}
-    gapY=${CONKY_PADDING_Y:-35}
-
-    if [ "$(xrandr --current 2> /dev/null | grep " connected" | wc -l)" -eq 1 ]; then
-        posX=$gapX
-        posY=$gapY
-    else
-        local totalX="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f1)"
-        local totalY="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f2)"
-
-        # If we have specified a CONKY_SCREEN variable in our BASH config and such a screen is present, use that one to calculate our offsets.
-        if [ -n "$CONKY_SCREEN" ]; then
-            local primary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "^$CONKY_SCREEN " | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
-        else
-            local primary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "primary" | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
-        fi
-
-        if [ -z "$primary_monitor_info" ]; then
-            # If no valid output from CONKY_SCREEN attempt,
-            #     or if xrandr does not clearly say which is
-            #     the 'primary' monitor, then simply go with
-            #     the first connected one.
-            local primary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 " connected" | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
-        fi
-
-        # Example content of primary_monitor_info:
-        #   1600x900+0+124
-        #   * 1600x900 display
-        #   * Display's left edge is offset 0px from the left of the overall X display.
-        #   * Display's top edge is offset 124px from the top of the overall X display.
-
-        # Width of Display
-        local mainX="$(cut -d'x' -f1 <<< "$primary_monitor_info")"
-        # Height of Display
-        local mainY="$(cut -d'x' -f2 <<< "$primary_monitor_info" | cut -d'+' -f1)"
-
-        # Left edge's offset from left of overall X display.
-        local offX="$(cut -d'+' -f2 <<< "$primary_monitor_info")"
-        # Top edge's offset from top of overall X display.
-        local offY="$(cut -d'+' -f3 <<< "$primary_monitor_info")"
-
-        if [ -n "$totalX" ] && [ -n "$totalY" ] && [ -n "$mainX" ] && [ -n "$mainY" ] && [ -n "$offX" ] && [ -n "$offY" ]; then
-            # Uncomment below for debugging
-            #echo "$totalX- ($mainX+$offX) + $gapX"
-            #echo "$totalY- ($mainY+$offY) + $gapY"
-            posX="$(($totalX- ($mainX+$offX) + $gapX))"
-            posY="$(($totalY- ($mainY+$offY) + $gapY))"
-        else
-            return 1
-        fi
+    if [ -z "$__target" ]; then
+        return 1
     fi
+
+    ! get_monitor_info "$__target" && return 1
+
+    if (( $__is_bl )); then
+        TARGET_X="$((- ( $__primary_monitor_bl_x - $MONITOR_CORNER_BL_X ) + $__add_x ))"
+    else
+        TARGET_X="$((- ( $MONITOR_CORNER_BR_X - $__primary_monitor_br_x ) + $__add_x ))"
+    fi
+
+    TARGET_Y="$(( $MONITOR_CORNER_BR_Y - $__primary_monitor_br_y + $__add_y ))"
 }
 
-get_secondary_pos(){
+get_monitor_info(){
 
-    secondaryGapX=${CONKY_SECONDARY_PADDING_X:-10}
-    secondaryGapY=${CONKY_SECONDARY_PADDING_Y:-35}
+    local __monitor="$1"
+    local __is_primary=${2:-0}
 
-    if [ "$(xrandr --current 2> /dev/null | grep " connected" | wc -l)" -eq 1 ]; then
-        secondaryPosX=$secondaryGapX
-        secondaryPosY=$secondaryGapY
-    else
-        local totalX="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f1)"
-        local totalY="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f2)"
+    [ -z "$__monitor" ] && return 1
+    local __monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "^$__monitor " | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
 
-        # If we have specified a CONKY_SECONDARY_SCREEN variable in our BASH config and such a screen is present, use that one to calculate our offsets.
-        if [ -n "$CONKY_SECONDARY_SCREEN" ]; then
-            local secondary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "^$CONKY_SECONDARY_SCREEN " | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
-        else
-            local secondary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "primary" | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
-        fi
+    # Example content of monitor info:
+    #   1600x900+0+124
+    #   * 1600x900 display
+    #   * Display's left edge is offset 0px from the left of the overall X display.
+    #   * Display's top edge is offset 124px from the top of the overall X display.
 
-        if [ -z "$secondary_monitor_info" ]; then
-            # If no valid output from CONKY_SECONDARY_SCREEN attempt,
-            #     or if xrandr does not clearly say which is
-            #     the 'primary' monitor, then simply go with
-            #     the first connected one.
-            local secondary_monitor_info="$(xrandr --current 2> /dev/null | grep -m1 " connected" | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
-        fi
+    # Width of Display
+    MONITOR_WIDTH="$(cut -d'x' -f1 <<< "$__monitor_info")"
+    # Height of Display
+    MONITOR_HEIGHT="$(cut -d'x' -f2 <<< "$__monitor_info" | cut -d'+' -f1)"
+    # Left edge's offset from left of overall X display.
+    MONITOR_OFFSET_X="$(cut -d'+' -f2 <<< "$__monitor_info")"
+    # Top edge's offset from top of overall X display.
+    MONITOR_OFFSET_Y="$(cut -d'+' -f3 <<< "$__monitor_info")"
 
-        # Example content of secondary_monitor_info:
-        #   1600x900+0+124
-        #   * 1600x900 display
-        #   * Display's left edge is offset 0px from the left of the overall X display.
-        #   * Display's top edge is offset 124px from the top of the overall X display.
-
-        # Width of Display
-        local mainX="$(cut -d'x' -f1 <<< "$secondary_monitor_info")"
-        # Height of Display
-        local mainY="$(cut -d'x' -f2 <<< "$secondary_monitor_info" | cut -d'+' -f1)"
-        # Left edge's offset from left of overall X display.
-        local offX="$(cut -d'+' -f2 <<< "$secondary_monitor_info")"
-        # Top edge's offset from top of overall X display.
-        local offY="$(cut -d'+' -f3 <<< "$secondary_monitor_info")"
-
-        if [ -n "$totalX" ] && [ -n "$totalY" ] && [ -n "$mainX" ] && [ -n "$mainY" ] && [ -n "$offX" ] && [ -n "$offY" ]; then
-            # Uncomment below for debugging
-            #echo "$(($offX + $gapX))"
-            #echo "$totalY- ($mainY+$offY) + $gapY"
-            secondaryPosX="$(($offX + $secondaryGapX))"
-            secondaryPosY="$(($totalY- ($mainY+$offY) + $secondaryGapY))"
-        else
-            return 1
-        fi
+    # If we are trying to get info on our primary monitor during initialization,
+    #   then the __primary_monitor_* variables will not be set yet.
+    if (( ${__is_primary:-0} )); then
+        local __primary_monitor_offset_x=$MONITOR_OFFSET_X
+        local __primary_monitor_offset_y=$MONITOR_OFFSET_Y
+        local __primary_monitor_width=$MONITOR_WIDTH
+        local __primary_monitor_height=$MONITOR_HEIGHT
     fi
+
+    # So far as I understand, the main conky display's positioning in my setup is relative to the
+    #     bottom-right of my primary monitor (as opposed to the first monitor, largest monitor, or otherwise).
+    # From that, a positive X value places the bottom-right display more to the left and a positive Y value moves it up.
+
+    # X coordinates work a bit differently, with (0,0) being in the top-right. +Y is down, and +X is right
+    # For convenience, calculating the coordinates of the bottom-right corner with (0,0) being the bottom-left. +Y is up, +X is right
+    MONITOR_CORNER_BR_X=$(($MONITOR_WIDTH+$MONITOR_OFFSET_X))
+    MONITOR_CORNER_BR_Y=$(($__total_y-$MONITOR_OFFSET_Y-$MONITOR_HEIGHT))
+
+    # For future use with the secondary display (which is relative to bottom-left), also collecting the co-ords of the bottom-left corner.
+    MONITOR_CORNER_BL_X=$MONITOR_OFFSET_X
+    MONITOR_CORNER_BL_Y=$MONITOR_CORNER_BR_Y
 }
 
 # For killing multiple sessions in debug-mode.
 kill_sessions(){
   printf "Clearing sessions\n"
-  #killall conky 2> /dev/null
+  killall conky 2> /dev/null
 }
 
 # Exit with a failure message to stdout and an attempt to a desktop environment.
@@ -244,14 +207,54 @@ setup_failure(){
     exit 1
 }
 
+setup_global_values(){
+    __total_x="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f1)"
+    __total_y="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f2)"
+
+    [ -z "$__total_y" ] && return 1
+
+    __primary_monitor="$(xrandr --current 2> /dev/null | grep -m1 "primary" | cut -d' ' -f1)"
+
+    # Fall back to first connected monitor if none are designated by "primary".
+    if [ -z "$__primary_monitor" ]; then
+        __primary_monitor="$(xrandr --current 2> /dev/null | grep -w "connected" | cut -d' ' -f1)"
+    fi
+
+    [ -z "$__primary_monitor" ] && return 1
+
+    ! get_monitor_info "$__primary_monitor" 1 && return 1
+
+    __primary_monitor_width=$MONITOR_WIDTH
+    __primary_monitor_height=$MONITOR_HEIGHT
+    __primary_monitor_offset_x=$MONITOR_OFFSET_X
+    __primary_monitor_offset_y=$MONITOR_OFFSET_Y
+
+    # For convenience, calculating the coordinates of the bottom-right corner with (0,0) being the bottom-left.
+    __primary_monitor_br_x=$MONITOR_CORNER_BR_X
+    __primary_monitor_br_y=$MONITOR_CORNER_BL_Y
+
+    # For future use with the secondary display (which is relative to bottom-left), also collecting the co-ords of the bottom-left corner.
+    __primary_monitor_bl_x=$MONITOR_CORNER_BL_X
+    __primary_monitor_bl_y=$MONITOR_CORNER_BR_Y
+}
+
 handle_arguments $@
 
-if ! get_primary_pos; then
+set -x
+setup_global_values
+
+if ! get_coords "${CONKY_SCREEN:-$__primary_monitor}" "${CONKY_PADDING_X:-$DEFAULT_PADDING_X}" "${CONKY_PADDING_Y:-$DEFAULT_PADDING_Y}"; then
     setup_failure "Failed to get X dimensions for primary display! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)"
 fi
+POS_PRIMARY_X=$TARGET_X
+POS_PRIMARY_Y=$TARGET_Y
 
-if (( ${CONKY_ENABLE_TASKS:-0} )) && ! get_secondary_pos; then
-    setup_failure "Failed to get X dimensions for secondary display! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)"
+if (( ${CONKY_ENABLE_TASKS:-0} )); then
+   if ! get_coords "${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}" "${CONKY_SECONDARY_PADDING_X:-$DEFAULT_PADDING_X}" "${CONKY_SECONDARY_PADDING_Y:-$DEFAULT_PADDING_Y}" 1; then
+       setup_failure "Failed to get X dimensions for secondary display! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)"
+   fi
+   POS_SECONDARY_X=$TARGET_X
+   POS_SECONDARY_Y=$TARGET_Y
 fi
 
 # Clear cache.
@@ -340,20 +343,20 @@ if (( "$DEBUG" )); then
     # If we're in debug mode, run conky immediately in the foreground.
 
     # Print off the conky command being used for good measure.
-    printf "\nconky -c '$CONKYRC_PRIMARY' -a bottom_right -x $posX -y $posY\n\n"
+    printf "\nconky -c '$CONKYRC_PRIMARY' -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y\n\n"
 
     # Start conky session(s)
     if (( ${CONKY_ENABLE_TASKS:-0} )); then
-      printf "\nconky -c '$CONKYRC_SECONDARY' -a bottom_left -x $secondaryPosX -y $secondaryPosY\n\n"
-      conky -c "$CONKYRC_SECONDARY" -a bottom_left -x $secondaryPosX -y $secondaryPosY &
+      printf "\nconky -c '$CONKYRC_SECONDARY' -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y\n\n"
+      conky -c "$CONKYRC_SECONDARY" -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y &
     fi
-    conky -c "$CONKYRC_PRIMARY" -a bottom_right -x $posX -y $posY
+    conky -c "$CONKYRC_PRIMARY" -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y
 else
     # Standard mode
     # Sleep and start
-    sleep $countdown && conky -c "$CONKYRC_PRIMARY" -a bottom_right -x $posX -y $posY &
+    sleep $countdown && conky -c "$CONKYRC_PRIMARY" -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y &
     if (( ${CONKY_ENABLE_TASKS:-0} )); then
-        sleep $countdown && conky -c "$CONKYRC_SECONDARY" -a bottom_left -x $secondaryPosX -y $secondaryPosY &
+        sleep $countdown && conky -c "$CONKYRC_SECONDARY" -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y &
     fi
 fi
 

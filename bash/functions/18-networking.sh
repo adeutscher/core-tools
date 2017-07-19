@@ -147,7 +147,7 @@ wifi-list-raw(){
     local iface=$1
 
     if ! iwconfig "$iface" 2> /dev/null | grep -q "IEEE"; then
-        error "$(printf "Interface $Colour_Bold%s$Colour_Off not found or not a wireless interface...")"
+        error "$(printf "Interface $Colour_Bold%s$Colour_Off not found or not a wireless interface..." "$iface")"
         return 2
     fi
 

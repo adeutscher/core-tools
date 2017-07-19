@@ -64,6 +64,12 @@ if type nmcli 2> /dev/null >&2 && nmcli device status 2> /dev/null | grep -v unm
     exit 2
 fi
 
+# Confirm that the specified bridge exists.
+if brctl show "${bridge}" 2>&1 | grep -iq "No such device"; then
+    error "$(printf "Bridge interface \"$BOLD%s$NC\" not found." "${bridge}")" >&2
+    exit 2
+fi
+
 # Naming the temporary configuration file in part off of the interface to allow us to
 #  possibly review configurations for multiple simultaneous instances of hostapd.
 hostapd_config="/tmp/hostapd-$interface-temp.conf"
@@ -108,8 +114,8 @@ if [ -n "$password" ] && ( [ "$password_length" -lt 8 ] || [ "$password_length" 
 fi
 
 ssid_length="$(expr length "$ssid")"
-if [ "$ssid_length" -gt 33 ]; then
-   error "$(printf "Access point SSID cannot be more than 33 characters long (requested SSID was $BOLD%d$NC characters)." "$ssid_length")" >&2
+if [ "$ssid_length" -gt 32 ]; then
+   error "$(printf "Access point SSID cannot be more than 32 characters long (requested SSID was $BOLD%d$NC characters)." "$ssid_length")" >&2
    exit 4
 fi
 
