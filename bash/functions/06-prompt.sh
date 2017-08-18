@@ -471,7 +471,6 @@ __svn_stat (){
 
 ## Credit for original git-checking functions goes to http://ezprompt.net/
 # get current branch in git repo
-# The downside 
 function __parse_git_branch() {
   # We want to both detect a git checkout and get our current branch
   #   before continuing to try for further information.
