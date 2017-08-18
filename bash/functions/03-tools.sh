@@ -223,7 +223,7 @@ if type -ftptP git 2> /dev/null >&2; then
         # If the domain name can be resolved, then it is assumed to be reachable.
         if grep -qP "^(https?|git)://" <<< "$repoUrl"; then
             # HTTP Clone
-            local repoDomain=$(cut -d'/' -f 3 <<< "$repoUrl")
+            local repoDomain=$(cut -d'/' -f 3 <<< "$repoUrl" | sed 's/^[^@]*@//')
         else
             # SSH Clone
             local repoDomain=$(cut -d':' -f 1 <<< "$repoUrl" | cut -d'@' -f2)

@@ -46,7 +46,7 @@ build-tmux(){
         fg=red
         style="Desktop Machine"
     ;;
-    "spare"*)
+    "scudder"*)
         bg=green
         fg=colour208 # orange
         active_fg="black"

@@ -8,7 +8,7 @@
 from BaseHTTPServer import HTTPServer
 from SimpleHTTPServer import SimpleHTTPRequestHandler
 from SocketServer import ThreadingMixIn
-import os, sys
+import getopt, os, sys
 # Extra imports used in improved directory listing
 import cgi, urllib
 try:
@@ -16,6 +16,22 @@ try:
 except ImportError:
     from StringIO import StringIO
 
+def process_arguments():
+    args = {}
+    try:
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"b:p:")
+    except getopt.GetoptError:
+        print "GetoptError"
+        sys.exit(1)
+    for opt, arg in opts:
+        if opt in ("-b"):
+            args["bind"] = arg
+        elif opt in ("-p"):
+            args["port"] = int(arg)
+    switch_arg = False
+    if len(flat_args):
+        args["dir"] = flat_args[len(flat_args)-1]
+    return args
 
 class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
 
@@ -45,8 +61,9 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         f = StringIO()
         displaypath = cgi.escape(urllib.unquote(self.path))
         f.write('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
-        f.write("<html>\n<title>Directory listing for %s</title>\n" % displaypath)
+        f.write("<html>\n<title>Directory listing for %s (%s)</title>\n" % (displaypath, os.getcwd()))
         f.write("<body>\n<h2>Directory listing for %s</h2>\n" % displaypath)
+        f.write(self.render_breadcrumbs(displaypath))
         f.write("<hr>\n<ul>\n")
 
         if not self.path == "/":
@@ -62,7 +79,7 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
                 if os.path.isdir(os.path.realpath(fullname)):
                     # Directory via Symlink
                     displayname = name + "/@"
-                    linkname = name + "/@"
+                    linkname = name + "/"
                     extrainfo = "(Symlink to directory <strong>%s</strong>)" % cgi.escape(os.path.realpath(fullname))
                 else:
                     # File via Symlink
@@ -90,17 +107,47 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         return f
 
+    def render_breadcrumbs(self, path):
+        current = "/"
+        items = [(current, "Root")]
+
+        for item in path.split("/"):
+            if not item:
+                continue
+            current += item + "/"
+            items.append((current, item))
+        content = ""
+        i = 0
+        for item in items:
+            print item
+            i += 1
+            if i == len(items):
+                content += " / <strong>%s</strong>" % item[1]
+            else:
+                content += " / <a href='%s'>%s</a>" % (item[0], item[1])
+        return content
+
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
 
 if __name__ == '__main__':
-    bind_address = "0.0.0.0"
-    bind_port = 8080
+    args = process_arguments()
+    bind_address = args.get("bind", "0.0.0.0")
+    bind_port = args.get("port", 8080)
+    directory = args.get("dir", os.getcwd())
+    if not os.path.isdir(directory):
+        if sys.stdout.isatty():
+            print "Path \033[1;92m%s\033[0m does not seem to exist." % os.path.realpath(directory)
+        else:
+            print "Path %s does not seem to exist." % os.path.realpath(directory)
+        exit(1)
+    os.chdir(directory)
+
     server = ThreadedHTTPServer((bind_address, bind_port), SimpleHTTPVerboseReqeustHandler)
     if sys.stdout.isatty():
-        print "Sharing \033[1;92m%s\033[0m on %s:%d" % (os.path.realpath(os.getcwd()), bind_address, bind_port)
+        print "Sharing \033[1;92m%s\033[0m on %s:%d" % (os.path.realpath(directory), bind_address, bind_port)
     else:
-        print "Sharing %s on %s:%d" % (os.path.realpath(os.getcwd()), bind_address, bind_port)
+        print "Sharing %s on %s:%d" % (os.path.realpath(directory), bind_address, bind_port)
     print "Starting server, use <Ctrl-C> to stop"
     try:
         server.serve_forever()

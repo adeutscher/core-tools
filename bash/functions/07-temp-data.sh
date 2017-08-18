@@ -5,5 +5,5 @@
 toolsCache=/tmp/$USER
 
 mkdir "$toolsCache" 2> /dev/null
-chmod 700 "$toolsCache"
+chmod 700 "$toolsCache" 2> /dev/null
 

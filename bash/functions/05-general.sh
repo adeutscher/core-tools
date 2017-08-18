@@ -138,10 +138,15 @@ if __is_unix; then
     fi
 
     # Download music from YouTube via youtube-dl
-    if qtype youtube-dl && qtype avconv; then
-        # If avconv is not available,
-        #     then assume that we aren't able to convert our downloaded file(s) to mp3.
-        alias youtube='youtube-dl --no-mtime --audio-quality 0 --audio-format mp3 -x'
+    if qtype youtube-dl; then
+
+        alias youtube-dl='youtube-dl --no-mtime'
+
+        if qtype avconv; then
+            # If avconv is not available,
+            #     then assume that we aren't able to convert our downloaded file(s) to mp3.
+            alias youtube-dl-mp3='youtube-dl --audio-quality 0 --audio-format mp3 -x'
+        fi
     fi
 
     # Conky

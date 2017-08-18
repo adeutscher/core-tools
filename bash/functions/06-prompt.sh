@@ -471,46 +471,40 @@ __svn_stat (){
 
 ## Credit for original git-checking functions goes to http://ezprompt.net/
 # get current branch in git repo
+# The downside 
 function __parse_git_branch() {
-  local BRANCH=`git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/'`
-  if [ -n  "${BRANCH}" ]; then
+  # We want to both detect a git checkout and get our current branch
+  #   before continuing to try for further information.
+
+  # Alternative idea for detecting git presence to a double-'git branch':
+  # Grab branch with: git status 2> /dev/null | head -n1 | sed -r 's/^(# )?On branch //'
+  # This alternative would be one fewer git call, but I am worried that the extra
+  #  information that 'git status' grabs would end up taking more time than the double-call.
+  # The double-'git branch' seems more likely to go off of a nice and small static location.
+  if git branch 2> /dev/null >&2; then
+    local BRANCH="$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')"
     local STAT=$(__parse_git_dirty)
-    printf "${BRANCH},${STAT}\n"
+    printf "%s,%s\n" "${BRANCH:-EMPTY}" "$(__parse_git_dirty)"
   fi
 }
 
 # get current status of git repo
 function __parse_git_dirty {
-  local status=`git status 2>&1 | tee`
-  local dirty=`grep -qm1 "modified:" <<< "${status}"; echo "$?"`
-  local untracked=`grep -qm1 "Untracked files:" <<< "${status}"; echo "$?"`
-  local ahead=`grep -qm1 "Your branch is ahead of" <<< "${status}"; echo "$?"`
-  local newfile=`grep -qm1 "new file:" <<< "${status}"; echo "$?"`
-  local renamed=`grep -qm1 "renamed:" &> /dev/null <<< "${status}"; echo "$?"`
-  local deleted=`grep -qm1 "deleted:" <<< "${status}"; echo "$?"`
-
-  if [ "${renamed}" == "0" ]; then
-    local bits=">${bits}"
-  fi
-  if [ "${ahead}" == "0" ]; then
-    local bits="*${bits}"
-  fi
-  if [ "${newfile}" == "0" ]; then
-    local bits="+${bits}"
-  fi
-  if [ "${untracked}" == "0" ]; then
-    local bits="?${bits}"
-  fi
-  if [ "${deleted}" == "0" ]; then
-    local bits="x${bits}"
-  fi
-  if [ "${dirty}" == "0" ]; then
-    # Dirty means that tracked files have been changed.
-    local bits="!${bits}"
-  fi
-  if [ -n "${bits}" ]; then
-    printf "${bits}"
-  fi
+  local status="$(git status 2>&1)"
+  # Legend:
+  #   ! - Modified files
+  #   ? - Untracked files
+  #   x - Deleted files
+  #   + - New files
+  #   > - Renamed files
+  #   * - Unpushed commits
+  printf "%c%c%c%c%c%c" \
+    "$(grep -qm1 "modified:" <<< "${status}" && echo '!')" \
+    "$(grep -qm1 "Untracked files:" <<< "${status}" && echo "?")" \
+    "$(grep -qm1 "deleted:" <<< "${status}" && echo "x")" \
+    "$(grep -qm1 "new file:" <<< "${status}" && echo "+")" \
+    "$(grep -qm1 "renamed:" &> /dev/null <<< "${status}" && echo ">")" \
+    "$(grep -qm1 "Your branch is ahead of" <<< "${status}" && echo "*")"
 }
 
 # The flags output by __parse_git_dirty will take some getting used to.

@@ -5,11 +5,14 @@
 ###################
 
 ## Password ##
-# Decrypt piped data that has that has been encrypted with a passwords
-alias decrypt-password="openssl enc -d -aes-256-cbc -a -salt | gunzip"
 
 # Encrypt piped data with a password.
-alias encrypt-password="gzip | openssl enc -aes-256-cbc -a -salt"
+# Also pipe through gzip to apply some compression.
+alias aes-encrypt-password="gzip | openssl enc -aes-256-cbc -a -salt"
+
+# Decrypt piped data that has that has been encrypted with a passwords.
+# Assume that piped data was encrypted with counterpart aes-encrypt-password alias, and pipe openssl output through gunzip
+alias aes-ecrypt-password="openssl enc -d -aes-256-cbc -a -salt | gunzip"
 
 ###################
 # File Management #

@@ -17,6 +17,19 @@ if qtype curl; then
     # A set of functions for web-comics.
     #  Mostly for discreetly checking for updates on a comic that
     #      does not update like clockwork for one reason or another.
+    #      Alternately, I'm not properly aware of the schedule or am just impatient.
+
+    comic-erma(){
+        local __contents="$(curl -s "https://tapas.io/series/erma")"
+
+        local title="$(grep -m1 data-episode-title <<< "$__contents" | cut -d '"' -f 2 | sed 's/^Erma\- //')"
+
+        if [ -n "$title" ]; then
+            success "$(printf "Current Erma comic is ${Colour_Bold}%s${Colour_Off}" "$title")"
+        else
+            error "Unable to get Erma comic data..."
+        fi
+    }
 
     # Girl Genius
     comic-gg-day(){
@@ -29,6 +42,19 @@ if qtype curl; then
             error "Unable to get Girl Genius comic data..."
         fi
 
+    }
+
+    # Maddy Scientist
+    comic-maddy-scientist(){
+        local __contents="$(curl -s "https://tapas.io/series/maddyscientist")"
+
+        local title="$(grep -m1 data-episode-title <<< "$__contents" | cut -d '"' -f 2)"
+
+        if [ -n "$title" ]; then
+            success "$(printf "Current Maddy Scientist comic is ${Colour_Bold}#%s${Colour_Off}" "$title")"
+        else
+            error "Unable to get Maddy Scientist comic data..."
+        fi
     }
 
     # Order of the Stick

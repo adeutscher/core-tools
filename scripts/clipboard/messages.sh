@@ -13,6 +13,7 @@ fi
 
 error(){
   printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  __error_count=$((${__error_count:-0}+1))
 }
 
 notice(){
@@ -21,8 +22,10 @@ notice(){
 
 success(){
   printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  __success_count=$((${__success_count:-0}+1))
 }
 
 warning(){
   printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  __warning_count=$((${__warning:-0}+1))
 }

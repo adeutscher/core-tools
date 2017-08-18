@@ -36,17 +36,10 @@ if __is_unix; then
     fi
 
     if [ -n "$WINDOWS_BOOT_INDEX" ]; then
-        reboot-windows(){
-            warning "Reminder: This function will reboot the machine to Windows!"
-
+        reboot-windows-prep(){
             if [ -z "$WINDOWS_BOOT_INDEX" ]; then
-                error "Someone messed with your environment variables and unset WINDOWS_BOOT_INDEX!"
                 return 1
             fi
-
-            # Lazy convenience. If sudo was used recently, then this would otherwise be an instant reboot
-            notice "You have 5s to abort if you used sudo recently."
-            sleep 5
 
             local command=grub-reboot
             if qtype grub2-reboot; then
@@ -54,8 +47,20 @@ if __is_unix; then
                 local command=grub2-reboot
             fi
 
+            # Assume that a distro will only have one grubenv until proven otherwise.
+            local grubenv=$(find /boot -type f -name grubenv 2> /dev/null | head -n1)
+
+            # Only call sudo if we cannot already write to the file.
+            if [ ! -w "$grubenv" ]; then
+                local sudo=sudo
+            fi
+            
+            # The && does not really matter at the moment,
+            #   since failing to set grub2-editenv will not
+            #   give a non-zero exit code (with an unedited grub2-reboot script)...
+
             # Decrease by one to fix the variable to zero indexing.
-            sudo $command $(($WINDOWS_BOOT_INDEX-1)) && sudo reboot
+            $sudo $command $(($WINDOWS_BOOT_INDEX-1)) && warning "On this computer's next boot only, Windows will be the default."
         }
     fi
 fi:w

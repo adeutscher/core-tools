@@ -66,5 +66,10 @@ target="$(readlink -f "${2:-$(pwd)}")"
 notice "$(printf "Formatting all '$GREEN%s$NC' files in $GREEN%s$NC." "$1" "$target")"
 notice "$(printf "$BLUE%s$NC switches: $BOLD%s$NC" "astyle" "$switches")"
 
-find "$target" -name "*$extension" | xargs -I{} astyle $switches "{}"
+unset __code_file
+while read __code_file; do
+  if [ -n "$__code_file" ]; then
+    astyle $switches "$__code_file"
+  fi
+done <<< "$(find "$target" -name "*$extension")"
 
