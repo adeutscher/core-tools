@@ -15,3 +15,7 @@ unset -f ifconfig service
 # 2017-03-04
 # Converted http-quick-share to a standalone script to support threading.
 unset -f http-quick-share
+
+# 2017-09-19
+# Converted rdp function to a standalone script.
+unset -f rdp rdp-small

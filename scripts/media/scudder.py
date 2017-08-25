@@ -419,20 +419,21 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             nav_html += "\t\t<a class='%s' href='%s'>%s</a>\n" % link
         nav_html += "<strong>(%d / %d)</strong></div>\n" % (page, tally)
 
+        image_html = '<div class="largeImageWrapper">'
         if 'source' in arguments and arguments['source'][0] == "random":
             # From a random page
-            image_html = """<a href="/random?path=%s&path&origin=%d">
+            image_html += """<a href="/random?path=%s&path&origin=%d">
                                 <img class="largeImage" src="/image%s"/>
                             </a>\n""" % (path, page, page_path)
         elif page < tally:
             # More pages to go
-            image_html = """
-                            <div class="largeImageWrapper"><a href="/view?path=%s&page=%d">
-                                <img class="largeImage" src="/image%s"/></div>
+            image_html += """<a href="/view?path=%s&page=%d">
+                                <img class="largeImage" src="/image%s"/>
                             </a>\n""" % (path, page + 1, page_path)
         else:
             # No more pages to go, ergo no link.
-            image_html = "<img class='largeImage' src='/image%s'/>\n" % (page_path)
+            image_html += "<img class='largeImage' src='/image%s'/>\n" % (page_path)
+        image_html += "</div>"
 
         path_html = "<p>Viewing: <strong>.%s</strong></p><p>Path: <strong>%s%s</strong></p>" % (page_path, GALLERY_PATH, page_path)
         return self.send_content(self.render_page(self.render_breadcrumbs(path), nav_html + image_html + nav_html + path_html, self.get_navigation_javascript()))
@@ -597,7 +598,7 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def send_redirect(self, target):
         # redirect browser - doing basically what apache does
-        self.send_response(301)
+        self.send_response(307)
         self.send_header("Location", target)
         self.end_headers()
         return None
@@ -659,6 +660,7 @@ if __name__ == '__main__':
         server.serve_forever()
     except socket.error as e:
         print "SocketError: %s" % e
+        exit(1)
     except KeyboardInterrupt:
         # Ctrl-C
         exit(130)

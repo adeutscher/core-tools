@@ -496,21 +496,23 @@ function __parse_git_dirty {
   #   x - Deleted files
   #   + - New files
   #   > - Renamed files
+  #   t - Typechanged files
   #   * - Unpushed commits
-  printf "%c%c%c%c%c%c" \
-    "$(grep -qm1 "modified:" <<< "${status}" && echo '!')" \
-    "$(grep -qm1 "Untracked files:" <<< "${status}" && echo "?")" \
-    "$(grep -qm1 "deleted:" <<< "${status}" && echo "x")" \
-    "$(grep -qm1 "new file:" <<< "${status}" && echo "+")" \
-    "$(grep -qm1 "renamed:" &> /dev/null <<< "${status}" && echo ">")" \
-    "$(grep -qm1 "Your branch is ahead of" <<< "${status}" && echo "*")"
+  echo "$(grep -qm1 "modified:" <<< "${status}" && echo '!') \
+    $(grep -qm1 "Untracked files:" <<< "${status}" && echo "?") \
+    $(grep -qm1 "deleted:" <<< "${status}" && echo "x") \
+    $(grep -qm1 "new file:" <<< "${status}" && echo "+") \
+    $(grep -qm1 "renamed:" &> /dev/null <<< "${status}" && echo ">") \
+    $(grep -qm1 "typechange:" &> /dev/null <<< "${status}" && echo "t") \
+    $(grep -qm1 "Your branch is ahead of" <<< "${status}" && echo "*")" \
+    | sed 's/\s//g' 2> /dev/null
 }
 
 # The flags output by __parse_git_dirty will take some getting used to.
 # This function is a lazy way call up a quick reminder for myself.
 # Will probably axe it, eventually.
 git-prompt-reminder(){
-  notice "$(printf "Git prompt flags: [(${Colour_Bold}>${Colour_Off}:renamed-elements)(${Colour_Bold}*${Colour_Off}:ahead)(${Colour_Bold}+${Colour_Off}:new-file)(${Colour_Bold}?${Colour_Off}:untracked-files)(${Colour_Bold}x${Colour_Off}:deleted-files)(${Colour_Bold}!${Colour_Off}:dirty)]")"
+notice "$(printf "Git prompt flags: [(${Colour_Bold}!${Colour_Off}:dirty)(${Colour_Bold}?${Colour_Off}:untracked-files)(${Colour_Bold}x${Colour_Off}:deleted-files)(${Colour_Bold}+${Colour_Off}:new-file)(${Colour_Bold}>${Colour_Off}:renamed-elements)(${Colour_Bold}t${Colour_Off}:typechanged-elements)(${Colour_Bold}*${Colour_Off}:ahead)]")"
 }
 
 prompt-set-hostname(){

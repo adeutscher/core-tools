@@ -21,6 +21,7 @@ This function have a number of variations (there is also an outgoing version for
 * `connections-in-lan`: List incoming connections coming from IP addresses beginning in `10.`, `172.16.` to `172.32.`, or `192.`.
 * `connections-in-remote`: The inverse of `connections-in-lan`, lists IPs not beginning in `10.`, `172.16.` to `172.32.`, or `192.168`.
 * `connections-in-all`: List all incoming connections. All functions for incoming connections filter the output of this function.
+* `connections-in-ipv6`: List incoming IPv6 connections.
 * `connections-lan`: An alias of `connections-out-lan`.
 
 ### Prompt
@@ -42,25 +43,32 @@ I've added a number of bells and whistles my prompt:
      * Linux systems are in a blue box.
      * FreeBSD systems are in a red box.
      * Mac OSX systems are in a yellow box.
-     * Windows systems using MobaXterm are in a cyan box.
+     * Windows systems using MobaXterm are in a cyan box. This feature is currently not tested for other Unix-in-Windows environments.
   * Prompt Symbol (**$** for non-root, **#** for root):
      * If the previous command was not found (*exit code 127*), then the symbol will be yellow.
-     * If we attempted to run a script without the execute permission (*exit code 126*), then the symbol will by cyan.
+     * If we attempted to run a script without the execute permission (*exit code 126*), then the symbol will be cyan.
      * If the previous command gave a non-zero exit code not covered above, then the symbol will be red.
      * If the previous command exited successfully with an exit code of *0*, then the symbol will be white.
 * Remote SSH client.
   * The remote address will not be displayed if your terminal session was started within a `tmux`, `screen`, or `vnc` session.
-  * Alternately print nothing if `PROMPT_IGNORE_SSH` has a value set to it.
-* Version control information (Set a value to `PROMPT_IGNORE_VC` to disable this)
+  * This feature will be disabled if the `PROMPT_IGNORE_SSH` environment variable has a non-zero value.
+  * Use the `prompt-toggle-ssh` function to toggle this feature off or on.
+* Version control information:
   * SVN version information (Credit: [Eric Leblond](https://github.com/regit/subversion-prompt))
-  * Git branch and status information (Credit: http://ezprompt.net/)
-     * If you need a reminder of what the red indicators on the `git` part of the prompt mean, use the `git-prompt-reminder` function.
+  * Git branch and status information (Credit: http://ezprompt.net/).
+  * If you need a reminder of what the red indicators in `git` repository mean, use the `git-prompt-reminder` function.
   * Version control information will not be printed for NFS/CIFS file systems due to performance concerns.
-  * SVN output will take precedence over Git output.
+  * SVN output will take precedence over Git output, if you have a directory that for some reason has both.
+  * This feature will be disabled if the `PROMPT_IGNORE_VC` environment variable has a non-zero value.
+  * Use the `prompt-toggle-version-control` function to toggle this feature off or on.
+ (Set a value to `PROMPT_IGNORE_VC` to disable this)
 * Compression. If the prompt gets to be so large that you begin running out of room, then the prompt will be shortened:
   * Hostname will be shortened to one character.
   * Username will be shortened to one character.
   * Only the name of the current directory will be displayed.
+  * This feature will be permanently enabled if the `PROMPT_ALWAYS_COMPRESS` environment variable has a non-zero value.
+  * Use the `prompt-toggle-compression` function to toggle dynamic compression off or on.
+  * There is currently not an option for "never compress".
 * Temporary hostname/username display change, useful for when you are debugging or recording demonstration videos.
   * Setting `DISPLAY_USER` will override the display of your session's real username in the prompt.
   * Setting `DISPLAY_HOSTNAME` will override the display of your server's real hostname in the prompt.
@@ -71,18 +79,35 @@ If you want to disable all of these bells and whistles, set the `BASIC_PROMPT` v
 
 ### rdp
 
-The `rdp` function is made to make the `xfreerdp` command more convenient to use.
+The `rdp` command is made to make the `xfreerdp` command more convenient to use. `rdp` is an alias referring to `scripts/networking/rdp.py`.
 
 It boils down basic usage to a basic `rdp target-server`, whether you are using a older version of `xfreerdp` or a modern one.
 
-If you want to add additional arguments, the second argument to `rdp` and onwards will be passed directly through to `xfreerdp`.
+Arguments:
+
+| Argument    | Description                                                             | Example                      |
+|-------------|-------------------------------------------------------------------------|------------------------------|
+| -d domain   | Sets the login domain.                                                  | `-d LOCALDOMAIN`             |
+| -D          | Prompt for login domain.                                                | `-D`                         |
+| -g          | Single-argument for display geometry (WxH).                             | `-g 800x600`, `-g 800,600`   |
+| -h          | Sets display height.                                                    | `-h 600`                     |
+| -p password | Sets the login password.                                                | `-p swordfish`               |
+| -P          | Prompt for a password.                                                  | `-P`                         |
+| -u user     | Sets the login user. Also accepts domain name using backslash.          | `-u user`, `-u DOMAIN\\user` |
+| -U          | Prompt for login user. Also accepts domain name using backslash format. | `-U`                         |
+| -w          | Sets display width.                                                     | `-w 800`                     |
 
 #### Variables
 
-You can set the following envirnoment variables to adjust your RDP resolution:
+You can set the following environment variables to adjust your default RDP parameters:
 
 * `RDP_WIDTH` sets the width of the `rdp` window (default: 1600).
 * `RDP_HEIGHT` sets the height of the `rdp` window (default: 900).
+* `RDP_USER` sets the domain.
+* `RDP_USER` sets the user.
+* `RDP_PASSWORD` sets the password.
+
+Each of these environment variables can be overridden by manually specifying a value in the `rdp.sh` script.
 
 ### Sleep
 
