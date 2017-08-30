@@ -28,16 +28,20 @@ __get_all_file_contents(){
 
 }
 
+__sort(){
+  sort | uniq -c |  awk -F' ' '{printf "%-15s %02d %s %s\n", $3, $1, $2, $4}' | sort -n -t . -k 1,1 -k 2,2 -k 3,3 -k 4,4
+}
+
 process_failed_logins(){
   # Get a list of attempts that were unsuccessful.
   printf "Failed logins:\n"
-  __get_all_file_contents $@ | grep -oP "Failed password for( invalid)? user [^ ]+ from [^ ]+" | awk -F' ' '{if($4=="invalid"){print $6" "$8}else{print $5" "$7}}' | sort | uniq -c | sort -rn
+  __get_all_file_contents $@ | grep -oP "Failed password for( invalid)? user [^ ]+ from [^ ]+" | awk -F' ' '{if($4=="invalid"){print $6" "$8}else{print $5" "$7}}' | __sort
 }
 
 process_successful_logins(){
   # Get a list of users that were successful.
   printf "Successful logins:\n"
-  __get_all_file_contents $@ | grep -oP "Accepted (password|publickey) for [^ ]+ from [^ ]+" | awk -F' ' '{ print $4" "$6" "$2}' | sort | uniq -c | sort -rn
+  __get_all_file_contents $@ | grep -oP "Accepted (password|publickey) for [^ ]+ from [^ ]+" | awk -F' ' '{ print $4" "$6" "$2}' | __sort
 }
 
 # Secure log files are provided as arguments.
