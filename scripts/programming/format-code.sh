@@ -42,7 +42,7 @@ fi
 
 extension=$1
 
-if ! grep "^\." <<< "$extension"; then
+if ! grep -q "^\." <<< "$extension"; then
   error "$(printf "Extensions must begin with a '.' (e.g. '$GREEN%s$NC', '$GREEN%s$NC')" ".c" ".cpp")"
   error "Usage: format-code.sh extension [target-directory]"
   exit 3

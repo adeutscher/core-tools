@@ -28,7 +28,7 @@ if qtype x11vnc; then
 
             x11vnc -display :0 -auth guess -forever -shared -passwd "${1:0:8}" -viewonly
         else
-            # Don't bother sleeping when there are no messages            
+            # Don't bother sleeping when there are no messages
             x11vnc -display :0 -auth guess -forever -shared -viewonly
         fi
     }

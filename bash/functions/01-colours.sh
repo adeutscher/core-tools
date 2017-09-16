@@ -97,7 +97,7 @@ colour-on(){
 
 colour-off(){
 
-# Separate unset calls are only for organization   
+# Separate unset calls are only for organization
 
     # Special "colours"
     unset Colour_Off Colour_Bold Colour_Reverse Colour_Underline

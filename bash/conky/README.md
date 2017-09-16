@@ -39,6 +39,7 @@ The main `conky` display uses the following environment variables:
     * HDMI-0
   * If no value is given in either the `CONKY_SCREEN` variable or the
       `-s` switch, then the default screen is your primary display.
+* The `CONKY_WINDOW_TYPE` variable (default **override**) sets the `own_window_type` property in your conky config.
 * The `CONKY_PADDING_X` (default **10**) and `CONKY_PADDING_Y`
     (default **35**) variables determine the offset of your primary
     conky display from your chosen screen.

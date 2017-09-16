@@ -48,7 +48,7 @@ alias curl-star-labs="curl --user-agent \"STAR Labs Cortex Explorer v2.01\""
 # Aliases for getting HTTP Headers
 # get web server headers #
 alias http-header='curl -I'
- 
+
 # find out if remote server supports gzip / mod_deflate or not #
 alias http-headerc='curl -I --compress'
 
@@ -138,6 +138,7 @@ wifi-list-raw(){
 
     # I made this function to cover the fact that scanning through nmcli doesn't print an access point's BSSID.
     # In addition, nmcli requires the NetworkManager service to be running in the first place in order to work.
+    # It is a terrible awk one-liner, but it works for the moment.
     # NOTE: The output of scanning with `iw` is not considered to be stable by the developers maintaining it.
     #       This function may break over time.
     if [ -z "$1" ]; then
@@ -147,12 +148,11 @@ wifi-list-raw(){
     local iface=$1
 
     if ! iwconfig "$iface" 2> /dev/null | grep -q "IEEE"; then
-        error "$(printf "Interface $Colour_Bold%s$Colour_Off not found or not a wireless interface..." "$iface")"
+        error "$(printf "Interface ${Colour_Bold}%s${Colour_Off} not found or not a wireless interface..." "$iface")"
         return 2
     fi
 
-    # TODO: This script does not currently detect WEP input, and will incorectly report it as "OPEN"
-    sudo iw dev "$iface" scan | tac | awk 'BEGIN { defaultSecurity="OPEN"; security=defaultSecurity; } { if($1 == "BSS" && $2 != "Load:" ){ print substr($2,0,17) " (" security ", channel " channel "): " ssid; bssid=""; ssid=""; security=defaultSecurity; } if ($1 == "SSID:" ){ for(i = 2; i <= NF; i++){ if(ssid){ ssid=ssid " " $i } else{ ssid=$i } } }; if ($2 == "Authentication" && $5 == "802.1X" ){ security=$5 } if ($1 == "RSN:") { if(security == "WPA1") { security=security " WPA2" } else if(security != defaultSecurity) { security="WPA2 " security } else { security="WPA2" } } if($1 == "WPA:"){ security="WPA1" } if ( $2 == "primary" && $3 == "channel:" ){ channel=$4 } }' | sort -k2,2
+    sudo iw dev "$iface" scan | tac | awk 'BEGIN { defaultSecurity="OPEN"; security=defaultSecurity; has_security=0; channel="??"} { if($1 == "BSS" && $2 != "Load:" ){ if(has_security && security == defaultSecurity){ security="WEP" }; print substr($2,0,17) " (" security ", channel " channel "): " ssid; bssid=""; ssid=""; channel="??"; security=defaultSecurity; has_security=0;} else if ($1 == "SSID:" ){ for(i = 2; i <= NF; i++){ if(ssid){ ssid=ssid " " $i } else { ssid=$i } } }; if($1 == "capability:" && match($0,"Privacy")){ has_security=1; }; if ($2 == "Authentication" && $5 == "802.1X" ){ security=$5 } if ($1 == "RSN:") { if(security == "WPA1") { security=security " WPA2" } else if(security != defaultSecurity) { security="WPA2 " security } else { security="WPA2" } } else if($1 == "WPA:"){ security="WPA1" } else if ( $2 == "primary" && $3 == "channel:" ){ channel=$4 } else if($1" "$2" "$3" "$4 == "DS Parameter set: channel"){ channel=$5 } }' | sort -k2,2
 }
 
 ####################
@@ -283,6 +283,6 @@ for ipsp in ipp[-4:]:
   mp.append(ipsp[-2:])
 np='%02x' % (int(mp[0],16)^2)
 del mp[3]
-del mp[3] 
+del mp[3]
 print ':'.join(mp);"
 }

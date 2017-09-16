@@ -19,3 +19,11 @@ unset -f http-quick-share
 # 2017-09-19
 # Converted rdp function to a standalone script.
 unset -f rdp rdp-small
+
+# 2017-09-02
+# Converted SSH permission compilation and permission fixing to scripts.
+unset -f ssh-compile-config ssh-fix-permissions ssh-fix-permissions-core
+
+# 2017-09-12
+# Converted Bluetooth connection and Android tethering functions to scripts
+unset -f android-tether android-tether-disconnect bluetooth-connect bluetooth-disconnect bluetooth-disconnect-all

@@ -6,7 +6,6 @@
 # General functions and variables.
 # Can be summed up as "anything that I don't consider large enough to get its own file".
 
-
 export EDITOR=vi
 export SVN_EDITOR=vi
 
@@ -71,7 +70,7 @@ if qtype tmux; then
 
 fi
 
-# Alias for our most-used rsync switches. 
+# Alias for our most-used rsync switches.
 alias rsync="rsync -av --progress"
 
 ########################
@@ -122,6 +121,7 @@ alias csed='sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g"'
 
 # Xargs Aliases
 alias xargs-0="xargs -0"
+
 if __is_unix; then
 
     # The below two aliases will not work under Windows via MobaXterm.
@@ -159,7 +159,27 @@ if __is_unix; then
        alias conky-start="conky-command 2> /dev/null >&2 &"
        alias conky-debug="conky-command -d"
     fi
+else
+    # Non-Unix environment. MobaXterm?
 
+    # Basic LDAP functions/aliases.
+
+    if qtype ldapsearch.exe; then
+        # Tab-completion in MobaXterm hops to ldapsearch.exe.
+        # Not that there's any performance difference,
+        #    but for comfort making aliases that will complete to ldapsearch
+
+        # Assuming for the moment that the commands are otherwise identical
+
+        alias ldapcompare='ldapcompare.exe'
+        alias ldapdelete='ldapdelete.exe'
+        alias ldapmodify='ldapmodify.exe'
+        alias ldapmodrdn='ldapmodrdn.exe'
+        alias ldappasswd='ldappasswd.exe'
+        alias ldapsearch='ldapsearch.exe'
+        alias ldapwhoami='ldapwhoami.exe'
+        alias ldapurl='ldapurl.exe'
+    fi
 fi
 
 # For Passwords #
@@ -235,3 +255,15 @@ if qtype telnet; then
   alias telnet-nyan="telnet nyancat.dakko.us; reset"
   alias telnet-sw="telnet towel.blinkenlights.nl; reset"
 fi
+
+##################
+# Temporary Data #
+##################
+
+# Ensure that a temporary directory exists for storing data in /tmp, then set permissions
+# tmpfs is faster than reading off of an HDD or an SSD.
+
+export toolsCache=/tmp/$USER
+
+mkdir "$toolsCache" 2> /dev/null
+chmod 700 "$toolsCache" 2> /dev/null

@@ -13,7 +13,7 @@
 if __is_unix; then
     reload-tools(){
         unset __toolCount
-        
+
         # Unset module directories so that they can be re-initialized as if freshly loaded if necessary.
         for __var in $((set -o posix; set) | grep ToolsDir= | cut -d'=' -f1); do
             unset $__var
@@ -32,8 +32,9 @@ else
 
 fi
 
-if type -ftptP git 2> /dev/null >&2 || type -ftptP git 2> /dev/null >&2; then
+if type -ftptP git 2> /dev/null >&2 || type -ftptP svn 2> /dev/null >&2; then
 
+    unalias update-repo 2> /dev/null >&2
     update-repo(){
         if [ -z "$1" ]; then
             error "No repository path provided."
@@ -49,7 +50,7 @@ if type -ftptP git 2> /dev/null >&2 || type -ftptP git 2> /dev/null >&2; then
     # Tool Updating Functions #
     ###########################
 
-    update-tools(){
+    function update-tools(){
 
         # Confirm SSH permissions in advance, because some tools might be git repos with SSH remotes.
         ssh-fix-permissions
@@ -161,7 +162,7 @@ if type -ftptP git 2> /dev/null >&2; then
             fi
         fi
     }
-    
+
     update-git-repo(){
 
         local repoDir="$1"
@@ -184,7 +185,7 @@ if type -ftptP git 2> /dev/null >&2; then
         if ! __is_git_repo "$repoDir" 1; then
             # Reminder: Error message is printed in __is_git_repo thanks to the extra argument
             return 3
-        fi 
+        fi
 
         # Check to see if the repository directory can be written to by the current user.
         # We have already checked to make sure that the directory exists and is readable
@@ -236,8 +237,22 @@ if type -ftptP git 2> /dev/null >&2; then
 
         # Check to see if we can resolve a domain address address.
         if grep -qP '^(([0-9]){1,3}\.){3}([0-9]{1,3})$' <<< "$repoDomain"; then
-            warning "Git workspace was checked out from an IP address."
-            warning "Continuing under the assumption that it is reachable."
+            notice "Git workspace was checked out from an IP address."
+
+            if ! ping -c 1 -w0.75 "$repoDomain" 2> /dev/nul >&2; then
+                error "$(printf "Unable to ping repo server at ${Colour_NetworkAddress}%s${Colour_Off}" "$repoDomain")"
+                return 7
+            fi
+            success "$(printf "Pinged repo server at ${Colour_NetworkAddress}$repoDomain${Colour_Off}" "$repoDomain")"
+        elif grep -w "$(sed 's/\./\\./g' <<< "$repoDomain")" < /etc/hosts | sed -r 's/^\s+//g' | grep -qPm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})"; then
+            local repoIp="$(grep -w "$(sed 's/\./\\./g' <<< "$repoDomain")" < /etc/hosts | sed -r 's/^\s+//g' | grep -Pm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})" | awk '{print $1}')"
+            notice "$(printf "${Colour_NetworkAddress}%s${Colour_Off} (${Colour_NetworkAddress}%s${Colour_Off}) found in ${Colour_FilePath}%s${Colour_Off}" "$repoDomain" "$repoIp" "/etc/hosts")"
+
+            if ! ping -c 1 -w0.75 "$repoIp" 2> /dev/null >&2; then
+                error "$(printf "Unable to ping repository server at ${Colour_NetworkAddress}%s${Colour_Off} (${Colour_NetworkAddress}%s${Colour_Off})" "$repoDomain" "$repoIp")"
+                return 7
+            fi
+            success "$(printf "Pinged repo server at ${Colour_NetworkAddress}%s${Colour_Off} (${Colour_NetworkAddress}%s${Colour_Off})" "$repoDomain" "$repoIp")"
         elif ! qtype host; then
             warning "$(printf "The ${Colour_Command}host${Colour_Off} command was not detected on this machine.")"
             warning "Continuing, but unable to verify that we can resolve the domain name for the upstream git repository."
@@ -378,12 +393,26 @@ if type -ftptP svn 2> /dev/null >&2; then
 
             # Check to see if we can resolve a domain address address.
             if grep -qP '^(([0-9]){1,3}\.){3}([0-9]{1,3})$' <<< "$repoDomain"; then
-                warning "SVN workspace was checked out from an IP address."
-                warning "Continuing under the assumption that it is reachable."
+                notice "Git workspace was checked out from an IP address."
+
+                if ! ping -c 1 -w0.75 "$repoDomain" 2> /dev/nul >&2; then
+                    error "$(printf "Unable to ping repo server at ${Colour_NetworkAddress}%s${Colour_Off}" "$repoDomain")"
+                    return 7
+                fi
+                success "$(printf "Pinged repo server at ${Colour_NetworkAddress}$repoDomain${Colour_Off}" "$repoDomain")"
+            elif grep -w "$(sed 's/\./\\./g' <<< "$repoDomain")" < /etc/hosts | sed -r 's/^\s+//g' | grep -qPm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})"; then
+                local repoIp="$(grep -w "$(sed 's/\./\\./g' <<< "$repoDomain")" < /etc/hosts | sed -r 's/^\s+//g' | grep -Pm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})" | awk '{print $1}')"
+                notice "$(printf "${Colour_NetworkAddress}%s${Colour_Off} (${Colour_NetworkAddress}%s${Colour_Off}) found in ${Colour_FilePath}%s${Colour_Off}" "$repoDomain" "$repoIp" "/etc/hosts")"
+
+                if ! ping -c 1 -w0.75 "$repoIp" 2> /dev/null >&2; then
+                    error "$(printf "Unable to ping repository server at ${Colour_NetworkAddress}%s${Colour_Off} (${Colour_NetworkAddress}%s${Colour_Off})" "$repoDomain" "$repoIp")"
+                    return 7
+                fi
+                success "$(printf "Pinged repo server at ${Colour_NetworkAddress}%s${Colour_Off} (${Colour_NetworkAddress}%s${Colour_Off})" "$repoDomain" "$repoIp")"
             elif ! qtype host; then
                 warning "$(printf "The ${Colour_Command}host${Colour_Off} command was not detected on this machine.")"
                 warning "Continuing, but unable to verify that we can resolve the domain name for our SVN repository."
-            elif ! timeout 1 host ${repoDomain} 2> /dev/null >&2; then   
+            elif ! timeout 1 host ${repoDomain} 2> /dev/null >&2; then
                 # Note: This check will not account for cached entries in the local BIND server (if applicable)
                 # Note: Avoiding "for" phrasing in non-comments to appease pluma colouring.
                 error "$(printf "$Colour_Command%s$Colour_Off was unable to resolve the address of ${Colour_NetworkAddress}%s$Colour_Off. Quitting...\n" "host" "$repoDomain")"
@@ -392,7 +421,7 @@ if type -ftptP svn 2> /dev/null >&2; then
         fi
 
         # Track old and new revisions.
-        
+
         local oldRev="$(svn info "$repoDir" 2> /dev/null | grep '^Revision' | cut -d' ' -f2)"
         # Update directory.
         if svn up "$repoDir"; then

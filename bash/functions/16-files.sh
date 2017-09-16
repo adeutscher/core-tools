@@ -28,10 +28,10 @@ zipf () { zip -r "$1".zip "$1" ; }
 alias findbig="find . -type f -exec ls -s {} \; | sort -n -r | head -5"
 
 # "Sort by size" to display in list the files in the current directory, sorted by their size on disk.
-sbs() { du -b --max-depth 1 | sort -nr | perl -pe 's{([0-9]+)}{sprintf "%.1f%s", $1>=2**30? ($1/2**30, "G"): $1>=2**20? ($1/2**20, "M"): $1>=2**10? ($1/2**10, "K"): ($1, "")}e';} 
+sbs() { du -b --max-depth 1 | sort -nr | perl -pe 's{([0-9]+)}{sprintf "%.1f%s", $1>=2**30? ($1/2**30, "G"): $1>=2**20? ($1/2**20, "M"): $1>=2**10? ($1/2**10, "K"): ($1, "")}e';}
 
 
-# ex - archive extractor   # command line archive extractor, came with Manjaro 
+# ex - archive extractor   # command line archive extractor, came with Manjaro
 # usage: ex <file>
 ex () {
     if [[ -f $1 ]] ; then

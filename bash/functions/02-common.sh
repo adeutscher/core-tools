@@ -13,7 +13,7 @@
 __is_unix(){
     # Using the WINDIR environment variable as a lazy litmus test for
     #   whether or not we're in a Windows machine using MobaXterm.
-    
+
     if [ -n "$WINDIR" ]; then
         return 1
     else

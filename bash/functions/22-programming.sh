@@ -12,10 +12,10 @@ fi
 
 # Only do make aliases for Linux systems.
 # This is because MobaXterm is a jerk, and OSX does not have lscpu.
-if __is_unix && ! __is_mac && qtype make lscpu; then 
+if __is_unix && ! __is_mac && qtype make lscpu; then
     # Detect the number of CPUs in the machine.
     __num_cores=$(lscpu | grep -m1 '^CPU(s):' | awk '{print $2}')
-    
+
     # Construct a make alias that uses the maximum number of CPUs.
     alias make-max="make -j$__num_cores"
     # Construct a make alias that uses the half of our available number of CPUs.

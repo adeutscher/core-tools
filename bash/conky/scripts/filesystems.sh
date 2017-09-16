@@ -62,7 +62,7 @@ fi
 #   - /run/cmanager/fs and /run/lock, two tmpfs directories on Ubuntu systems
 #   - gvfsd file system at /run/user/$UID/gvfs
 # This should cover all other system-specific, temporary (USB drives, SD cards), or network, network file systems, etc.
-extra_file_systems="$(cut -d' ' -f $cut_fields < /proc/1/mountinfo | egrep ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf|hfsplus) ' | egrep -v '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/user/\d?|/gvfs|/run/cmanager/fs|/run/lock|/home | / / ))' | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
+extra_file_systems="$(cut -d' ' -f $cut_fields < /proc/1/mountinfo | egrep ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf|hfsplus) ' | egrep -v '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/user/\d?|/gvfs|/run/cmanager/fs|/run/lock|/lib/live|/home | / / ))' | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
 
 ##########
 # Header #

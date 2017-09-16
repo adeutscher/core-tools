@@ -143,7 +143,7 @@ Modules are read out of the following directories:
 |------------------------------------------------------------------|-------------------------------------------------------|
 | `~/tools` directory                                              | `~/tools`, `~/tools/core-tools`                    |
 | `~/work`directory                                                | `~/work/company-a-tools`, `~/work/company-b/tools` |
-| `modules`directory, nested within core tools checkout (SVN checkout only) | `modules/sound-tools`                               |
+| `modules`directory, nested within core tools checkout (SVN checkout only) | `modules/audio-tools`                               |
 | `secure` directory, nested within core tools checkout (SVN checkout only) | `secure/`                                           |
 
 ### History

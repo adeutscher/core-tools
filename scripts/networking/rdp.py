@@ -156,7 +156,7 @@ def process_args(cli_args):
     if TITLE_HEIGHT not in values:
         values[TITLE_HEIGHT] = int(os.environ.get("RDP_HEIGHT", DEFAULT_HEIGHT))
     if TITLE_WIDTH not in values:
-        values[TITLE_WIDTH] = int(os.environ.get("RDP_WIDTH", DEFAULT_HEIGHT))
+        values[TITLE_WIDTH] = int(os.environ.get("RDP_WIDTH", DEFAULT_WIDTH))
     if TITLE_DOMAIN not in values and "RDP_DOMAIN" in os.environ:
         set_var(values, TITLE_DOMAIN, os.environ.get("RDP_DOMAIN"))
     if TITLE_PASSWORD not in values and "RDP_PASSWORD" in os.environ:

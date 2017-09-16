@@ -32,6 +32,13 @@ DEFAULT_PADDING_Y=45
 
 # Set up per-system conkyrc settings.
 do_dynamic_setup(){
+    set -x
+    if [ -n "$configDir" ]; then
+        cd "$configDir" || return 1
+    fi
+    cp -f "$CONKYRC_PRIMARY_TEMPLATE" "$CONKYRC_PRIMARY"
+    (( ${CONKY_ENABLE_TASKS:-0} )) && cp -f "$CONKYRC_SECONDARY_TEMPLATE" "$CONKYRC_SECONDARY"
+
     # * Setting own_window_type to 'desktop' on Fedora 23 (conky 1.9) makes the conky
     #     display vanish when the desktop is clicked on. Fixed by
     #     setting to 'override'
@@ -46,27 +53,19 @@ do_dynamic_setup(){
     # For the moment, only the affected datacomm machines shall go to "desktop" mode.
 
     # TODO: Get a better idea about why these problems occur.
-    local window_type="override"
-
+    local window_type="${CONKY_WINDOW_TYPE:-override}"
+    if [[ "$window_type" == "none" ]]; then
+        # Eliminate the line altogether
+        sed -i "/OWN_WINDOW_TYPE/d" "$CONKYRC_PRIMARY"
+        (( ${CONKY_ENABLE_TASKS:-0} )) && sed -i "/OWN_WINDOW_TYPE/d" "$CONKYRC_SECONDARY"
+    else
+        sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "$CONKYRC_PRIMARY"
+        (( ${CONKY_ENABLE_TASKS:-0} )) && sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "$CONKYRC_SECONDARY"
+    fi
     # Original version-based check.
     #if conky --version | head -n1 | grep -qiP "^Conky 1\.1\d\."; then
 
-    # Kludge fix for Datacomm machines.
-    if [[ $HOSTNAME =~ ^datacomm$ ]]; then
-        # Assuming override crashes, and desktop has no problem
-        local window_type="desktop"
-    fi
-
-    cd "$configDir" || return 1
-
-    cp -f "$CONKYRC_PRIMARY_TEMPLATE" "$CONKYRC_PRIMARY"
-
-    sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "$CONKYRC_PRIMARY"
-
-    if (( ${CONKY_ENABLE_TASKS:-0} )); then
-        cp -f "$CONKYRC_SECONDARY_TEMPLATE" "$CONKYRC_SECONDARY"
-        sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "$CONKYRC_SECONDARY"
-    fi
+    return 0
 }
 
 handle_arguments(){
@@ -137,9 +136,20 @@ get_coords(){
     ! get_monitor_info "$__target" && return 1
 
     if (( $__is_bl )); then
+        # Bottom-left
         TARGET_X="$((- ( $__primary_monitor_bl_x - $MONITOR_CORNER_BL_X ) + $__add_x ))"
     else
-        TARGET_X="$((- ( $MONITOR_CORNER_BR_X - $__primary_monitor_br_x ) + $__add_x ))"
+        # Bottom-right
+        TARGET_X="$((- ( $__total_x - $MONITOR_CORNER_BR_X ) + $__add_x))"
+        if [ "$__primary_monitor_br_x" -lt "$MONITOR_CORNER_BR_X" ]; then
+            # If primary monitor is to the left of target monitor (primary br_x < monitor br_x),
+            #   then subtract (target monitor BR corner - primary_monitor_br_corner)
+            TARGET_X="$(($TARGET_X - ($MONITOR_CORNER_BR_X - $__primary_monitor_br_x)))"
+        else
+            # If primary monitor is to the left of target monitor (primary br_x > monitor br_x),
+            #   then subtract (primary_monitor_br_corner - target monitor BR corner)
+            TARGET_X="$(($TARGET_X - ($__primary_monitor_br_x - $MONITOR_CORNER_BR_X)))"
+        fi
     fi
 
     TARGET_Y="$(( $MONITOR_CORNER_BR_Y - $__primary_monitor_br_y + $__add_y ))"
@@ -152,6 +162,8 @@ get_monitor_info(){
 
     [ -z "$__monitor" ] && return 1
     local __monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "^$__monitor " | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
+
+    [ -z "$__monitor_info" ] && return 1
 
     # Example content of monitor info:
     #   1600x900+0+124
@@ -171,10 +183,10 @@ get_monitor_info(){
     # If we are trying to get info on our primary monitor during initialization,
     #   then the __primary_monitor_* variables will not be set yet.
     if (( ${__is_primary:-0} )); then
-        local __primary_monitor_offset_x=$MONITOR_OFFSET_X
-        local __primary_monitor_offset_y=$MONITOR_OFFSET_Y
-        local __primary_monitor_width=$MONITOR_WIDTH
-        local __primary_monitor_height=$MONITOR_HEIGHT
+        __primary_monitor_offset_x=$MONITOR_OFFSET_X
+        __primary_monitor_offset_y=$MONITOR_OFFSET_Y
+        __primary_monitor_width=$MONITOR_WIDTH
+        __primary_monitor_height=$MONITOR_HEIGHT
     fi
 
     # So far as I understand, the main conky display's positioning in my setup is relative to the
@@ -197,6 +209,55 @@ kill_sessions(){
   killall conky 2> /dev/null
 }
 
+# Confirm that the provided monitors exist.
+monitor_check(){
+    local __primary="$1"
+    # Screen for secondary display
+    local __secondary="$2"
+
+    # If/Else shenanigans only really to confirm potential error phrasing.
+    # Announce any errors, but defer exiting to the bottom of the function.
+    if [ -z "$__primary" ]; then
+        setup_failure "No screen name detected for primary display (CONKY_SCREEN variable)." 0
+    elif (( ! ${CONKY_ENABLE_TASKS:-0} )); then
+        # Only primary display is enabled.
+        if ! monitor_exists "$__primary"; then
+            setup_failure "$(printf "Unable to find primary display: %s" "$__primary")" 0
+        fi
+    else
+        # Secondary display is enabled.
+        if [ -z "$__secondary" ]; then
+            setup_failure "No screen name detected for secondary display (CONKY_SECONDARY_SCREEN or CONKY_SCREEN variables)." 0
+        elif [[ "$__primary" == "$__secondary" ]]; then
+            # Both displays enabled, on the same screen
+            if ! monitor_exists "$__primary"; then
+                setup_failure "$(printf "Unable to find screen for primary and secondary displays: %s" "$__primary")" 0
+            fi
+        else
+            # Both displays enabled, on different screens
+            if ! monitor_exists "$__primary"; then
+                setup_failure "$(printf "Unable to find primary display: %s" "$__primary")" 0
+            fi
+            if ! monitor_exists "$__secondary"; then
+                setup_failure "$(printf "Unable to find secondary display: %s" "$__secondary")" 0
+            fi
+        fi
+    fi
+    if (( ${__setup_failure:-0} )); then
+        # A setup error occurred.
+
+        # List Displays
+        setup_failure "$(printf "Available connected displays: %s\n" "$(xrandr --current | grep -w connected | cut -d' ' -f1 | tr '\n' ' ')")"
+    fi
+}
+
+monitor_exists(){
+    if [ -n "$1" ] && xrandr --current 2> /dev/null | grep -qw "^$1"; then
+        return 0
+    fi
+    return 1
+}
+
 # Exit with a failure message to stdout and an attempt to a desktop environment.
 setup_failure(){
     message="$1"
@@ -204,7 +265,10 @@ setup_failure(){
     printf "%s\n" "$message"
     timeout 0.5 notify-send --icon=important "$message" 2> /dev/null >&2
 
-    exit 1
+    # Exit out by default unless otherwise requested
+    (( ${2:-1} )) && exit 1
+    # Set a variable for deferred shutdown.
+    __setup_failure=1
 }
 
 setup_global_values(){
@@ -213,14 +277,14 @@ setup_global_values(){
 
     [ -z "$__total_y" ] && return 1
 
-    __primary_monitor="$(xrandr --current 2> /dev/null | grep -m1 "primary" | cut -d' ' -f1)"
+    __primary_monitor="$(xrandr --current 2> /dev/null | grep -wm1 "primary" | grep -w connected | cut -d' ' -f1)"
 
     # Fall back to first connected monitor if none are designated by "primary".
     if [ -z "$__primary_monitor" ]; then
         __primary_monitor="$(xrandr --current 2> /dev/null | grep -w "connected" | cut -d' ' -f1)"
     fi
 
-    [ -z "$__primary_monitor" ] && return 1
+    monitor_check "${CONKY_SCREEN:-$__primary_monitor}" "${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}"
 
     ! get_monitor_info "$__primary_monitor" 1 && return 1
 
@@ -229,29 +293,28 @@ setup_global_values(){
     __primary_monitor_offset_x=$MONITOR_OFFSET_X
     __primary_monitor_offset_y=$MONITOR_OFFSET_Y
 
-    # For convenience, calculating the coordinates of the bottom-right corner with (0,0) being the bottom-left.
+    # For convenience, storing the coordinates of the bottom-right corner with (0,0) being the bottom-left.
     __primary_monitor_br_x=$MONITOR_CORNER_BR_X
     __primary_monitor_br_y=$MONITOR_CORNER_BL_Y
 
-    # For future use with the secondary display (which is relative to bottom-left), also collecting the co-ords of the bottom-left corner.
+    # For future use with the secondary display (which is relative to bottom-left), also storing the co-ords of the bottom-left corner.
     __primary_monitor_bl_x=$MONITOR_CORNER_BL_X
     __primary_monitor_bl_y=$MONITOR_CORNER_BR_Y
 }
 
 handle_arguments $@
 
-set -x
 setup_global_values
 
 if ! get_coords "${CONKY_SCREEN:-$__primary_monitor}" "${CONKY_PADDING_X:-$DEFAULT_PADDING_X}" "${CONKY_PADDING_Y:-$DEFAULT_PADDING_Y}"; then
-    setup_failure "Failed to get X dimensions for primary display! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)"
+    setup_failure "$(printf "Failed to get X dimensions for primary conky display (%s)! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)" "${CONKY_SCREEN:-$__primary_monitor}")"
 fi
 POS_PRIMARY_X=$TARGET_X
 POS_PRIMARY_Y=$TARGET_Y
 
 if (( ${CONKY_ENABLE_TASKS:-0} )); then
-   if ! get_coords "${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}" "${CONKY_SECONDARY_PADDING_X:-$DEFAULT_PADDING_X}" "${CONKY_SECONDARY_PADDING_Y:-$DEFAULT_PADDING_Y}" 1; then
-       setup_failure "Failed to get X dimensions for secondary display! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)"
+   if ! get_coords "${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}" "${CONKY_SECONDARY_PADDING_X:-${CONKY_PADDING_X:-$DEFAULT_PADDING_X}}" "${CONKY_SECONDARY_PADDING_Y:-${CONKY_PADDING_Y:-$DEFAULT_PADDING_Y}}" 1; then
+       setup_failure "$(printf "Failed to get X dimensions for secondary conky display (%s)! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)" "${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}")"
    fi
    POS_SECONDARY_X=$TARGET_X
    POS_SECONDARY_Y=$TARGET_Y

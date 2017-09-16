@@ -70,6 +70,9 @@ if [ -d "$toolsDir" ]; then
                         # If we have found a module in this directory, load it in.
                         . "$__current_module_dir/bash/bashrc"
                     fi
+
+                    __add_to_path_if_dir "$__current_module_dir/bin"
+                    __add_to_path_if_dir "$__current_module_dir/bin/hosts/$HOSTNAME"
                     unset __current_module_dir
                 fi
             done

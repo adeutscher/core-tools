@@ -68,7 +68,7 @@ __build_prompt() {
       local ssh_string_short="/IPv6" # Use if on a shortened prompt, to save all of one character
     fi
   fi
-  
+
   # Intentionally not using a local variable in order to only have to do one call to __get_fs
   #   (the other potential one being in __prompt_file_system_colour).
   # Probably a bit overly complex.
@@ -144,7 +144,7 @@ __build_prompt() {
     PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${DISPLAY_USER:-\u}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'"${__host}"'\[\033[m\]'$ssh_string_long
     PS1=$PS1"\[$box_colour\]][\[\033[m\]\[$(__prompt_file_system_colour)\]\w\[\033[m\]\[$box_colour\]]\[\033[m\]"
   fi
-  
+
   # Always print version control output if present for now
   #   (it can't get much more compressed, anyways)
   if [ -n "$svn_output" ]; then
@@ -173,9 +173,9 @@ __build_prompt() {
 
       PS1=$PS1'\['"$box_colour"'\]]\[\033[m\]'
 
-    fi 
+    fi
   fi
-  
+
   # End
   case "$__RETURN_VALUE" in
   0)
@@ -334,9 +334,9 @@ __prompt_ssh_origin (){
 
 # SVN Functions.
 # Copyright (C) 2008 Eric Leblond
-# 
+#
 # Version 0.4
-# 
+#
 # subversion-prompt : Subversion aware bash prompt.
 # To use it, add something like that to your .bashrc:
 #    SVNP_HUGE_REPO_EXCLUDE_PATH="nufw-svn$|/tags$|/branches$"
@@ -360,13 +360,13 @@ __prompt_ssh_origin (){
 # Changelog :
 #  2008-05-09: v0.4
 #    Option to check distant status
-#    Prefix env var by SVNP 
+#    Prefix env var by SVNP
 #  2008-05-08: v0.3, Use environnement variable
 #  2008-05-08: v0.2, Add HUGE_REPO options
 #  2008-05-08: v0.1, initial release
 #
 
-# Set environnement variable CHECK_DISTANT_REPO to 
+# Set environnement variable CHECK_DISTANT_REPO to
 # display if an updated is needed
 
 # List of path to exclude from recursive status

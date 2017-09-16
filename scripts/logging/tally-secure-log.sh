@@ -29,7 +29,7 @@ __get_all_file_contents(){
 }
 
 __sort(){
-  sort | uniq -c |  awk -F' ' '{printf "%-15s %02d %s %s\n", $3, $1, $2, $4}' | sort -n -t . -k 1,1 -k 2,2 -k 3,3 -k 4,4
+  sort | uniq -c |  awk -F' ' '{printf "%-15s %02d %s %s\n", $3, $1, $2, $4}' | sed -r 's/^([[:digit:]]+)\.([[:digit:]]+)\.([[:digit:]]+)\.([[:digit:]]+)/\1 \2 \3 \4/g' | sort -n -k 1,1 -k 2,2 -k 3,3 -k 4,4 -k 5,5r | sed -r 's/^([[:digit:]]+) ([[:digit:]]+) ([[:digit:]]+) ([[:digit:]]+)/\1.\2.\3.\4/g'
 }
 
 process_failed_logins(){

@@ -32,6 +32,13 @@ build-tmux(){
         status_fg="black"
         style=laptop
     ;;
+    "kali")
+        # Red/Black colouring
+        bg=colour160
+        fg=colour233
+        status_fg="black"
+        style="Red Team"
+    ;;
     "server-b."*)
     ;&
     "server."*)

@@ -2,7 +2,7 @@
 # This file covers PATH management and obselete ~/.local/bin a bit.
 
 __add_to_path "$toolsDir/bin"
-__add_to_path "$toolsDir/bin/$HOSTNAME"
+__add_to_path "$toolsDir/bin/hosts/$HOSTNAME"
 __add_to_path "$HOME/.local/bin" # TODO: This may be redundant. Double-check on more distributions.
 
 # In lieu of setting a million symlinks up in bin/ or ~/.local/bin,
@@ -44,4 +44,8 @@ fi
 
 if [ -f "$HOME/.rvm/scripts/rvm" ] && ! qtype rvm; then
     . "$HOME/.rvm/scripts/rvm"
+fi
+
+if qtype bluetoothctl; then
+    __add_to_path "$toolsDir/bin/topics/bluetooth"
 fi

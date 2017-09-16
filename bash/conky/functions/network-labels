@@ -1,10 +1,15 @@
 # Look in a data file in the secure/ directory to try to resolve MAC addresses to a computer name.
 # If the file doesn't exist or there is no entry, print nothing and let above logic handle it.
 
-eval 'network_index="${CONKY_NETWORK_INDEX:-$secureToolsDir/files/tool-data/network-index.csv}"'
-eval 'network_cache="${CONKY_NETWORK_CACHE:-$tempRoot/../network-index.csv}"'
-
 # To use this, load in both this file of network-labels functions and 'common' ('common' should be loaded first, as this file assumes that the common items are present)
+
+# Label Functions
+
+network_index="${INDEX_NETWORK_CACHE:-$toolsCache/network-index.csv}"
+network_cache="${INDEX_NETWORK_DATA:-$secureToolsDir/files/tool-data/network-index.csv}"
+
+vendor_cache="${INDEX_NETWORK_CACHE:-$tempRoot/../vendor-mac.psv}"
+vendor_index="${INDEX_NETWORK_DATA:-$secureToolsDir/files/tool-data/vendor-mac.psv}"
 
 # Example record line (plus header):
 #     owner,type,mac,label,general-location,specific-location,description,notes
@@ -67,8 +72,8 @@ __get_mac_type(){
 }
 
 __get_mac_vendor_inner(){
-    if [ -n "$1" ] && [ -f "$toolsRoot/secure/files/tool-data/vendor-mac.psv" ]; then
-        grep -im1 "^${1:0:8}" "$tempRoot/../vendor-mac.psv" 2> /dev/null ||  grep -im1 "^${1:0:8}" "$toolsRoot/secure/files/tool-data/vendor-mac.psv" | tee -a "$tempRoot/../vendor-mac.psv" 2> /dev/null
+    if [ -n "$1" ] && [ -f "$vendor_data" ]; then
+        grep -im1 "^${1:0:8}" "$vendor_cache" 2> /dev/null || grep -im1 "^${1:0:8}" "$vendor_data" | tee -a "$vendor_cache" 2> /dev/null
     fi
 }
 
