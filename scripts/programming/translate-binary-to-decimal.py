@@ -20,7 +20,7 @@ def get_value(n):
         v = pow(2, p)
         s += v
         print "\t2^%d: %d" % (p, v)
-    print "Translated \"0x%s\" in binary to %d in decimal." % (n, s)
+    print "Translated \"%s\" in binary to %d in decimal." % (n, s)
     return s
 
 if __name__ == "__main__":
