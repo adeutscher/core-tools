@@ -109,14 +109,11 @@ fi
 #####################################
 
 if __is_laptop && qtype nmcli; then
-  # Locking these functions to only laptops until I find
-  #     a situation where that is not the case.
+    # Locking these functions to only laptops until I find
+    #     a situation where that is not the case.
 
-  __wifi_interface=$(iwconfig 2> /dev/null | cut -d' ' -f1 | head -n1)
-
-  # Only continue if we actually have a WiFi interface
-  #   (in the off-chance we actually have a laptop without one)
-  if [ -n "$__wifi_interface" ]; then
+    # If we have a lapotp, then assume that we have a WiFi interface.
+    # If there is no WiFi, then we are dealing with really broken/odd/old hardware.
     # WiFi Toggle
     alias wifi-on='nmcli radio wifi on'
     alias wifi-off='nmcli radio wifi off'
@@ -124,10 +121,8 @@ if __is_laptop && qtype nmcli; then
     alias wifi-list-open="nmcli -p dev wifi list | egrep --color=none '(==|\)|SECURITY|\-\-)[ ]*$' | sed 's/)/, open networks only)/g'"
     alias wifi-join='nmcli con up id'
     alias wifi-connections='nmcli con'
-    alias wifi-disconnect="nmcli dev disconnect $__wifi_interface"
+    alias wifi-disconnect="nmcli dev disconnect"
     alias wifi-switch="wifi-disconnect && wifi-join"
-  fi
-  unset __wifi_interface
 fi
 
 ############################

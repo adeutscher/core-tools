@@ -105,7 +105,7 @@ compile(){
 
   # Get information from cached report.
   # Reminder: "Label" is the vendor label or self-defined label, including the header label.
-  report=$(cat $tempRoot/$cacheDir/$fullReport 2> /dev/null | awk '{ label=""; for (i = 3; i <= NF; i++) { if(label){ label = label " " $i } else { label = $i; } }; if(label){ print " ${color #'${colour_network_address}'}" $1 "${color} [" $2 "]\n  └─("label")"  } else { print " ${color #'${colour_network_address}'}" $1 "${color} ["$2"]" } }')
+  report=$(cat $tempRoot/$cacheDir/$fullReport 2> /dev/null | awk '{ label=""; for (i = 3; i <= NF; i++) { if(label){ label = label " " $i } else { label = $i; } }; if(label){ print " ${color #'${colour_network_address}'}" $1 "${color} [" $2 "]\n  └╢ "label""  } else { print " ${color #'${colour_network_address}'}" $1 "${color} ["$2"]" } }')
 
   if [ -n "$report" ]; then
     # Print header and report.

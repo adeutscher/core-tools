@@ -293,6 +293,10 @@ __prompt_hostname_colour (){
       # Organization's datacomm machines should be purple.
       printf "$Colour_BIPurple"
       ;;
+    kali*)
+      # Kali systems should also be in red.
+      printf "$Colour_BIRed"
+      ;;
     work-?*.domain.lan|*.work.lan|*.work.lan|*.sandbox.lan)
       # Work/Experimental systems should be in red.
       printf "$Colour_BIRed"

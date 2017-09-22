@@ -72,8 +72,8 @@ __get_mac_type(){
 }
 
 __get_mac_vendor_inner(){
-    if [ -n "$1" ] && [ -f "$vendor_data" ]; then
-        grep -im1 "^${1:0:8}" "$vendor_cache" 2> /dev/null || grep -im1 "^${1:0:8}" "$vendor_data" | tee -a "$vendor_cache" 2> /dev/null
+    if [ -n "$1" ] && [ -f "$vendor_index" ]; then
+        grep -im1 "^${1:0:8}" "$vendor_cache" 2> /dev/null || grep -im1 "^${1:0:8}" "$vendor_index" | tee -a "$vendor_cache" 2> /dev/null
     fi
 }
 

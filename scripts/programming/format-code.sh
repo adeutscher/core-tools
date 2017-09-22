@@ -1,5 +1,7 @@
 #!/bin/bash
 
+no_format_keyword="__CORE_TOOLS_NO_FORMAT__"
+
 # Common message functions.
 
 # Define colours
@@ -63,13 +65,24 @@ case "$extension" in
 esac
 
 target="$(readlink -f "${2:-$(pwd)}")"
-notice "$(printf "Formatting all '$GREEN%s$NC' files in $GREEN%s$NC." "$1" "$target")"
+notice "$(printf "Formatting all '$GREEN%s$NC' files dir: $GREEN%s$NC" "$1" "$target")"
 notice "$(printf "$BLUE%s$NC switches: $BOLD%s$NC" "astyle" "$switches")"
 
 unset __code_file
 while read __code_file; do
-  if [ -n "$__code_file" ]; then
-    astyle $switches "$__code_file"
+  if [ -z "$__code_file" ]; then
+    continue
+  elif [ ! -r "$__code_file" ]; then
+    error "$(printf "Unable to read file: ${GREEN}%s${NC}" "$__code_file")"
+    continue
+  elif grep -qwm1 "$no_format_keyword" "$__code_file"; then
+    notice "$(printf "Skipping ${GREEN}%s${NC}, found no-format keyword: ${BOLD}%s${NC}" "$__code_file" "$no_format_keyword")"
+  else
+    output="$(astyle $switches "$__code_file")"
+    if [ -z "$output" ]; then
+      error "$(printf "No output for file: ${GREEN}%s${NC}" "$__code_file")"
+      continue
+    fi
+    notice "$(printf "${BOLD}%s${NC}: ${GREEN}%s${NC}" "$(cut -d' ' -f1 <<< "$output")" "$(cut -d' ' -f3 <<< "$output")")"
   fi
 done <<< "$(find "$target" -name "*$extension")"
-

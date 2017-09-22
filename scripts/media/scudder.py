@@ -610,7 +610,7 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             image_html += "<img class='largeImage' src='/image%s'/>\n" % (page_path)
         image_html += "</div>"
 
-        path_html = "<p>Viewing: <strong>.%s</strong></p><p>Path: <strong>%s%s</strong></p>" % (page_path, GALLERY_PATH, page_path)
+        path_html = "<p>Viewing: <strong>.%s</strong></p><p>Path: <strong>%s</strong></p>" % (page_path, os.path.realpath(GALLERY_PATH + page_path))
         return self.send_content(self.render_page("Image: %s (%s)" % (os.path.basename(page_path), os.path.realpath(os.path.dirname(GALLERY_PATH+page_path))), self.render_breadcrumbs(path), nav_html + image_html + nav_html + path_html, self.get_navigation_javascript()))
 
     def render_breadcrumbs(self, path):
