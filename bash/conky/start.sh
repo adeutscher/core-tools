@@ -32,7 +32,7 @@ DEFAULT_PADDING_Y=45
 
 # Set up per-system conkyrc settings.
 do_dynamic_setup(){
-    set -x
+
     if [ -n "$configDir" ]; then
         cd "$configDir" || return 1
     fi
@@ -278,6 +278,19 @@ setup_global_values(){
     [ -z "$__total_y" ] && return 1
 
     __primary_monitor="$(xrandr --current 2> /dev/null | grep -wm1 "primary" | grep -w connected | cut -d' ' -f1)"
+
+    __num_monitors="$(xrandr --current | grep -w connected | wc -l)"
+    if [ "$__num_monitors" -le 1 ]; then
+      # If we only have the one monitor, then ignore any monitor settings.
+      if [ -n "$CONKY_SCREEN$CONKY_SECONDARY_SCREEN" ]; then
+        # If values were set, then remind the user that settings are being ignored.
+        for __method in notify-send echo; do
+          $__method "Only one connected monitor detected, ignoring screen choices." 2> /dev/null
+        done
+        unset __method
+      fi
+      unset CONKY_SCREEN CONKY_SECONDARY_SCREEN
+    fi
 
     # Fall back to first connected monitor if none are designated by "primary".
     if [ -z "$__primary_monitor" ]; then

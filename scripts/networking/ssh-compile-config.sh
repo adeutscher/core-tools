@@ -238,4 +238,4 @@ ssh_compile_config(){
   unset toolDir
 }
 
-ssh_compile_config
+ssh_compile_config $@

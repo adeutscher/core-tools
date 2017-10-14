@@ -1,0 +1,408 @@
+#!/usr/bin/python
+
+import getopt, getpass, os, re, subprocess, sys
+
+# Defaults
+
+DEFAULT_HEIGHT = 900
+DEFAULT_WIDTH = 1600
+
+# Colours
+
+if sys.stdout.isatty():
+    # Colours for standard output.
+    COLOUR_RED= '\033[1;91m'
+    COLOUR_GREEN = '\033[1;92m'
+    COLOUR_YELLOW = '\033[1;93m'
+    COLOUR_BLUE = '\033[1;94m'
+    COLOUR_BOLD = '\033[1m'
+    COLOUR_OFF = '\033[0m'
+else:
+    # Set to blank values if not to standard output.
+    COLOUR_RED= ''
+    COLOUR_GREEN = ''
+    COLOUR_YELLOW = ''
+    COLOUR_BLUE = ''
+    COLOUR_BOLD = ''
+    COLOUR_OFF = ''
+
+# Store argument titles as variables
+TITLE_BRIDGE = "bridge"
+TITLE_INTERFACE = "interface"
+TITLE_PASSWORD = "password"
+TITLE_SSID = "ssid"
+TITLE_IS_WEP = "wep"
+TITLE_IS_JOIN = "join"
+
+def do_access_point(args):
+    (config_file, error) = make_access_point_config(args)
+    if error:
+        print_error("Problem making config file at %s%s%s" % (COLOUR_GREEN, config_file, COLOUR_OFF))
+        exit(1)
+
+    run_command(["hostapd", config_file], True, False)
+
+def do_join_wireless(args):
+    (config_file, error) = make_join_wireless_config(args)
+    if error:
+        print_error("Problem making config file at %s%s%s" % (COLOUR_GREEN, config_file, COLOUR_OFF))
+        exit(1)
+    run_command(["wpa_supplicant", "-i", args.get(TITLE_INTERFACE), "-c", config_file], True, False)
+
+def do_script(cli_args):
+
+    args, good_args = process_args(cli_args)
+
+    good_args = validate_args(args) and good_args
+
+    if not good_args:
+        print "Usage: ./access-point.py [-j] [-b bridge] [-B] [-i interface] [-I] [-p password] [-P] [-s SSID] [-S] [-w]"
+        exit(1)
+
+    print_summary(args)
+
+    if args.get(TITLE_IS_WEP, False) and args.get(TITLE_PASSWORD, None):
+        # A final warning or two about WEP, whether we are hosting or joining.
+        print_warning("%s!!! WEP IS HILARIOUSLY INSECURE !!!%s" % (COLOUR_BOLD, COLOUR_OFF))
+        print_warning("This script should only be used as part of a demonstration of how easy it is is to break into a WEP network.")
+
+    if args.get(TITLE_IS_JOIN, False):
+        do_join_wireless(args)
+    else:
+        do_access_point(args)
+
+def is_interface(candidate):
+    return candidate in os.listdir('/sys/class/net')
+
+def make_access_point_config(args):
+    config = "/tmp/hostapd-%s-temp.conf" % args[TITLE_INTERFACE]
+    error = False
+    try:
+        # We only want our current user to be able to see this.
+        os.umask(077)
+        with open(config, "w") as f:
+            f.write("""
+# Common values
+ssid=%s
+interface=%s
+bridge=%s
+channel=7
+hw_mode=g
+driver=nl80211
+
+logger_stdout=-1
+logger_stdout_level=2
+max_num_sta=5
+
+ctrl_interface=/var/run/hostapd
+ctrl_interface_group=wheel
+""" % (args[TITLE_SSID], args[TITLE_INTERFACE], args[TITLE_BRIDGE]))
+            if(args.get(TITLE_IS_WEP, False)):
+                f.write("""
+# WEP Options
+# Reminder: WEP IS A BAD IDEA, FOR DEMO PURPOSES ONLY
+
+wep_default_key=1
+auth_algs=3
+wep_key1="%s"
+wep_key_len_broadcast="%d"
+wep_key_len_unicast="%d"
+wep_rekey_period=300
+
+""" % (args[TITLE_PASSWORD], len(args[TITLE_PASSWORD]), len(args[TITLE_PASSWORD])))
+            elif args.get(TITLE_PASSWORD, None):
+                # WPA
+                f.write("""
+wpa=2
+auth_algs=1
+rsn_pairwise=CCMP
+wpa_key_mgmt=WPA-PSK
+wpa_pairwise=TKIP CCMP
+wpa_passphrase=%s
+""" % args[TITLE_PASSWORD])
+            f.close()
+
+    except OSError as e:
+        print e
+        error = True
+    return (config, error)
+
+def make_join_wireless_config(args):
+    config = "/tmp/wpa-supplicant-%s-temp.conf" % args[TITLE_INTERFACE]
+    error = False
+    try:
+        # We only want our current user to be able to see this.
+        os.umask(077)
+        with open(config, "w") as f:
+            f.write("""
+ctrl_interface=/var/run/wpa_supplicant_%s
+ctrl_interface_group=wheel""" % args.get(TITLE_INTERFACE))
+
+            if not args.get(TITLE_PASSWORD, None):
+                f.write("""
+network={
+  ssid="%s"
+  key_mgmt=NONE
+}
+""" % args.get(TITLE_SSID))
+            else:
+
+                if re.match('^([a-f0-9]{2}[:|-]){5}[a-f0-9]{2}$', args.get(TITLE_SSID)):
+                    ssid_string="bssid=%s" % args.get(TITLE_SSID)
+                else:
+                    # Regular SSID
+                    ssid_string="ssid=\"%s\"" % args.get(TITLE_SSID)
+
+                if args.get(TITLE_IS_WEP, False):
+                    f.write("""
+network={
+  %s
+  key_mgmt=NONE
+  wep_key0="%s"
+  wep_tx_keyidx=0
+}
+""" % (ssid_string, args.get(TITLE_PASSWORD)))
+                else:
+                    # WPA2
+                    f.write("""
+network={
+  %s
+  proto=WPA2
+  psk="%s"
+  priority=5
+}
+""" % (ssid_string, args.get(TITLE_PASSWORD)))
+
+    except OSError as e:
+        print e
+        error = True
+    return (config, error)
+
+def print_error(message):
+    print "%sError%s: %s" % (COLOUR_RED, COLOUR_OFF, message)
+
+def print_notice(message):
+    print "%sNotice%s: %s" % (COLOUR_BLUE, COLOUR_OFF, message)
+
+def print_summary(args):
+
+    print_notice("SSID: %s%s%s" % (COLOUR_BOLD, args[TITLE_SSID], COLOUR_OFF))
+    if args.get(TITLE_IS_JOIN, False):
+        verbword = "Joining"
+        nounword = "network"
+    else:
+        verbword = "Hosting"
+        nounword = "access point"
+
+    if args.get(TITLE_PASSWORD, None):
+        # An access point under this script will never by non-open, non-WEP, and non-WPA at the same time..
+        if args.get(TITLE_IS_WEP, False):
+            # Raise warning flags about WEP wherever possible.
+            print_warning("%s a WEP-\"secured\" %s." % (verbword, nounword))
+        else:
+            print_notice("%s a WPA2 %s." % (verbword, nounword))
+    else:
+        print_notice("%s an open %s." % (verbword, nounword))
+
+    if args.get(TITLE_IS_JOIN, False):
+        print_notice("Joining network using the %s%s%s interface." % (COLOUR_BLUE, args[TITLE_INTERFACE], COLOUR_OFF))
+    else:
+        print_notice("The %s%s%s interface will be attached to the %s%s%s bridge." % (COLOUR_BLUE, args[TITLE_INTERFACE], COLOUR_OFF, COLOUR_GREEN, args[TITLE_BRIDGE], COLOUR_OFF))
+
+def print_warning(message):
+    print "%sWarning%s: %s" % (COLOUR_YELLOW, COLOUR_OFF, message)
+
+def process_args(cli_args):
+    values = {}
+
+    # Errors that have not been resolved.
+    good_args = True
+
+    try:
+        opts, operands = getopt.gnu_getopt(cli_args, "b:Bi:Ijp:Ps:Sw")
+    except getopt.GetoptError as e:
+        print_error(e)
+        exit(1)
+
+    for opt,optarg in opts:
+        if opt == "-b":
+            if validate_bridge_interface(optarg, TITLE_BRIDGE):
+                set_var(values, TITLE_BRIDGE, optarg)
+            else:
+                good_args = False
+        elif opt == "-B":
+            # Manual bridge input
+            record_var(values, TITLE_BRIDGE, COLOUR_BOLD, validate_bridge_interface, False)
+        elif opt == "-i":
+            if validate_wireless_interface(optarg, TITLE_INTERFACE):
+                set_var(values, TITLE_INTERFACE, optarg)
+            else:
+                good_args = False
+        elif opt == "-I":
+            # Manual interface input
+            record_var(values, TITLE_INTERFACE, COLOUR_BOLD, validate_wireless_interface, False)
+        elif opt == "-j":
+            values[TITLE_IS_JOIN] = True
+        elif opt == "-p":
+            # Password has no immediate validation,
+            # as WEP and WPA have different accepted lengths.
+            set_var(values, TITLE_PASSWORD, optarg, COLOUR_BOLD, False)
+        elif opt == "-P":
+            # Manual password input
+            record_var(values, TITLE_PASSWORD, COLOUR_BOLD, False, False)
+        elif opt == "-s":
+            if validate_ssid(optarg, TITLE_SSID):
+                set_var(values, TITLE_SSID, optarg)
+            else:
+                good_args = False
+        elif opt == "-S":
+            # Manual domain input
+            record_var(values, TITLE_SSID, COLOUR_BOLD, validate_ssid, False)
+        if opt == "-w":
+            print_warning("Enabling WEP mode.")
+            values[TITLE_IS_WEP] = 1
+
+    for operand in operands[1:]:
+        set_var(values, TITLE_SERVER, operand, COLOUR_GREEN)
+
+    # If no values were set, load in defaults instead.
+    # Doing this after loading because of the override notice.
+    if TITLE_BRIDGE not in values:
+        values[TITLE_BRIDGE] = os.environ.get("AP_BRIDGE")
+    if TITLE_INTERFACE not in values:
+        values[TITLE_INTERFACE] = os.environ.get("AP_INTERFACE")
+    if TITLE_PASSWORD not in values:
+        values[TITLE_PASSWORD] = os.environ.get("AP_PASSWORD")
+    if TITLE_SSID not in values:
+        values[TITLE_SSID] = os.environ.get("AP_SSID")
+
+    return values, good_args
+
+def record_var(values, title, colour=COLOUR_BOLD, validator=None, reportOverwrite=True):
+    temp = ""
+    while not temp:
+        temp = getpass.getpass("Enter %s: " % title)
+        if not temp:
+            continue # Immediately loop again if empty.
+
+        # Validation, if provided.
+        if validator and not validator(temp, title):
+            # Validator returned an error.
+            temp=""
+    set_var(values, title, temp, colour, reportOverwrite)
+
+def run_command(command_list, sudo_required=False, ctrl_c_error=True):
+    try:
+        if os.geteuid():
+            print_notice("We are not %s%s%s, so %s%s%s will be run through %s%s%s." % (COLOUR_RED, "root", COLOUR_OFF, COLOUR_BLUE, command_list[0], COLOUR_OFF, COLOUR_BLUE, "sudo", COLOUR_OFF))
+            command_list.insert(0, "sudo")
+
+        p = subprocess.Popen(command_list, stdout=sys.stdout, stderr=sys.stderr)
+        p.communicate()
+        exit(p.returncode)
+    except KeyboardInterrupt:
+        ret = 0
+        if ctrl_c_error:
+            ret = 130
+        exit(ret)
+    except OSError as e:
+        print "OSError: %s" % e
+        exit(1)
+
+def set_var(values, title, value, colour=COLOUR_BOLD, reportOverwrite=True):
+    if title in values and value != values[title]:
+        # Print a warning if a value is already set.
+        # Don't bother raising a fuss if the same value has been specified twice.
+        if reportOverwrite:
+            print_warning("More than one %s specified in arguments: Replacing '%s%s%s' with '%s%s%s'" % (title, colour, value, COLOUR_OFF, colour, values[title], COLOUR_OFF))
+        else:
+            print_warning("More than one %s specified in arguments. Using latest value." % title)
+    values[title] = value
+
+def validate_args(args):
+    all_clear = True
+
+    elements = [TITLE_SSID, TITLE_INTERFACE]
+    command_needed = "hostapd"
+    if args.get(TITLE_IS_JOIN, False):
+        command_needed = "wpa_supplicant"
+    else:
+        # Only check for a bridge setting if we are hosting.
+        elements.append(TITLE_BRIDGE)
+
+    all_clear = all_clear and validate_command(command_needed)
+
+    for t in elements:
+        if not args.get(t, None):
+            print_error("No %s specified." % t)
+            all_clear = False
+    if args.get(TITLE_PASSWORD, None):
+        # An access point will never by non-open, non-WEP, and non-WPA.
+        if args.get(TITLE_IS_WEP, False):
+            # A WEP access point may have either 5 or 13 characters.
+            if len(args[TITLE_PASSWORD]) != 5 and len(args[TITLE_PASSWORD]) != 13:
+                print_error("WEP key must be 5 or 13 characters (given key was %s%s%s characters)." % (COLOUR_BOLD, len(args[TITLE_PASSWORD]), COLOUR_OFF))
+                all_clear = False
+        else:
+            # A WPA2 access point may have a passphrase between 8 and 63 characters (inclusive).
+            if len(args[TITLE_PASSWORD]) < 8 or len(args[TITLE_PASSWORD]) > 63:
+                print_error("A WPA2 access point may have a passphrase between 8 and 63 characters in length (given key was %s%s%s characters).)" % (COLOUR_BOLD, len(args[TITLE_PASSWORD]), COLOUR_OFF))
+                all_clear = False
+    elif args.get(TITLE_IS_WEP, False):
+        # Password is None, but WEP is enabled.
+        # Rather than make the network entirely open, raise an error.
+        print_error("WEP option was enabled, but password is empty.")
+        all_clear = False
+    return all_clear
+
+def validate_bridge_interface(candidate, title):
+    return validate_interface(candidate, title, "bridge")
+
+def validate_command(command):
+    all_clear = True
+    if not which(command):
+        print_error("%s%s%s is not found in PATH." % (COLOUR_BLUE, command, COLOUR_OFF))
+        all_clear = False
+    return all_clear
+
+def validate_interface(candidate, title, subtype=None):
+    if not is_interface(candidate):
+        print_error("%s is not a network interface on this system." % candidate)
+        return False
+    if subtype and not os.path.isdir('/sys/class/net/%s/%s' % (candidate, subtype)):
+        print_error("%s is not a %s interface." % (candidate, subtype))
+        return False
+    return True
+
+def validate_wireless_interface(candidate, title):
+    return validate_interface(candidate, title, "wireless")
+
+def validate_ssid(candidate, title):
+    if not candidate:
+        print_error("Empty %s value." % title)
+        return False
+    max_len=32
+    if len(candidate) > max_len:
+        print_error("SSID cannot be more than %s%d%s characters long (requested SSID was %s%d%s characters)." % (COLOUR_BOLD, max_len, COLOUR_OFF, COLOUR_BOLD, len(candidate), COLOUR_OFF))
+        return False
+    return True
+
+def which(program):
+    # Credit: "Jay": https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
+    def is_exe(fpath):
+        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
+    fpath, fname = os.path.split(program)
+    if fpath:
+        if is_exe(program):
+            return program
+    else:
+        for path in os.environ["PATH"].split(os.pathsep):
+            path = path.strip('"')
+            exe_file = os.path.join(path, program)
+            if is_exe(exe_file):
+                return exe_file
+    return None
+
+if __name__ == "__main__":
+    do_script(sys.argv)

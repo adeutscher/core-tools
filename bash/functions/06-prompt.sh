@@ -297,13 +297,17 @@ __prompt_hostname_colour (){
       # Kali systems should also be in red.
       printf "$Colour_BIRed"
       ;;
-    work-?*.domain.lan|*.work.lan|*.work.lan|*.sandbox.lan)
+    *.test.lan|*.sandbox.lan|work-?*.domain.lan|*.work.lan|*.work.lan)
       # Work/Experimental systems should be in red.
       printf "$Colour_BIRed"
       ;;
     "machine-a")
       # Windows systems should be in purple (for now).
       # Note: Windows!machine-a's full hostname is just "machine-a", unlike its Linux version
+      printf "$Colour_BIPurple"
+      ;;
+    *.domain-c.lan|*.domain-d.lan)
+      # domain-c.lan/domain-d.lan should be in purple.
       printf "$Colour_BIPurple"
       ;;
     *.domain.lan|*.domain-b.lan)
@@ -524,7 +528,8 @@ prompt-set-hostname(){
     notice "$(printf "Setting prompt hostname: %s%s${Colour_Off}" "$(__prompt_hostname_colour "$1")" "$1")"
     export DISPLAY_HOSTNAME="$1"
   else
-    error "No hostname provided."
+    notice "No hostname provided, unsetting DISPLAY_HOSTNAME"
+    unset DISPLAY_HOSTNAME
   fi
 }
 
@@ -533,7 +538,8 @@ prompt-set-username(){
     notice "$(printf "Setting prompt username: %s%s${Colour_Off}" "$(__prompt_username_colour "$1")" "$1")"
     export DISPLAY_USER="$1"
   else
-    error "No username provided."
+    notice "No username provided, unsetting DISPLAY_USERNAME"
+    unset DISPLAY_USERNAME
   fi
 }
 
