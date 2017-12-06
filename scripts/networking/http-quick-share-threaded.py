@@ -33,6 +33,10 @@ def announce_filter_action(action, title, address, ip):
 
 # Credit for IP functions: http://code.activestate.com/recipes/66517/
 
+def hexit(exit_code):
+    print "%s [-a allow-address/range] [-b bind-address] [-d deny-address/range] [-h] [-p port] [-r] [-t]" % os.path.basename(sys.argv[0])
+    exit(exit_code)
+
 def ip_make_mask(n):
     # Return a mask of n bits as a long integer
     return (2L<<n-1)-1
@@ -83,10 +87,10 @@ def process_arguments():
     error = False
 
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:b:d:p:")
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:b:d:hp:rt")
     except getopt.GetoptError as e:
         print "GetoptError: %s" % e
-        sys.exit(1)
+        hexit(1)
     for opt, arg in opts:
         if opt in ("-a"):
             if re.match(REGEX_INET4_CIDR, arg):
@@ -116,8 +120,14 @@ def process_arguments():
                 if not e:
                     # No error
                     args["denied_addresses"].append((a, arg, astr))
+        elif opt in ("-h"):
+            hexit(0)
         elif opt in ("-p"):
             args["port"] = int(arg)
+        elif opt in ("-r"):
+            args["reverse"] = True
+        elif opt in ("-t"):
+            args["timesort"] = True
     switch_arg = False
     if len(flat_args):
         args["dir"] = flat_args[len(flat_args)-1]
@@ -225,23 +235,28 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         interface the same as for send_head().
         """
         try:
-            list = os.listdir(path)
+            itemlist = os.listdir(path)
         except os.error:
             self.send_error(404, "No permission to list directory")
             return None
-        list.sort(key=lambda a: a.lower())
+
+        if args.get("timesort", False):
+            itemlist.sort(key=lambda a: os.path.getmtime(os.path.join(path, a)), reverse=args.get("reverse", False))
+        else:
+            itemlist.sort(key=lambda a: a.lower(), reverse=args.get("reverse", False))
+
         f = StringIO()
         displaypath = cgi.escape(urllib.unquote(self.path))
-        f.write('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
+        f.write('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">\n')
         f.write("<html>\n<title>Directory listing for %s (%s)</title>\n" % (displaypath, os.getcwd()))
-        f.write("<body>\n<h2>Directory listing for %s</h2>\n" % displaypath)
-        f.write("<h3>Full path: %s%s</h3>\n" % (os.getcwd(), displaypath))
-        f.write(self.render_breadcrumbs(displaypath))
-        f.write("<hr>\n<ul>\n")
+        f.write("<body>\n  <h2>Directory listing for %s</h2>\n" % displaypath)
+        f.write("    <h3>Full path: %s%s</h3>\n" % (os.getcwd(), displaypath))
+        f.write("        <p>%s</p>\n" % self.render_breadcrumbs(displaypath))
+        f.write("      <hr>\n      <ul>\n")
 
         if not self.path == "/":
-            f.write('<li><a href="..">%s</a>\n' % cgi.escape("<UP ONE LEVEL>"))
-        for name in list:
+            f.write('        <li><a href="..">%s</a></li>\n' % cgi.escape("<UP ONE LEVEL>"))
+        for name in itemlist:
             fullname = os.path.join(path, name)
             displayname = linkname = name
             extrainfo = ""
@@ -274,12 +289,12 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
                 extrainfo = "(%s File)" % self.humansize(os.stat(fullname).st_size)
 
             if linkname:
-                f.write('<li><a href="%s">%s</a> %s\n'
+                f.write('        <li><a href="%s">%s</a> %s</li>\n'
                         % (urllib.quote(linkname), cgi.escape(displayname), extrainfo))
             else:
-                f.write('<li><strong>%s</strong> %s\n'
+                f.write('        <li><strong>%s</strong> %s</li>\n'
                         % (cgi.escape(displayname), extrainfo))
-        f.write("</ul>\n<hr>\n</body>\n</html>\n")
+        f.write("      </ul>\n      <hr>\n  </body>\n</html>\n")
         length = f.tell()
         f.seek(0)
         self.send_response(200)

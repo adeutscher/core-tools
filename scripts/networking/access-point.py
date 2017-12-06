@@ -4,8 +4,11 @@ import getopt, getpass, os, re, subprocess, sys
 
 # Defaults
 
-DEFAULT_HEIGHT = 900
-DEFAULT_WIDTH = 1600
+DEFAULT_CHANNEL = 7
+
+# Channel Limits
+CHANNEL_MIN = 1
+CHANNEL_MAX = 11
 
 # Colours
 
@@ -28,6 +31,7 @@ else:
 
 # Store argument titles as variables
 TITLE_BRIDGE = "bridge"
+TITLE_CHANNEL = "channel"
 TITLE_INTERFACE = "interface"
 TITLE_PASSWORD = "password"
 TITLE_SSID = "ssid"
@@ -56,7 +60,7 @@ def do_script(cli_args):
     good_args = validate_args(args) and good_args
 
     if not good_args:
-        print "Usage: ./access-point.py [-j] [-b bridge] [-B] [-i interface] [-I] [-p password] [-P] [-s SSID] [-S] [-w]"
+        print "Usage: ./access-point.py [-j] [-b bridge] [-B] [-c channel] [-i interface] [-I] [-p password] [-P] [-s SSID] [-S] [-w]"
         exit(1)
 
     print_summary(args)
@@ -86,7 +90,7 @@ def make_access_point_config(args):
 ssid=%s
 interface=%s
 bridge=%s
-channel=7
+channel=%d
 hw_mode=g
 driver=nl80211
 
@@ -96,7 +100,7 @@ max_num_sta=5
 
 ctrl_interface=/var/run/hostapd
 ctrl_interface_group=wheel
-""" % (args[TITLE_SSID], args[TITLE_INTERFACE], args[TITLE_BRIDGE]))
+""" % (args[TITLE_SSID], args[TITLE_INTERFACE], args[TITLE_BRIDGE], args[TITLE_CHANNEL]))
             if(args.get(TITLE_IS_WEP, False)):
                 f.write("""
 # WEP Options
@@ -190,9 +194,11 @@ def print_summary(args):
     if args.get(TITLE_IS_JOIN, False):
         verbword = "Joining"
         nounword = "network"
+        closer = "."
     else:
         verbword = "Hosting"
         nounword = "access point"
+        closer = " (Channel %s%d%s)." % (COLOUR_BOLD, args[TITLE_CHANNEL], COLOUR_OFF)
 
     if args.get(TITLE_PASSWORD, None):
         # An access point under this script will never by non-open, non-WEP, and non-WPA at the same time..
@@ -202,7 +208,7 @@ def print_summary(args):
         else:
             print_notice("%s a WPA2 %s." % (verbword, nounword))
     else:
-        print_notice("%s an open %s." % (verbword, nounword))
+        print_notice("%s an open %s%s" % (verbword, nounword, closer))
 
     if args.get(TITLE_IS_JOIN, False):
         print_notice("Joining network using the %s%s%s interface." % (COLOUR_BLUE, args[TITLE_INTERFACE], COLOUR_OFF))
@@ -219,7 +225,7 @@ def process_args(cli_args):
     good_args = True
 
     try:
-        opts, operands = getopt.gnu_getopt(cli_args, "b:Bi:Ijp:Ps:Sw")
+        opts, operands = getopt.gnu_getopt(cli_args, "b:Bc:i:Ijp:Ps:Sw")
     except getopt.GetoptError as e:
         print_error(e)
         exit(1)
@@ -233,6 +239,16 @@ def process_args(cli_args):
         elif opt == "-B":
             # Manual bridge input
             record_var(values, TITLE_BRIDGE, COLOUR_BOLD, validate_bridge_interface, False)
+        elif opt == "-c":
+            try:
+                if int(optarg) >= CHANNEL_MIN and int(optarg) <= CHANNEL_MAX:
+                    set_var(values, TITLE_CHANNEL, int(optarg))
+                else:
+                    print_error("Channel must be between %d and %d inclusive." % (CHANNEL_MIN, CHANNEL_MAX))
+                    good_args = False
+            except ValueError:
+                print_error("Channel must be an integer. Given: %s" % optarg)
+                good_args = False
         elif opt == "-i":
             if validate_wireless_interface(optarg, TITLE_INTERFACE):
                 set_var(values, TITLE_INTERFACE, optarg)
@@ -262,13 +278,12 @@ def process_args(cli_args):
             print_warning("Enabling WEP mode.")
             values[TITLE_IS_WEP] = 1
 
-    for operand in operands[1:]:
-        set_var(values, TITLE_SERVER, operand, COLOUR_GREEN)
-
-    # If no values were set, load in defaults instead.
+    # If no values were set, load in environment variables or defaults instead.
     # Doing this after loading because of the override notice.
     if TITLE_BRIDGE not in values:
         values[TITLE_BRIDGE] = os.environ.get("AP_BRIDGE")
+    if TITLE_CHANNEL not in values:
+        values[TITLE_CHANNEL] = os.environ.get("AP_CHANNEL", DEFAULT_CHANNEL)
     if TITLE_INTERFACE not in values:
         values[TITLE_INTERFACE] = os.environ.get("AP_INTERFACE")
     if TITLE_PASSWORD not in values:

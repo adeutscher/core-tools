@@ -1,6 +1,7 @@
 #!/bin/bash
 # Zombie processes killing script.
 # Must be run under root.
+# Credit: Marius Voila (https://www.mariusv.com/automatic-zombie-processes-killing-shell-script)
 case "$1" in
 --scan)
         # Look through all variables if we are running as root.

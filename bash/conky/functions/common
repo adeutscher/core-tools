@@ -127,7 +127,7 @@ shorten_string(){
   if [ "$(expr length "$string")" -le "$threshold" ]; then
     printf "%s" "$string"
   else
-    printf "%s%s" "${string:0:$(($threshold-$ellipsisLength))}" "$ellipsis"
+    printf "%s%s" "$(sed -r 's/\s+$//' <<< "${string:0:$(($threshold-$ellipsisLength))}")" "$ellipsis"
   fi
 }
 

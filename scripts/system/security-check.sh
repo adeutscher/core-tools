@@ -39,6 +39,43 @@ warning(){
 
 # Script functions
 
+check_hak5(){
+  # Do a basic sweep for Hak5 devices.
+  # Note that this check is far from perfect.
+  #   The device's MAC addresses can be spoofed. The LAN Turtle apparently even has a menu option for it.
+  #   Because of this, this check will only catch careless/lazy people.
+  # If someone were to change their MAC address TO a matching prefix, then they are worthy of a raised eyebrow as well.
+
+  # Prefixes to check. If you do not have a Hak5 device to check with (or if you are lazy), then add a prefix here.
+  local __prefixes="00:13:37"
+
+  notice "Checking for potential Hak5 devices on local machine and network."
+  for __prefix in $__prefixes; do
+    # Cycle through prefixes. Should be just a cutesy '00:13:37', but this is useful for debugging.
+
+    # Local interfaces matching the prefix could be LAN Turtle devices.
+    for d in $(find /sys/class/net -maxdepth 1 -mindepth 1); do
+      [ -d "${d}/bridge" ] && continue # Skip bridges, as they inherit the MAC of a member.
+
+      if grep -iq "^${__prefix}" < "${d}/address"; then
+        alert "$(printf "Interface ${BOLD}%s${NC} appears to be a Hak5 device (MAC: ${BOLD}%s${NC})" "${d##*/}" "$(cat "${d}/address")")"
+      fi
+
+      if [ -d "${d}/wireless" ] && iwconfig "${d##*/}" 2> /dev/null | grep -iq "Access Point: ${__prefix}"; then
+        alert "$(printf "WiFi interface ${BOLD}%s${NC} appears to be connected to a Hak5-based access point (BSSID: ${BOLD}%s${NC})." "${d##*/}" "$(iwconfig "${d##*/}" 2> /dev/null | grep -i "Access Point: ${__prefix}.*$" | awk -F' ' '{print $3}')")"
+      fi
+    done
+
+    # Look for ARP entries matching a prefix.
+    while read __arp_match; do
+      [ -z "$__arp_match" ] && continue
+      alert "$(printf "Remote host ${GREEN}%s${NC} appears to be a Hak5 device (MAC: ${BOLD}%s${NC}, Interface: ${BOLD}%s${NC})" "$(cut -d',' -f1 <<< "$__arp_match")" "$(cut -d',' -f2 <<< "$__arp_match")" "$(cut -d',' -f3 <<< "$__arp_match")")"
+    done <<< "$(arp -n | grep -i " $__prefix" | awk -F' ' '{print $1","$3","$5}')"
+  done
+
+}
+
+
 check_key_logins(){
 
     # Look for users that have set up key-based logins.
@@ -118,7 +155,7 @@ check_key_logins(){
             notice "$(printf "Found SSH authorized keys installed for ${BOLD}%d${NC}/${BOLD}%s${NC} ${GREEN}/home${NC}-based users." "${__home_key_file:-0}" "${__home_total:-0}")"
         fi
     else
-        notice "$(printf "Found absolutely no ${GREEN}/home${NC}-based users.")"
+        notice "$(printf "Found absolutely no ${GREEN}/home${NC}-based local users in ${GREEN}/etc/passwd${NC}.")"
     fi
 
     if (( $__non_home_total )); then
@@ -144,6 +181,45 @@ check_key_logins(){
     notice "Finished checking for users with SSH keyfiles."
 }
 
+check_masked_processes(){
+    notice "$(printf "Looking for masked processes in ${GREEN}%s${NC}" "/proc/")"
+    while read __proc; do
+        ( [ -z "$__proc" ] || ! [ -d "$__proc" ] ) && continue
+
+        # Get information
+        local __exe="$(readlink "$__proc/exe")"
+        local __cmd="$(cat "$__proc/cmdline" | tr '\0' ' ' | cut -d' ' -f1)"
+        if [ -z "$__cmd" ] || [ -z "$__exe" ]; then
+            # Uncomment to emable notices for ALL failures to get information.
+            # Note that such a failure could simply be from a process ending between the time the loop starts and information is retrieved.
+            #if (( "$EUID" )); then
+            #    notice "$(printf "Could not get full process information for ${GREEN}%s${NC} (perhaps because we are not ${RED}%s${NC})." "$__proc" "root")"
+            #else
+            #    notice "$(printf "Could not get full process information for ${GREEN}%s${NC}." "$__proc")"
+            #fi
+
+            # Skip entry if we could not get all information.
+            continue
+        fi
+
+        # Clean up sources, strip to base name
+        local __exe_clean="$(basename "$(sed -r -e 's/\ \(deleted\)$//g' -e 's/;[^\s]{0,1}*//g' <<< "$__exe")")"
+        local __cmd_clean="$(basename "$(readlink -f "$(sed -e 's/^\-//g' <<< "$__cmd")")" | sed 's/:$//')"
+
+        # Debug printing
+#        echo $__proc - $__exe - $__cmd
+#        echo $__proc - $__exe_clean - $__cmd_clean
+        if [[ "$__exe_clean" != "$__cmd_clean" ]]; then
+            alert "$(printf "PID ${BOLD}%d${NC} presents as ${BOLD}%s${NC}, but is really ${BOLD}%s${NC} (${GREEN}%s${NC})" "$(basename $__proc)" "${__cmd_clean}" "${__exe_clean}" "$(sed -r 's/\ \(deleted\)$//g' <<< "$__exe")")"
+            local __spoof_count="$((${__spoof_count:-0}+1))"
+        fi
+    done <<< "$(find /proc -maxdepth 1 -type d 2> /dev/null | grep -P "\/\d+")"
+    unset __proc
+
+    notice "$(printf "Discovered ${BOLD}%s${NC} processes that appear to be masking their names." "${__spoof_count:-0}")"
+    (( "$EUID" )) && warning "$(printf "Since we are not ${RED}%s${NC}, some processes may be obscured due to low permissions." "root")"
+}
+
 check_shellshock(){
     # Confirm that the server's BASH version is not vulnerable to ShellShock.
     if env x='() { :;}; echo vulnerable' bash -c "echo Testing" | grep -q "vulnerable"; then
@@ -153,5 +229,7 @@ check_shellshock(){
     fi
 }
 
+check_hak5
 check_key_logins
+check_masked_processes
 check_shellshock

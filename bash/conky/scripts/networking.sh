@@ -39,7 +39,7 @@ exclude_list="lo $CONKY_IGNORE_INTERFACES"
 
 gateway_count=0
 gateway_spacing=10 # For " Gateway: "
-for ip in $(route -n | awk '{ if($3 == "0.0.0.0"){ print $2 } }' | sort -n); do
+for ip in $(route -n | awk '{ if($1 == "0.0.0.0"){ print $2 } }' | sort -n | uniq); do
     gateway_count=$((gateway_count+1))
 
     if [ "$gateway_count" -ge 3 ]; then
@@ -146,6 +146,23 @@ for iface in ${interfaces}; do
         fi
     fi
 
+    if [[ "$iface" =~ ^(tun|tap)[0-9]+ ]]; then
+        printf " (%d routes)" "$(route -n | grep -w "$iface" | wc -l)"
+        if route -n | grep -w "$iface" | grep -q "^0\.0"; then
+            if [ $gateway_count -gt 1 ]; then
+                printf "\n  \${color #${colour_network}}Default Gateway \#%d (VPN Redirected)\${color}" "$(route -n | grep "^0\.0" | grep -wn "$iface" | cut -d':' -f1)"
+            else
+                printf "\n  \${color #${colour_network}}Default Gateway (VPN Redirected)\${color}"
+            fi
+        fi
+    elif route -n | grep -w "$iface" | grep -q "^0\.0"; then
+        if [ $gateway_count -gt 1 ]; then
+            printf "\n  \${color #${colour_network}}Default Gateway \#%d \${color}" "$(route -n | grep "^0\.0" | grep -wn "$iface" | cut -d':' -f1)"
+        else
+            printf "\n  \${color #${colour_network}}Default Gateway\${color}"
+        fi
+    fi
+
     # Unset address-related variable for next loop.
     unset address
 
@@ -170,7 +187,7 @@ for iface in ${interfaces}; do
                 vendor="$(__get_mac_vendor "${mac}" 2> /dev/null)"
                 if [ -n "$vendor" ]; then
                     # Consider clipping output if necessary...
-                    wireless_report="${wireless_report}\n$(printf "  AP Vendor: %s\n" "$(shorten_string "$vendor" 26)")"
+                    wireless_report="${wireless_report}\n$(printf "  AP Vendor: %s\n" "$(shorten_string "$vendor" 24)")"
                 fi
             fi
             mkdir -p "$tempRoot/cache/wlan"

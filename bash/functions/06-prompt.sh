@@ -202,7 +202,7 @@ __build_prompt() {
 
 __get_fs(){
   if __is_unix; then
-      df -TP . 2> /dev/null | awk '{ print $2 }' | tail -n1
+      stat -f -c "%T" .
     else
       # Default to ext4 to make non-Unix green.
     printf "ext4"
@@ -254,7 +254,7 @@ __prompt_file_system_colour(){
       # NFS is also a remote network file system.
       printf "$Colour_BIBlue"
       ;;
-    *fat*|ntfs*|udf|fuseblk|hfsplus)
+    *fat*|ntfs*|udf|fuseblk|hfsplus|msdos)
       # Red Text.
       # FAT Filesystem most likely to be removable device.
       #     Lazy pattern assumes that no other family of file system will have 'fat' anywhere in it.

@@ -161,7 +161,7 @@ ssh_compile_config(){
         # Replace SSH_DIR with module dir.
         sed -i "s|SSH_DIR|$moduleSSHDir|g" "$sshConfig"
         if [ -z "$sectionStart" ]; then
-          success "$(printf "Inserted SSH config from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
+          success "$(printf "${GREEN}Inserted${NC} SSH config from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
         else
           warning "$(printf "SSH config from ${C_FILEPATH}%s${NC} was corrupted. Someone removed the end marker..." "$moduleSSHDirDisplay/")"
         fi
@@ -207,7 +207,7 @@ ssh_compile_config(){
         mv "$sshConfig.new" "$sshConfig"
 
         sed -i "s|SSH_DIR|$moduleSSHDir|g" "$sshConfig"
-        success "$(printf "Updated SSH configuration from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
+        success "$(printf "${BLUE}Updated${NC} SSH configuration from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
 
       else
         local updatedConfigCount=$(($updatedConfigCount-1))

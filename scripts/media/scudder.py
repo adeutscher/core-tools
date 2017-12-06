@@ -37,6 +37,10 @@ def announce_filter_action(action, title, address, ip):
         else:
             print "%s %s: %s (%s)" % (action, title, address, ip)
 
+def hexit(exit_code):
+    print "%s [-a allow-address/range] [-b bind-address] [-d deny-address/range] [-h] [-p port]" % os.path.basename(sys.argv[0])
+    exit(exit_code)
+
 # Credit for IP functions: http://code.activestate.com/recipes/66517/
 
 def ip_make_mask(n):
@@ -88,10 +92,10 @@ def process_arguments():
     args = {"denied_addresses":[], "denied_networks":[],"allowed_addresses":[], "allowed_networks":[]}
     error = False
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:b:d:p:")
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:b:d:hp:")
     except getopt.GetoptError:
         print "GetoptError: %s" % e
-        sys.exit(1)
+        hexit(1)
     for opt, arg in opts:
         if opt in ("-a"):
             if re.match(REGEX_INET4_CIDR, arg):
@@ -121,6 +125,8 @@ def process_arguments():
                 if not e:
                     # No error
                     args["denied_addresses"].append((a, arg, astr))
+        elif opt in ("-h"):
+            hexit(0)
         elif opt in ("-p"):
             args["port"] = int(arg)
     switch_arg = False
@@ -610,10 +616,10 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             image_html += "<img class='largeImage' src='/image%s'/>\n" % (page_path)
         image_html += "</div>"
 
-        path_html = "<p>Viewing: <strong>.%s</strong></p><p>Path: <strong>%s</strong></p>" % (page_path, os.path.realpath(GALLERY_PATH + page_path))
+        path_html = "<p>Viewing: <strong>.%s</strong></p><p>Path: <strong>%s</strong></p><p>Image Dirs:%s</p>" % (page_path, os.path.realpath(GALLERY_PATH + page_path), self.render_breadcrumbs(os.path.dirname(page_path), False))
         return self.send_content(self.render_page("Image: %s (%s)" % (os.path.basename(page_path), os.path.realpath(os.path.dirname(GALLERY_PATH+page_path))), self.render_breadcrumbs(path), nav_html + image_html + nav_html + path_html, self.get_navigation_javascript()))
 
-    def render_breadcrumbs(self, path):
+    def render_breadcrumbs(self, path, trailer=True):
         current = "/browse/"
         items = [ [ current, "Root" ] ]
 
@@ -622,19 +628,16 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 continue
 
             current += item + "/"
-            items.append([ current, item])
+            items.append([current, item])
 
         i = 0
         content = ""
         for item in items:
-            i = i + 1
-            if i == len(items):
-                content += " / %s" % item[1]
-            else:
-                content += " / <a href='%s'>%s</a>" % (item[0], item[1])
+            content += " / <a href='%s'>%s</a>" % (item[0], item[1])
 
-        content += " <li>(<a href='/view?path=%s'>View</a>)</li>" % re.sub(r'^/browse/', '/', items[len(items) - 1][0])
-        content += " <li>(<a href='/view?path=%s&action=refresh'>Refresh</a>)</li>" % re.sub(r'^/browse/', '/', items[len(items) - 1][0])
+        if trailer:
+            content += " (<a href='/view?path=%s'>View</a>)" % re.sub(r'^/browse/', '/', items[len(items) - 1][0])
+            content += " (<a href='/view?path=%s&action=refresh'>Refresh</a>)" % re.sub(r'^/browse/', '/', items[len(items) - 1][0])
 
         return content
 
@@ -660,12 +663,6 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       vertical-align: top;
       width: 975px;
       margin: auto;
-    }
-
-    /* Breadcrumbs */
-
-    .breadcrumbList li {
-      display: inline;
     }
 
     /* Images */
