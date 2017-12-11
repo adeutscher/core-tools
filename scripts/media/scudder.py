@@ -176,8 +176,8 @@ class ViewController:
         self.relativeDirectory = relativeDirectory
         self.directoryId = self.makeDirectoryId(self.directory, self.relativeDirectory)
         self.forceRefresh = forceRefresh
-        self.tallyDir = "/tmp/%s/%s/tallies" % (getpass.getuser(), INDEX_DIR)
-        self.indexDir = "/tmp/%s/%s/indices" % (getpass.getuser(), INDEX_DIR)
+        self.tallyDir = "/tmp/%s/%s/%d/tallies" % (getpass.getuser(), INDEX_DIR, os.getpid())
+        self.indexDir = "/tmp/%s/%s/%d/indices" % (getpass.getuser(), INDEX_DIR, os.getpid())
 
         self.tally = None
         self.makeStructure()

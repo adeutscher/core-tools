@@ -3,6 +3,18 @@
 
 This is the central module for managing my scripts and tools.
 
+## Setup
+
+To set up the core module, run the setup script:
+
+    ./tools/scripts/setup/setup-tools.sh
+
+The `scripts/setup/` directory also contains the following setup assist scripts:
+
+* `crontab-setup.sh`: Setup core cron jobs.
+* `tmux-configuration.sh`: Set up `tmux` theme.
+* `all.sh`: A lazy setup script that runs all of the above (including `setup-tools.sh`).
+
 ## Useful Features
 
 The core tools hold a number of useful functions.
