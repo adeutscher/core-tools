@@ -18,12 +18,41 @@
 
 import getopt, re, socket, sys
 
-## Static variables
+# Static variables
+####
+
+# MAC Address
 MAC_PATTERN = r'^([0-9a-f]{2}[:-]){5}([0-9a-f]{2})$'
 
-## Default variables
+# Basic syntax check for IPv4 CIDR range.
+REGEX_INET4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
+
+# Basic syntax check for IPv4 address.
+REGEX_INET4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
+
+if sys.stdout.isatty():
+    # Colours for standard output.
+    COLOUR_RED= '\033[1;91m'
+    COLOUR_GREEN = '\033[1;92m'
+    COLOUR_YELLOW = '\033[1;93m'
+    COLOUR_BLUE = '\033[1;94m'
+    COLOUR_BOLD = '\033[1m'
+    COLOUR_OFF = '\033[0m'
+else:
+    # Set to blank values if not to standard output.
+    COLOUR_RED= ''
+    COLOUR_GREEN = ''
+    COLOUR_YELLOW = ''
+    COLOUR_BLUE = ''
+    COLOUR_BOLD = ''
+    COLOUR_OFF = ''
+
+# Default variables
+####
+
 # wol command observed as sending out over UDP/40000
 DEFAULT_WOL_PORT = 40000
+# Broadcast will send out on default interface.
 DEFAULT_TARGET_ADDRESS="255.255.255.255"
 
 ## Configurable variables
@@ -32,19 +61,32 @@ WOL_PORT = DEFAULT_WOL_PORT
 # IP address to send to.
 TARGET_ADDRESS = DEFAULT_TARGET_ADDRESS
 
-def help_exit(exit_code=0):
+def hexit(exit_code=0):
   print "./wol-manual.py [-h] [-i target_address] ... MAC-ADDRESS ..."
-  print "  -h: Display this help menu."
-  print "  -i target_address: Send to specific broadcast address"
+  print "  -a target_address: Send to specific broadcast address"
+  print "                     This is necessary when waking up a device on"
+  print "                     a different collision domain than your default"
+  print "                     gateway interface."
+  print "                     Example value: 192.168.100.0"
+  print "  -h: Display this help menu and exit."
   print "  -p port: Select UDP port"
   exit(exit_code)
+
+def print_error(message):
+    print "%sError%s: %s" % (COLOUR_RED, COLOUR_OFF, message)
+
+def print_notice(message):
+    print "%sNotice%s: %s" % (COLOUR_BLUE, COLOUR_OFF, message)
+
+def print_warning(message):
+    print "%sWarning%s: %s" % (COLOUR_YELLOW, COLOUR_OFF, message)
 
 def send_magic_packet(mac):
 
   global WOL_PORT
   global TARGET_ADDRESS
 
-  print "Sending WoL magic packet for %s" % mac
+  print_notice("Sending WoL magic packet for %s%s%s" % (COLOUR_BOLD, mac, COLOUR_OFF))
 
   sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
   sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -75,42 +117,53 @@ def run(argv):
   # TODO: Consider improving argument parsing
   try:
     # Note: Python will not throw a fit if you call for an invalid slice (will simply be empty).
-    opts, args = getopt.getopt(argv[1:],"hi:p:")
+    opts, args = getopt.gnu_getopt(argv[1:],"ha:p:")
   except getopt.GetoptError:
     errors.append("Error parsing arguments")
   for opt, arg in opts:
     if opt == '-h':
-      help_exit()
-    elif opt =="-i":
-      # TODO: Consider adding validation for the bind address.
+      hexit()
+    elif opt =="-a":
+      if re.match(REGEX_INET4_CIDR, arg):
+        # Someone put in a CIDR range by accident.
+        # Their heart is in the right place, so fix formatting with a small nudge for next time.
+        print_warning("Target address '%s%s%s' appears to be in CIDR format." % (COLOUR_GREEN, arg, COLOUR_OFF))
+        arg = re.sub(r"\/.*$", "", arg)
+        print_warning("Trimming target address down to '%s%s%s'." % (COLOUR_GREEN, arg, COLOUR_OFF))
+      elif not re.match(REGEX_INET4, arg):
+        errors.append("Not a valid target address: %s%s%s" % (COLOUR_BOLD, arg, COLOUR_OFF))
+        continue
       TARGET_ADDRESS = arg
     elif opt =="-p":
-      # TODO: Consider adding validation for the bind address.
       try:
         if int(arg) > 0 and int(arg) < 65535:
           WOL_PORT = int(arg)
         else:
           raise ValueError("Invalid port")
       except ValueError:
-        errors.append("Invalid port number: %s" % int(arg))
+        errors.append("Invalid port number: %s%s%s" % (COLOUR_BOLD, arg, COLOUR_OFF))
 
   if len(args) == 0:
     errors.append("No MAC addresses provided.")
 
   if len(errors):
     for error in errors:
-      print >> sys.stderr, "Error: %s" % error
-    help_exit(1)
+      print_error(error)
+    hexit(1)
 
-  print "Sending WoL magic packets to %s on UDP/%d" % (TARGET_ADDRESS, WOL_PORT)
+  print_notice("Sending WoL magic packet(s) to %s%s%s on %sUDP/%d%s" % (COLOUR_GREEN, TARGET_ADDRESS, COLOUR_OFF, COLOUR_GREEN, WOL_PORT, COLOUR_OFF))
 
   for candidate in args:
     # May as well squash candidate MAC to lowercase immediately
     candidate_lower = candidate.lower()
+    bad_format = 0
     if re.match(MAC_PATTERN, candidate_lower):
       send_magic_packet(candidate_lower)
     else:
-      print "Invalid MAC address: %s" % candidate
+      print_error("Invalid MAC address: %s%s%s" % (COLOUR_BOLD, candidate, COLOUR_OFF))
+      bad_format += 1
+    if bad_format:
+      exit(1)
 
 if __name__ == "__main__":
   run(sys.argv)

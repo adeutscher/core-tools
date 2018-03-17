@@ -26,3 +26,5 @@ if __is_unix && ! __is_mac && qtype make lscpu; then
         alias make-medium=make
     fi
 fi
+
+alias format-code="format-code.sh .c .cpp .h .hpp"

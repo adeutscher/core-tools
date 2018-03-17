@@ -19,17 +19,30 @@ except ImportError:
 # Basic syntax check
 REGEX_INET4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 
+if sys.stdout.isatty():
+    # Colours for standard output.
+    COLOUR_RED= '\033[1;91m'
+    COLOUR_GREEN = '\033[1;92m'
+    COLOUR_YELLOW = '\033[1;93m'
+    COLOUR_BLUE = '\033[1;94m'
+    COLOUR_PURPLE = '\033[1;95m'
+    COLOUR_BOLD = '\033[1m'
+    COLOUR_OFF = '\033[0m'
+else:
+    # Set to blank values if not to standard output.
+    COLOUR_RED= ''
+    COLOUR_GREEN = ''
+    COLOUR_YELLOW = ''
+    COLOUR_BLUE = ''
+    COLOUR_PURPLE = ''
+    COLOUR_BOLD = ''
+    COLOUR_OFF = ''
+
 def announce_filter_action(action, title, address, ip):
-    if sys.stdout.isatty():
-        if ip == address:
-            print "%s %s: \033[1;92m%s\033[0m" % (action, title, address)
-        else:
-            print "%s %s: \033[1;92m%s\033[0m (\033[1;92m%s\033[0m)" % (action, title, address, ip)
+    if ip == address:
+        print "%s %s: %s%s%s" % (action, title, COLOUR_GREEN, address, COLOUR_OFF)
     else:
-        if ip == address:
-            print "%s %s: %s" % (action, title, address)
-        else:
-            print "%s %s: %s (%s)" % (action, title, address, ip)
+        print "%s %s: %s%s%s (%s%s%s)" % (action, title, COLOUR_GREEN, address, COLOUR_OFF, COLOUR_GREEN, ip, COLOUR_OFF)
 
 # Credit for IP functions: http://code.activestate.com/recipes/66517/
 
@@ -58,10 +71,7 @@ def ip_validate_address(candidate):
         ip = socket.gethostbyname(candidate)
         return (False, ip_strton(ip), ip)
     except socket.gaierror:
-        if sys.stderr.isatty():
-            print >> sys.stderr, "Unable to resolve: \033[1;92m%s\033[0m" % candidate
-        else:
-            print >> sys.stderr, "Unable to resolve: %s" % candidate
+        print >> sys.stderr, "Unable to resolve: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF)
         return (True, None, None)
 
 def ip_validate_cidr(candidate):
@@ -70,16 +80,9 @@ def ip_validate_cidr(candidate):
     try:
         if socket.gethostbyname(a) and int(m) <= 32:
             return (False, ip_network_mask(a, m))
-        else:
-            if sys.stderr.isatty():
-                print >> sys.stderr, "Invalid CIDR address: \033[1;92m%s\033[0m" % candidate
-            else:
-                print >> sys.stderr, "Invalid CIDR address: %s" % candidate
     except socket.gaierror:
-        if sys.stderr.isatty():
-            print >> sys.stderr, "Invalid CIDR address: \033[1;92m%s\033[0m" % candidate
-        else:
-            print >> sys.stderr, "Invalid CIDR address: %s" % candidate
+        pass
+    print >> sys.stderr, "Invalid CIDR address: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF)
     return (True, None)
 
 def process_arguments():
@@ -304,6 +307,45 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         return f
 
+    def log_message(self, format, *args):
+        """Log an arbitrary message.
+        This is used by all other logging functions.  Override
+        it if you have specific logging wishes.
+        The first argument, FORMAT, is a format string for the
+        message to be logged.  If the format string contains
+        any % escapes requiring parameters, they should be
+        specified as subsequent arguments (it's just like
+        printf!).
+        The client host and current date/time are prefixed to
+        every message.
+        """
+
+        if type(args[0]) == int:
+            # Errors may be presented as tuples starting with error code as int.
+            # Do not bother printing extra information on error codes in a new line.
+            return
+        else:
+            words = args[0].split()
+            if args[1] == '404' and len(words) > 1 and words[1].endswith("favicon.ico"):
+                # Do not bother printing not-found information on favicon.ico.
+                return
+
+        http_code_colour = COLOUR_RED
+        extra_info = ''
+        if args[1] == "200":
+            http_code_colour = COLOUR_GREEN
+        elif args[1] == "301":
+            http_code_colour = COLOUR_PURPLE
+            extra_info = '[%s%s%s]' % (COLOUR_PURPLE, "Redirect", COLOUR_OFF)
+        elif args[1] == "404":
+            extra_info = '[%s%s%s]' % (COLOUR_RED, "File Not Found", COLOUR_OFF)
+
+        s = self.address_string()
+        if s == self.client_address[0]:
+            sys.stdout.write("%s%s%s [%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
+        else:
+            sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
+
     def render_breadcrumbs(self, path):
         current = "/"
         items = [(current, "Root")]
@@ -334,18 +376,12 @@ if __name__ == '__main__':
     bind_port = args.get("port", 8080)
     directory = args.get("dir", os.getcwd())
     if not os.path.isdir(directory):
-        if sys.stdout.isatty():
-            print "Path \033[1;92m%s\033[0m does not seem to exist." % os.path.realpath(directory)
-        else:
-            print "Path %s does not seem to exist." % os.path.realpath(directory)
+        print "Path %s does not seem to exist." % (COLOUR_GREEN, os.path.realpath(directory), COLOUR_OFF)
         exit(1)
-    os.chdir(directory)
 
-    if sys.stdout.isatty():
-        print "Sharing \033[1;92m%s\033[0m on %s:%d" % (os.path.realpath(directory), bind_address, bind_port)
-    else:
-        print "Sharing %s on %s:%d" % (os.path.realpath(directory), bind_address, bind_port)
+    print "Sharing %s%s%s on %s%s:%d%s" % (COLOUR_GREEN, os.path.realpath(directory), COLOUR_OFF, COLOUR_GREEN, bind_address, bind_port, COLOUR_OFF)
     try:
+        os.chdir(directory)
         server = ThreadedHTTPServer((bind_address, bind_port), SimpleHTTPVerboseReqeustHandler)
         print "Starting server, use <Ctrl-C> to stop"
         server.serve_forever()

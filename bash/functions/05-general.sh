@@ -214,11 +214,11 @@ sleep-days(){
 }
 
 ##########
-# Super-duper-lazy wait function
+# Super-duper-lazy wait functions
 ##########
 
 # Wait for a specified process to be done.
-# Different from the BASH built-in,
+# Different from the BASH built-in 'wait',
 #   as the built-in will only support children of the current shell.
 # The trade-off is that this function will not support returning exit codes.
 # It will also not support multiple PIDs, though that may change in the future.
@@ -232,6 +232,8 @@ wait-for-pid(){
     return 2
   fi
 
+  # Loop so long as the process exists.
+  # Assume that a replacement PIDs will not pop up in the meantime to replace the target.
   while [ -d "/proc/$1" ]; do
     sleep 1
   done
@@ -242,6 +244,8 @@ wait-for-pid(){
 #########
 
 # Surviving silly aliases that were not converted to scripts.
+
+# Silly catharsis
 alias ffs='sudo'
 
 # Only load on Ubuntu/Debian
@@ -253,7 +257,7 @@ fi
 # Silly telnet movies.
 if qtype telnet; then
   alias telnet-nyan="telnet nyancat.dakko.us; reset"
-  alias telnet-sw="telnet towel.blinkenlights.nl; reset"
+  alias telnet-star-wars="telnet towel.blinkenlights.nl; reset"
 fi
 
 ##################

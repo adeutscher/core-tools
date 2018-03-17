@@ -105,9 +105,9 @@ run_dhclient(){
   else
     notice "$(printf "Running ${BLUE}%s${NC} on ${BOLD}%s${NC}... (address-only)" "dhclient" "$interface")"
     if [ -f "$dhclient_script" ]; then
-      dhclient -sf "$dhclient_script" -pf "$pid_file" "$interface" -R "$short_options"
+      dhclient -sf "$dhclient_script" -pf "$pid_file" "$interface" --request-options "$short_options"
     else
-      dhclient -pf "$pid_file" "$interface" -R "$short_options"
+      dhclient -pf "$pid_file" "$interface" --request-options "$short_options"
     fi
 
   fi
