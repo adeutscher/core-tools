@@ -47,7 +47,7 @@ def announce_filter_action(action, title, address, ip):
 # Credit for IP functions: http://code.activestate.com/recipes/66517/
 
 def hexit(exit_code):
-    print "%s [-a allow-address/range] [-b bind-address] [-d deny-address/range] [-h] [-p port] [-r] [-t]" % os.path.basename(sys.argv[0])
+    print "%s [-a allow-address/range] [-b bind-address] [-d deny-address/range] [-h] [-p port] [-P] [-r] [-t]" % os.path.basename(sys.argv[0])
     exit(exit_code)
 
 def ip_make_mask(n):
@@ -90,7 +90,7 @@ def process_arguments():
     error = False
 
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:b:d:hp:rt")
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:b:d:hp:Prt")
     except getopt.GetoptError as e:
         print "GetoptError: %s" % e
         hexit(1)
@@ -127,6 +127,8 @@ def process_arguments():
             hexit(0)
         elif opt in ("-p"):
             args["port"] = int(arg)
+        elif opt in ("-P"):
+            args["post"] = True
         elif opt in ("-r"):
             args["reverse"] = True
         elif opt in ("-t"):
@@ -209,6 +211,10 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
             if not self.parse_request():
                 # An error code has been sent, just exit
                 return
+
+            if self.command == "POST" and args.get("post", False):
+                self.command = "GET"
+
             mname = 'do_' + self.command
             if not hasattr(self, mname):
                 self.send_error(501, "Unsupported method (%r)" % self.command)
@@ -380,6 +386,8 @@ if __name__ == '__main__':
         exit(1)
 
     print "Sharing %s%s%s on %s%s:%d%s" % (COLOUR_GREEN, os.path.realpath(directory), COLOUR_OFF, COLOUR_GREEN, bind_address, bind_port, COLOUR_OFF)
+    if args.get("post", False):
+        print "Accepting %s%s%s messages. Will not process, but will not throw a %s%s%s code either." % (COLOUR_BOLD, "POST", COLOUR_OFF, COLOUR_RED, "501", COLOUR_OFF)
     try:
         os.chdir(directory)
         server = ThreadedHTTPServer((bind_address, bind_port), SimpleHTTPVerboseReqeustHandler)

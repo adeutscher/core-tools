@@ -42,17 +42,19 @@ if [ -z "$1" ]; then
   exit 2
 fi
 
-while read arg; do
-  if grep -Pq "^\.[^\.]+" <<< "${arg}"; then
-    extensions="${extensions} ${arg}"
+while [ -n "${1}" ]; do
+  if grep -Pq "^\.[^\.]+" <<< "${1}"; then
+    extensions="${extensions} ${1}"
   else
-    target="$(readlink -f "${arg}")"
+    target="$(readlink -f "${1}")"
   fi
-done <<< "$(grep -P -o "\.[^\s]+" <<< "$@")"
+  shift
+done
 
 if [ -z "${target}" ]; then
   target="$(readlink -f "$(pwd)")"
 fi
+
 # Trim out home directory for display purposes.
 displayTarget="$(sed 's|^'"$HOME"'|~|g' <<< "${target}")"
 

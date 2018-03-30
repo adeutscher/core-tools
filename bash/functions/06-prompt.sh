@@ -546,10 +546,10 @@ prompt-set-username(){
 prompt-toggle-compression(){
   if [ "${PROMPT_ALWAYS_COMPRESS:-0}" -eq 0 ]; then
     notice "Disabling prompt expansion..."
-    PROMPT_ALWAYS_COMPRESS=1
+    export PROMPT_ALWAYS_COMPRESS=1
   else
     notice "Re-enabling prompt expansiom..."
-    PROMPT_ALWAYS_COMPRESS=0
+    export PROMPT_ALWAYS_COMPRESS=0
   fi
 }
 
@@ -560,19 +560,19 @@ prompt-toggle-ssh(){
     warning "Not an SSH session."
   elif [ "${PROMPT_IGNORE_SSH:-0}" -eq 0 ]; then
     notice "Disabling SSH address display in command."
-    PROMPT_IGNORE_SSH=1
+    export PROMPT_IGNORE_SSH=1
   else
     notice "Enabling SSH address display in command prompt."
-    PROMPT_IGNORE_SSH=0
+    export PROMPT_IGNORE_SSH=0
   fi
 }
 
 prompt-toggle-version-control(){
   if [ "${PROMPT_IGNORE_VC:-0}" -eq 0 ]; then
     notice "Disabling version control display on command prompt."
-    PROMPT_IGNORE_VC=1
+    export PROMPT_IGNORE_VC=1
   else
     notice "Enabling version control display on command prompt."
-    PROMPT_IGNORE_VC=0
+    export PROMPT_IGNORE_VC=0
   fi
 }

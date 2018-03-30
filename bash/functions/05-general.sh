@@ -20,56 +20,6 @@ export LIBVIRT_DEFAULT_URI='qemu:///system'
 # Keeping it in because there is no competing function in tab-complete yet.
 alias reload="reload-tools"
 
-# Tmux
-if qtype tmux; then
-  alias new='tmux new -s'
-  alias list='tmux list-sessions'
-  alias resume='tmux attach -t'
-  # Lazy function to combine resuming and creating tmux sessions.
-  mux (){
-    if [ -z "$1" ]; then
-      local sessions="$(tmux list-sessions 2> /dev/null)"
-      if [ "$(expr length "$sessions")" -gt 1 ]; then
-        error "No session name provided. The following sessions are available:"
-        printf "%s\n" "$sessions"
-      else
-        error "No session name provided. No sessions are currently available."
-      fi
-      return 1
-    fi
-
-    if [ -n "$TMUX" ]; then
-      error "$(printf "sessions should be nested with care, unset ${Colour_BIPurple}\$TMUX${Colour_Off} to force" )"
-      return 2
-    fi
-
-    if [[ "${FUNCNAME[1]}" == "mux-force" ]]; then
-      # Extra Tmux Attach Switch
-      # If invoked via 'mux-force', then we want to detach other clients as we connect.
-      # I find it useful to not necessarily do this most of the time, hence the extra legwork.
-      local __etas=d
-    fi
-
-    # If a tmux session cannot be created under this name,
-    #   then one must already exist.
-    if [ -f /etc/redhat-release ] && [[ "$(tmux -V)" == "tmux 1.6" ]]; then
-      # Tmux 1.6 on CentOS 6 is strange with how it works with redirection to stderr
-      # See also: https://bugzilla.redhat.com/show_bug.cgi?id=1102087
-      # I would prefer to redirect the duplicate session error from trying a new session to stderr,
-      #     but if I do so with this version tmux will hang. Lesser of two evils...
-      tmux new -s "$1" || tmux attach -${__etas}t "$1"
-    else
-      # Use preferred redirection to stderr
-      tmux new -s "$1" 2> /dev/null || tmux attach -${__etas}t "$1"
-    fi
-  }
-
-  mux-force(){
-    mux $@
-  }
-
-fi
-
 # Alias for our most-used rsync switches.
 alias rsync="rsync -av --progress"
 

@@ -155,10 +155,14 @@ function update-git-repo(){
           local endPoint="$((startPoint + $endInterval - 1))"
         fi
         local aliasHost="$(sed -n "${startPoint},${endPoint}p" "$HOME/.ssh/config" | grep -iwP "hostname\s+[^\s]+" | tail -n1 | awk '{print $2}')"
-        if [ -n "$aliasHost" ] && [[ "$aliasHost" != "$domainHost" ]]; then
+        if [ -n "${aliasHost}" ]; then
+          if [[ "${aliasHost}" != "${repoDomain}" ]]; then
             # Only announce and update if there's an actual difference between the detected alias and the URL that we already have.
             notice "$(printf "Discovered SSH alias, attempting to handle ${GREEN}%s${NC} instead of ${GREEN}%s${NC}." "$aliasHost" "$repoDomain")"
             local repoDomain="$aliasHost"
+          else
+            notice "$(printf "Discovered SSH alias for ${GREEN}%s${NC}, but hostname value ${GREEN}%s${NC} matches already." "${repoDomain}" "$aliasHost")"
+          fi
         fi
       fi
     fi
@@ -227,10 +231,14 @@ function update-repo(){
   if [ -z "$1" ]; then
     error "No repository path provided."
     return 1
+  elif [ ! -d "${1}" ]; then
+    error "$(printf "No such directory: ${GREEN}%s${NC}" "$(readlink -f "${1}" | sed "s|^${HOME}|~|g")")"
   elif __is_svn_repo "$1"; then
     update-svn-repo "$1" "$2"
   elif __is_git_repo "$1"; then
     update-git-repo "$1" "$2"
+  else
+    error "$(printf "${GREEN}%s${NC} does not appear to be the base of a Git repo or SVN checkout." "$(readlink -f "${1}" | sed "s|^${HOME}|~|g")")"
   fi
 }
 
