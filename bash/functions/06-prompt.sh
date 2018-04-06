@@ -129,14 +129,18 @@ __build_prompt() {
 
   # Build
   if [ "${typing_space:-0}" -lt 20 ]; then
-	# Compressed prompt
+    # Compressed prompt
     # Make a bit more typing space in closed quarters
     # Start
     local host_char=${DISPLAY_HOSTNAME:0:1}
     if [ -z "$host_char" ]; then
       local host_char=${HOSTNAME:0:1}
     fi
-    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${USER:0:1}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'${host_char:0:1}'\[\033[m\]'$ssh_string_short
+    local user_char=${DISPLAY_USER:0:1}
+    if [ -z "$user_char" ]; then
+      local user_char=${USER:0:1}
+    fi
+    PS1='\['"$box_colour"'\][\[\033[m\]\[$(__prompt_username_colour)\]'"${user_char:0:1}"'\[\033[m\]\['"$Colour_Bold"'\]@\[\033[m\]\[$(__prompt_hostname_colour)\]'${host_char:0:1}'\[\033[m\]'$ssh_string_short
     PS1=$PS1"\[$box_colour\]][\[\033[m\]\[$(__prompt_file_system_colour)\]\W\[\033[m\]\[$box_colour\]]\[\033[m\]"
   else
     # Regular expanded prompt

@@ -10,7 +10,7 @@
 #      that have to otherwise be run more quickly
 # It is assumed that the report scripts have already been independently debugged, as conky will show no direct output.
 # Load common utilities and variables.
-. functions/common
+. functions/common.sh
 
 if ls "${reportRoot}/"*sh 2> /dev/null >&2;  then
   for script in ${reportRoot}/*sh; do

@@ -4,7 +4,7 @@
 # Also skip if CONKY_DISABLE_TMUX evaluates to true.
 if type tmux 2> /dev/null >&2 && ! (( $CONKY_DISABLE_TMUX )); then
 
-    . functions/common 2> /dev/null
+    . functions/common.sh 2> /dev/null
 
     # Tmux is installed.
     tmux_lines=$(tmux list-sessions 2> /dev/null | cut -d' ' -f 1-3,11-15 | sed 's/\[.*\]\ *//g' |  perl -pe 's/^([^:]*)/ \${color \#'${colour_good}'}\1\$color/g')

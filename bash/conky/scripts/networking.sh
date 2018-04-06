@@ -24,8 +24,8 @@ exclude_list="lo $CONKY_IGNORE_INTERFACES"
 ## With the current approach, this would skip aliases entirely (e.g. blocking eth0 would block eth0:0),
 ##    and does not work in reverse since individual aliases are not checked (e.g. eth0:0 could not be specifically blocked)
 
-. functions/common
-. functions/network-labels
+. functions/common.sh
+. functions/network-labels.sh
 
 ########################
 ########################
@@ -165,6 +165,18 @@ for iface in ${interfaces}; do
 
     if [ -f "/tmp/conky-common/labels/${iface}.label" ]; then
         printf "\n  %s" "$(shorten_string "$(cat "/tmp/conky-common/labels/${iface}.label")" 24)"
+    fi
+
+    # Grab start time and do filtering.
+    start_time="$(cat "/tmp/conky-common/labels/${iface}.start" 2> /dev/null | grep -oPm1 "^\d+$")"
+    if [ -n "${start_time}" ]; then
+      current_time="$(date "+%s")"
+      diff_time="$((${current_time}-${start_time}))"
+      if [ "${diff_time}" -gt 0 ]; then
+        printf "\n  Uptime: %s" "$(translate_seconds "${diff_time}")"
+      fi
+      # Do not care so much about unsetting these variables because
+      #   they will definitely be overwritten next loop.
     fi
 
     # Unset address-related variable for next loop.
@@ -325,7 +337,7 @@ fi
 #       If such a false positive is ever found, then we could use the -a switch to list the full name, which could then be grepped for.
 torrent_instances="$(pgrep -ac transmission-cl)"
 if [ "${torrent_instances}" -gt 0 ]; then
-    printf "Active Torrents: %d\n" "${torrent_instances}"
+    printf " Active Torrents: %d\n" "${torrent_instances}"
 fi
 
 ##########################

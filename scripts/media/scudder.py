@@ -22,9 +22,6 @@ INDEX_DIR = "scudder"
 
 image_extensions = ('.png','.jpg', '.jpeg', '.gif')
 
-# Basic syntax check
-REGEX_INET4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
-
 if sys.stdout.isatty():
     # Colours for standard output.
     COLOUR_RED= '\033[1;91m'
@@ -44,91 +41,29 @@ else:
     COLOUR_BOLD = ''
     COLOUR_OFF = ''
 
-def announce_filter_action(action, title, address, ip):
-    if ip == address:
-        print "%s %s: %s%s%s" % (action, title, COLOUR_GREEN, address, COLOUR_OFF)
-    else:
-        print "%s %s: %s%s%s (%s%s%s)" % (action, title, COLOUR_GREEN, address, COLOUR_OFF, COLOUR_GREEN, ip, COLOUR_OFF)
-
 def hexit(exit_code):
     print "%s [-a allow-address/range] [-b bind-address] [-d deny-address/range] [-h] [-p port]" % os.path.basename(sys.argv[0])
     exit(exit_code)
 
-# Credit for IP functions: http://code.activestate.com/recipes/66517/
-
-def ip_make_mask(n):
-    # Return a mask of n bits as a long integer
-    return (2L<<n-1)-1
-
-def ip_strton(ip):
-    # Convert decimal dotted quad string to long integer
-    return struct.unpack('<L',socket.inet_aton(ip))[0]
-
-def ip_network_mask(ip, bits):
-    # Convert a network address to a long integer
-    return ip_strton(ip) & ip_make_mask(int(bits))
-
-def ip_addrn_in_network(ip,net):
-   # Is a numeric address in a network?
-   return ip & net == net
-
-def ip_validate_address(candidate):
-    try:
-        ip = socket.gethostbyname(candidate)
-        return (False, ip_strton(ip), ip)
-    except socket.gaierror:
-        print >> sys.stderr, "Unable to resolve: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF)
-        return (True, None, None)
-
-def ip_validate_cidr(candidate):
-    a = candidate.split("/")[0]
-    m = candidate.split("/")[1]
-    try:
-        if socket.gethostbyname(a) and int(m) <= 32:
-            return (False, ip_network_mask(a, m))
-    except socket.gaierror:
-        pass
-    # An echeption was raised or the CIDR range was otherwise invalid.
-    print >> sys.stderr, "Invalid CIDR address: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF)
-    return (True, None)
-
 def process_arguments():
-    args = {"denied_addresses":[], "denied_networks":[],"allowed_addresses":[], "allowed_networks":[]}
+    args = {}
     error = False
+    errors = []
+    global access
+    access = NetAccess()
+
     try:
         opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:b:d:hp:")
-    except getopt.GetoptError:
-        print "GetoptError: %s" % e
+    except getopt.GetoptError as e:
+        print "GetoptError: %s" % str(e)
         hexit(1)
     for opt, arg in opts:
         if opt in ("-a"):
-            if re.match(REGEX_INET4_CIDR, arg):
-                e, n = ip_validate_cidr(arg)
-                error = error or e
-                if not e:
-                    # No error
-                    args["allowed_networks"].append((n,arg))
-            else:
-                e, a, astr = ip_validate_address(arg)
-                error = error or e
-                if not e:
-                    # No error
-                    args["allowed_addresses"].append((a, arg, astr))
+            error = access.add_whitelist(arg) or error
         elif opt in ("-b"):
             args["bind"] = arg
         elif opt in ("-d"):
-            if re.match(REGEX_INET4_CIDR, arg):
-                e, n = ip_validate_cidr(arg)
-                error = error or e
-                if not e:
-                    # No error
-                    args["denied_networks"].append((n, arg))
-            else:
-                e, a, astr = ip_validate_address(arg)
-                error = error or e
-                if not e:
-                    # No error
-                    args["denied_addresses"].append((a, arg, astr))
+            error = access.add_blacklist(arg) or error
         elif opt in ("-h"):
             hexit(0)
         elif opt in ("-p"):
@@ -137,12 +72,15 @@ def process_arguments():
     if len(flat_args):
         args["dir"] = flat_args[len(flat_args)-1]
 
+    if len(access.errors):
+        error = True
+        errors.extend(access.errors)
+
     if not error:
-        for t in [("allowed", "Allowing"), ("denied", "Denying")]:
-            for n, s, i in args["%s_addresses" % t[0]]:
-                announce_filter_action(t[1], "address", s, i)
-            for n, s in args["%s_networks" % t[0]]:
-                announce_filter_action(t[1], "network", s, s)
+        access.announce_filter_actions()
+    else:
+        for e in errors:
+            print "Error: %s" % e
 
     return error, args
 
@@ -170,6 +108,120 @@ class BrowseController:
         except Exception as e:
             pass
         return l, c
+
+class NetAccess:
+    # Basic IPv4 CIDR syntax check
+    REGEX_INET4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
+
+    def __init__(self):
+        self.errors = []
+        self.allowed_addresses = []
+        self.allowed_networks = []
+        self.denied_addresses = []
+        self.denied_networks = []
+
+    def add_access(self, addr_list, net_list, candidate):
+        error = False
+        if re.match(self.REGEX_INET4_CIDR, candidate):
+            e, n = self.ip_validate_cidr(candidate)
+            error = e
+            if not e:
+                # No error
+                net_list.append((n, candidate))
+        else:
+            e, a, astr = self.ip_validate_address(candidate)
+            error = e
+            if not e:
+                # No error
+                addr_list.append((a, candidate, astr))
+        return error
+
+    def add_blacklist(self, candidate):
+        return self.add_access(self.denied_addresses, self.denied_networks, candidate)
+
+    def add_whitelist(self, candidate):
+        return self.add_access(self.allowed_addresses, self.allowed_networks, candidate)
+
+    def announce_filter_actions(self):
+        for action, address_list, network_list in [("Allowing", self.allowed_addresses, self.allowed_networks), ("Denying", self.denied_addresses, self.denied_networks)]:
+            l = []
+            l.extend([("address", s, i) for n, s, i in address_list])
+            l.extend([("network", s, s) for n, s in network_list])
+
+            for title, ip, address in l:
+                if ip == address:
+                    print "%s %s: %s%s%s" % (action, title, COLOUR_GREEN, address, COLOUR_OFF)
+                else:
+                    print "%s %s: %s%s%s (%s%s%s)" % (action, title, COLOUR_GREEN, address, COLOUR_OFF, COLOUR_GREEN, ip, COLOUR_OFF)
+
+    # Credit for initial IP functions: http://code.activestate.com/recipes/66517/
+
+    def ip_make_mask(self, n):
+        # Return a mask of n bits as a long integer
+        return (2L<<n-1)-1
+
+    def ip_strton(self, ip):
+        # Convert decimal dotted quad string to long integer
+        return struct.unpack('<L',socket.inet_aton(ip))[0]
+
+    def ip_network_mask(self, ip, bits):
+        # Convert a network address to a long integer
+        return self.ip_strton(ip) & self.ip_make_mask(int(bits))
+
+    def ip_addrn_in_network(self, ip, net):
+        # Is a numeric address in a network?
+        return ip & net == net
+
+    def ip_validate_address(self, candidate):
+        try:
+            ip = socket.gethostbyname(candidate)
+            return (False, self.ip_strton(ip), ip)
+        except socket.gaierror:
+            self.errors.append("Unable to resolve: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF))
+            return (True, None, None)
+
+    def ip_validate_cidr(self, candidate):
+        a = candidate.split("/")[0]
+        m = candidate.split("/")[1]
+        try:
+            if socket.gethostbyname(a) and int(m) <= 32:
+                return (False, self.ip_network_mask(a, m))
+        except socket.gaierror:
+            pass
+        self.errors.append("Invalid CIDR address: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF))
+        return (True, None)
+
+    def is_allowed(self, address):
+        # Blacklist/Whitelist filtering
+        allowed = True
+
+        if len(self.allowed_addresses) or len(self.allowed_networks):
+            # Whitelist processing, address is not allowed until it is cleared.
+            allowed = False
+
+            if address in [a[2] for a in self.allowed_addresses]:
+                allowed = True
+            else:
+                # Try checking allowed networks
+                cn = self.ip_strton(address)
+                for n in [n[0] for n in self.allowed_networks]:
+                    if self.ip_addrn_in_network(cn, n):
+                        allowed = True
+                        break
+
+        if len(self.denied_addresses) or len(self.denied_networks):
+            # Blacklist processing. A blacklist argument one-ups a whitelist argument in the event of a conflict
+
+            if address in [a[2] for a in self.denied_addresses]:
+                allowed = False
+            else:
+                # Try checking denied networks
+                cn = self.ip_strton(address)
+                for n in [n[0] for n in self.denied_networks]:
+                    if self.ip_addrn_in_network(cn, n):
+                        allowed = False
+                        break
+        return allowed
 
 # Viewer
 class ViewController:
@@ -474,37 +526,7 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 self.close_connection = 1
                 return
 
-            # Blacklist/Whitelist filtering
-            allowed = True
-
-            if args["allowed_addresses"] or args["allowed_networks"]:
-                # Whitelist processing, address is not allowed until it is cleared.
-                allowed = False
-
-                if self.client_address[0] in [a[2] for a in args["allowed_addresses"]]:
-                    allowed = True
-                else:
-                    # Try checking allowed networks
-                    cn = ip_strton(self.client_address[0])
-                    for n in [n[0] for n in args["allowed_networks"]]:
-                        if ip_addrn_in_network(cn, n):
-                            allowed = True
-                            break
-
-            if len(args["denied_addresses"]) or len(args["denied_networks"]):
-                # Blacklist processing. A blacklist argument one-ups a whitelist argument in the event of a conflict
-
-                if self.client_address[0] in [a[2] for a in args["denied_addresses"]]:
-                    allowed = False
-                else:
-                    # Try checking denied networks
-                    cn = ip_strton(self.client_address[0])
-                    for n in [n[0] for n in args["denied_networks"]]:
-                        if ip_addrn_in_network(cn, n):
-                            allowed = False
-                            break
-
-            if not allowed:
+            if not access.is_allowed(self.client_address[0]):
                 self.requestline = ''
                 self.request_version = ''
                 self.command = ''
@@ -850,7 +872,6 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             dir_path = "/"
             word = "browse"
         return word, path, dir_path, args
-
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""

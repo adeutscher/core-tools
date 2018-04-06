@@ -6,7 +6,7 @@ if (( "$CONKY_DISABLE_VMS" )) || ! type virsh 2> /dev/null >&2 || ! egrep -qwm1 
   exit 0
 fi
 
-. functions/common 2> /dev/null
+. functions/common.sh 2> /dev/null
 
 #########################################
 # LibVirt Host (tested with KVM guests) #

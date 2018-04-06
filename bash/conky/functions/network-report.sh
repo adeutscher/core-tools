@@ -25,7 +25,7 @@
 
 # If the network labels function has not already been loaded, then load it.
 if ! qtype __get_mac_record; then
-    . functions/network-labels
+    . functions/network-labels.sh
 fi
 
 prep(){

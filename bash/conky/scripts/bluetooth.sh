@@ -7,8 +7,8 @@ if (( $CONKY_DISABLE_BLUETOOTH )) || ! type hcitool 2> /dev/null >&2; then
 fi
 
 # Load common utilities
-. functions/common 2> /dev/null
-. functions/network-labels 2> /dev/null
+. functions/common.sh 2> /dev/null
+. functions/network-labels.sh 2> /dev/null
 
 devices=$(hcitool con 2> /dev/null |sed -n /[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]/p | awk '{print $3}')
 

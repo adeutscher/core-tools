@@ -6,7 +6,7 @@
 #case "${HOSTNAME%-*}" in
 #"laptop.domain.lan")
 #
-#    . functions/common 2> /dev/null
+#    . functions/common.sh 2> /dev/null
 #
 #    ;;
 #*)

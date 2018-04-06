@@ -80,3 +80,45 @@ __get_mac_vendor_inner(){
 __get_mac_vendor(){
     __get_mac_vendor_inner "$1" | cut -d'|' -f 2
 }
+
+# Translation for interface uptime labels
+
+translate_seconds(){
+  # Translate a time given in seconds (e.g. the difference between two Unix timestamps) to more human-friendly units.
+  # Stripped down version of usual with more abbreviated units.
+
+  local __num=$1
+  local __c=0
+  local __i=0
+
+  # Each "module" should be the unit and the number of that unit until the next phrasing.
+  local __modules=(s:60 m:60 h:24 d:7 weeks:52 y:100 c:100)
+
+  local __modules_count="$(wc -w <<< "${__modules[*]}")"
+  while [ "$__i" -lt "$__modules_count" ]; do
+    # Cycling through to get values for each unit.
+    local __value="$(cut -d':' -f2 <<< "${__modules[$__i]}")"
+
+    local __mod_value="$(($__num % $__value))"
+    local __num="$((__num / $__value))"
+
+    local __times[$__i]="$__mod_value"
+    local __c=$(($__c+1))
+    local __i=$(($__i+1))
+    if (( ! $__num )); then
+      break
+    fi
+  done
+  unset __module
+
+  local __i=$(($__c-1))
+  while [ "$__i" -ge "0" ]; do
+    printf "${__times[$__i]}$(cut -d':' -f1 <<< "${__modules[$__i]}")"
+
+    if (( $__i )); then
+      printf " "
+    fi
+
+    local __i=$(($__i-1))
+  done
+}

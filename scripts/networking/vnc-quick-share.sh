@@ -50,13 +50,18 @@ function check_environment(){
 function handle_arguments(){
 
   # Read Arguments
-  while getopts "chm:p:Pw" OPT $@; do
+  while getopts "chlm:p:Pw" OPT $@; do
     case "${OPT}" in
       "c")
         __continue=1
         ;;
       "h")
         hexit 0
+        ;;
+      "l")
+        notice "Connected monitors:"
+        xrandr --current | grep -w connected | sed 's/^/ /g'
+        exit 0
         ;;
       "m")
         if grep -Pq "^\d+$" <<< "${OPTARG}"; then
@@ -118,7 +123,7 @@ function handle_arguments(){
 }
 
 function hexit(){
-    notice "Usage: ./vnc-quick-share [-c] [-h] [-m monitor] [-p passwd|-P] [-w]"
+    notice "Usage: ./vnc-quick-share [-c] [-h] [-l] [-m monitor] [-p passwd|-P] [-w]"
     exit "${1:-0}"
 }
 

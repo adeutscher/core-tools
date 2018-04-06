@@ -1,7 +1,7 @@
 #!/bin/bash
 
 dir="$(dirname $0)"
-. "$dir/functions/common"
+. "$dir/functions/common.sh"
 
 usage(){
     cat << EOF

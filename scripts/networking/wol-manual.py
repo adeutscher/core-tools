@@ -62,7 +62,7 @@ WOL_PORT = DEFAULT_WOL_PORT
 TARGET_ADDRESS = DEFAULT_TARGET_ADDRESS
 
 def hexit(exit_code=0):
-  print "./wol-manual.py [-h] [-i target_address] ... MAC-ADDRESS ..."
+  print "./wol-manual.py [-a target_address] [-h] ... MAC-ADDRESS ..."
   print "  -a target_address: Send to specific broadcast address"
   print "                     This is necessary when waking up a device on"
   print "                     a different collision domain than your default"
@@ -103,7 +103,7 @@ def send_magic_packet(mac):
     payload+=mac_plain.decode("hex")
   sock.sendto(payload, (TARGET_ADDRESS, WOL_PORT))
 
-def run(argv):
+def run():
 
   global WOL_PORT
   global TARGET_ADDRESS
@@ -117,13 +117,13 @@ def run(argv):
   # TODO: Consider improving argument parsing
   try:
     # Note: Python will not throw a fit if you call for an invalid slice (will simply be empty).
-    opts, args = getopt.gnu_getopt(argv[1:],"ha:p:")
-  except getopt.GetoptError:
-    errors.append("Error parsing arguments")
+    opts, args = getopt.gnu_getopt(sys.argv[1:],"ha:p:")
+  except getopt.GetoptError as ge:
+    errors.append("Error parsing arguments: %s" % str(ge))
   for opt, arg in opts:
     if opt == '-h':
       hexit()
-    elif opt =="-a":
+    elif opt == "-a":
       if re.match(REGEX_INET4_CIDR, arg):
         # Someone put in a CIDR range by accident.
         # Their heart is in the right place, so fix formatting with a small nudge for next time.
@@ -142,8 +142,10 @@ def run(argv):
           raise ValueError("Invalid port")
       except ValueError:
         errors.append("Invalid port number: %s%s%s" % (COLOUR_BOLD, arg, COLOUR_OFF))
+    else:
+      errors.append("Unhandled option: %s%s%s" % (COLOUR_BOLD, opt, COLOUR_OFF))
 
-  if len(args) == 0:
+  if not len(errors) and len(args) == 0:
     errors.append("No MAC addresses provided.")
 
   if len(errors):
@@ -166,4 +168,4 @@ def run(argv):
       exit(1)
 
 if __name__ == "__main__":
-  run(sys.argv)
+  run()

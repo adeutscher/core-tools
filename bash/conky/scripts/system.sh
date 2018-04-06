@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. functions/common 2> /dev/null
+. functions/common.sh 2> /dev/null
 
 ##########
 # Header #

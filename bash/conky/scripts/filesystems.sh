@@ -8,8 +8,8 @@ if (( "$CONKY_DISABLE_FILES" )) || [ ! -r "/proc/1/mountinfo" ]; then
     exit 0
 fi
 
-. functions/common 2> /dev/null
-. functions/network-addresses 2> /dev/null
+. functions/common.sh 2> /dev/null
+. functions/network-addresses.sh 2> /dev/null
 
 #############
 # Inventory #
