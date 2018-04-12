@@ -2,14 +2,15 @@
 
 '''
     This is a super-silly server made play desktop notifications from a remote server.
-    Client notifications are sent over UDP, and the server presents the first line received.
+    Client notifications are sent over TCP or UDP (use -u switch to switch to UDP),
+    and the server presents the first line received.
     For access control options, see the help menu (-h).
 
     Note: I have not experimented desktop environments other than MATE. If your desktop environment
           does not have the 'nofify-send' command, then this script will need some adaptation.
 '''
 
-import getopt, os, re, socket, struct, subprocess, sys, time
+import getopt, os, re, socket, struct, subprocess, sys, thread, time
 
 DEFAULT_RELAY_PORT = 1234
 SOUNDS = [{},{}]
@@ -46,6 +47,7 @@ class NetAccess:
 
     def add_access(self, addr_list, net_list, candidate):
         error = False
+        candidate = candidate.strip()
         if re.match(self.REGEX_INET4_CIDR, candidate):
             e, n = self.ip_validate_cidr(candidate)
             error = e
@@ -77,6 +79,20 @@ class NetAccess:
                     print "%s %s: %s%s%s" % (action, title, COLOUR_GREEN, address, COLOUR_OFF)
                 else:
                     print "%s %s: %s%s%s (%s%s%s)" % (action, title, COLOUR_GREEN, address, COLOUR_OFF, COLOUR_GREEN, ip, COLOUR_OFF)
+
+    def load_access_file(self, fn, path, header):
+        if not os.path.isfile(path):
+            self.errors.append("Path to %s file does not exist: %s%s%s" % (header, COLOUR_GREEN, path, COLOUR_OFF))
+            return False
+        with open(path) as f:
+            for l in f.readlines():
+                fn(l)
+
+    def load_blacklist_file(self, path):
+        return self.load_access_file(self.add_blacklist, path, "blacklist")
+
+    def load_whitelist_file(self, path):
+        return self.load_access_file(self.add_whitelist, path, "whitelist")
 
     # Credit for initial IP functions: http://code.activestate.com/recipes/66517/
 
@@ -133,8 +149,9 @@ class NetAccess:
                         allowed = True
                         break
 
-        if len(self.denied_addresses) or len(self.denied_networks):
+        if allowed and len(self.denied_addresses) or len(self.denied_networks):
             # Blacklist processing. A blacklist argument one-ups a whitelist argument in the event of a conflict
+            # Do not bother to check the blacklist if the address is already denied.
 
             if address in [a[2] for a in self.denied_addresses]:
                 allowed = False
@@ -146,10 +163,46 @@ class NetAccess:
                         allowed = False
                         break
         return allowed
+
+    def load_access_file(self, fn, path, header):
+        if not os.path.isfile(path):
+            self.errors.append("Path to %s file does not exist: %s%s%s" % (header, COLOUR_GREEN, path, COLOUR_OFF))
+            return False
+        with open(path) as f:
+            for l in f.readlines():
+                fn(l)
+
+    def load_blacklist_file(self, path):
+        return self.load_access_file(self.add_blacklist, path, "blacklist")
+
+    def load_whitelist_file(self, path):
+        return self.load_access_file(self.add_whitelist, path, "whitelist")
 # Credit for IP functions: http://code.activestate.com/recipes/66517/
 
+def do_message(header, addr, data):
+    message = re.sub(r"\n.*", "", data)
+    icon = "network-receive" # Default icon
+    # Regex search message to make some attempt at context-specific icons.
+    if re.match(r"important", message, re.IGNORECASE):
+        icon = "dialog-warning"
+    if re.match(r"error", message, re.IGNORECASE):
+        icon = "dialog-error"
+    elif re.match(r"urgent", message, re.IGNORECASE):
+        icon = "software-update-urgent"
+    elif re.match(r"appointment", message, re.IGNORECASE):
+        icon = "appointment"
+    elif re.match(r"(firewall|security)", message, re.IGNORECASE):
+        icon = "security-medium" # I like the MATE medium security icon more than the high security icon.
+
+    print "%s: %s" % (header, message)
+    try:
+        p = subprocess.Popen(["notify-send", "--icon", icon, "Message from %s" % addr[0], message])
+        p.communicate()
+    except OSError as e:
+        print >> sys.stderr, "OSError: %s" % str(e)
+
 def hexit(exit_code):
-    print "%s [-a allow-address/range] [-b bind-address] [-d deny-address/range] [-h] [-p port]" % os.path.basename(sys.argv[0])
+    print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-A deny-list-file] [-h] [-p port] [-u]" % os.path.basename(sys.argv[0])
     exit(exit_code)
 
 def main():
@@ -160,15 +213,26 @@ def main():
 
     directory = os.path.realpath(args.get("dir", os.environ.get("audioToolsDir") + "/files"))
 
-    # Print a summary of directory/bind options.
-    print "Relaying messages in datagrams received on %s%s:%d%s" % (COLOUR_GREEN, args.get("bind", "0.0.0.0"), args.get("port", DEFAULT_RELAY_PORT), COLOUR_OFF)
+    udpMode = args.get("udp", False)
 
-    sockobj = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # Print a summary of directory/bind options.
+    if udpMode:
+        phrasing = "datagrams"
+    else:
+        phrasing = "connections"
+    print "Relaying messages in %s received on %s%s:%d%s" % (phrasing, COLOUR_GREEN, args.get("bind", "0.0.0.0"), args.get("port", DEFAULT_RELAY_PORT), COLOUR_OFF)
+
+    if udpMode:
+        sockobj = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    else:
+        sockobj = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     # Bind socket to local host and port
     try:
         sockobj.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sockobj.bind((args.get("bind", "0.0.0.0"), args.get("port", DEFAULT_RELAY_PORT)))
+        if not udpMode:
+            sockobj.listen(10)
     except socket.error as msg:
         print 'Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
         exit(1)
@@ -176,39 +240,29 @@ def main():
     # Keep accepting new messages
     while True:
         try:
-            data, addr = sockobj.recvfrom(1024)
+            if udpMode:
+                data, addr = sockobj.recvfrom(1024)
+            else:
+                conn, addr = sockobj.accept()
         except KeyboardInterrupt:
             break
 
         # Blacklist/Whitelist filtering
         allowed = access.is_allowed(addr[0])
-
-        print "%s%s%s[%s%s%s]" % (COLOUR_GREEN, addr[0], COLOUR_OFF, COLOUR_BOLD, time.strftime("%Y-%m-%d %k:%M:%S"), COLOUR_OFF),
+        header = "%s%s%s[%s%s%s]" % (COLOUR_GREEN, addr[0], COLOUR_OFF, COLOUR_BOLD, time.strftime("%Y-%m-%d %k:%M:%S"), COLOUR_OFF)
         if not allowed:
             # Not allowed
-            print "(%s%s%s)" % (COLOUR_RED, "Ignored", COLOUR_OFF)
-        else:
-            # Allowed
-            message = re.sub(r"\n.*", "", data)
-            icon = "network-receive" # Default icon
-            # Regex search message to make some attempt at context-specific icons.
-            if re.match(r"important", message, re.IGNORECASE):
-                icon = "dialog-warning"
-            if re.match(r"error", message, re.IGNORECASE):
-                icon = "dialog-error"
-            elif re.match(r"urgent", message, re.IGNORECASE):
-                icon = "software-update-urgent"
-            elif re.match(r"appointment", message, re.IGNORECASE):
-                icon = "appointment"
-            elif re.match(r"(firewall|security)", message, re.IGNORECASE):
-                icon = "security-medium" # I like the MATE medium security icon more than the high security icon.
+            print "%s (%s%s%s)" % (header, COLOUR_RED, "Ignored", COLOUR_OFF)
+            if not udpMode:
+                conn.close()
+            continue
 
-            print ": %s" % message
-            try:
-                p = subprocess.Popen(["notify-send", "--icon", icon, "Message from %s" % addr[0], message])
-                p.communicate()
-            except OSError as e:
-                print >> sys.stderr, "OSError: %s" % str(e)
+        # Allowed
+        if udpMode:
+            do_message(header, addr, data)
+        else:
+            # Spawn new thread and pass it the new socket object
+            thread.start_new_thread(tcpclientthread, (header, conn,addr))
 
 def process_arguments():
     args = {}
@@ -218,21 +272,27 @@ def process_arguments():
     access = NetAccess()
 
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:b:d:hp:")
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hp:u")
     except getopt.GetoptError as e:
         print "GetoptError: %s" % e
         hexit(1)
     for opt, arg in opts:
         if opt in ("-a"):
             error = access.add_whitelist(arg) or error
+        elif opt in ("-A"):
+            error = access.load_whitelist_file(arg) or error
         elif opt in ("-b"):
             args["bind"] = arg
         elif opt in ("-d"):
             error = access.add_blacklist(arg) or error
+        elif opt in ("-D"):
+            error = access.load_blacklist_file(arg) or error
         elif opt in ("-h"):
             hexit(0)
         elif opt in ("-p"):
             args["port"] = int(arg)
+        elif opt in ("-u"):
+            args["udp"] = True
 
     if len(access.errors):
         error = True
@@ -245,6 +305,22 @@ def process_arguments():
             print "Error: %s" % e
 
     return error, args
+
+def tcpclientthread(header, conn, addr):
+    conn.settimeout(5)
+    try:
+        data = conn.recv(1024)
+        if not data:
+            conn.close()
+            return
+        do_message(header, addr, data)
+        reply = "printed\n"
+    except OSError:
+        reply = "os-error\n"
+    except socket.timeout:
+        reply = "timeout\n"
+    conn.sendall(reply)
+    conn.close()
 
 if __name__ == "__main__":
     main()

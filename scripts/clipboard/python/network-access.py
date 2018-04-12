@@ -130,8 +130,9 @@ class NetAccess:
                         allowed = True
                         break
 
-        if len(self.denied_addresses) or len(self.denied_networks):
+        if allowed and len(self.denied_addresses) or len(self.denied_networks):
             # Blacklist processing. A blacklist argument one-ups a whitelist argument in the event of a conflict
+            # Do not bother to check the blacklist if the address is already denied.
 
             if address in [a[2] for a in self.denied_addresses]:
                 allowed = False
@@ -143,6 +144,20 @@ class NetAccess:
                         allowed = False
                         break
         return allowed
+
+    def load_access_file(self, fn, path, header):
+        if not os.path.isfile(path):
+            self.errors.append("Path to %s file does not exist: %s%s%s" % (header, COLOUR_GREEN, path, COLOUR_OFF))
+            return False
+        with open(path) as f:
+            for l in f.readlines():
+                fn(l)
+
+    def load_blacklist_file(self, path):
+        return self.load_access_file(self.add_blacklist, path, "blacklist")
+
+    def load_whitelist_file(self, path):
+        return self.load_access_file(self.add_whitelist, path, "whitelist")
 
 # Demonstration of access-list
 if __name__ == "__main__":

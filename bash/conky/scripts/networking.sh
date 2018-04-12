@@ -349,8 +349,8 @@ fi
 ephemeral_file="/proc/sys/net/ipv4/ip_local_port_range"
 ephemeral_lower=$(cat "$ephemeral_file" | awk '{ print $1 }')
 # Collect connections from netstat, then format with awk
-connections_in=$(netstat -Wtun | grep ESTABLISHED  | awk -F' ' '{ match($4,/[1-90]*$/,a); l[2]=a[0]; sub(/:[1-90]*$/,"",$4); l[1]=$4; match($5,/[1-90]*$/,a); r[2]=a[0]; sub(/:[1-90]*$/,"",$5); r[1]=$5; if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 ~ /^tcp/) && ! (r[2] == 2049 && $1 ~ /^tcp/)){ print r[1] "." l[1] "." l[2] "." $1 "." $1 " " r[1] " " l[1] " " l[2] }; }' \
-	| sort -t. -k1,1n -k2,2n -k3,3n -k4,4n -k 5,5n -k 6,6n -k 7,7n -k 8,8n -k 9,9n -k 10,10 | cut -d'.' -f11- | uniq -c | grep --colour=never -Pvw '(127\.0\.0\.1|::1)' \
+connections_in=$(netstat -Wtun | grep ESTABLISHED  | awk -F' ' '{ match($4,/[1-90]*$/,a); l[2]=a[0]; sub(/:[1-90]*$/,"",$4); l[1]=$4; match($5,/[1-90]*$/,a); r[2]=a[0]; sub(/:[1-90]*$/,"",$5); r[1]=$5; if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 ~ /^tcp/) && ! (r[2] == 2049 && $1 ~ /^tcp/)){ print r[1] "." l[1] "." l[2] "." $1 " " $1 " " r[1] " " l[1] " " l[2] }; }' \
+	| sort -t. -k1,1n -k2,2n -k3,3n -k4,4n -k 5,5n -k 6,6n -k 7,7n -k 8,8n -k 9,9n -k 10,10 | cut -d' ' -f2- | uniq -c | grep --colour=never -Pvw '(127\.0\.0\.1|::1)' \
     | awk '{ if($2 ~ /6$/){ if(length($3) > 25 && $1 > 1){ pad = "\n    (" $2 "/" $5 ", Count: " $1 ")" } else if(length($3) > 25){ pad = "\n    (" $2 "/" $5 ")" } else { pad=" (" $2 "/" $5 ")" }; print " ${color #'${colour_network_address}'}" $3 "${color}" pad; } else { print " ${color #'${colour_network_address}'}" $3 "${color}->${color #'${colour_network_address}'}" $4 "${color} ("$2"/"$5")"; }; if(length($3) <= 25 && $1 > 1){ print "    Count: " $1 }}')
 # A connection is considered incoming if the local port is below the lowest ephemeral port number AND the remote port is above the lowest ephemeral port number.
 # TCP connections are somewhat excused and do not require the remote port to always be within the range.

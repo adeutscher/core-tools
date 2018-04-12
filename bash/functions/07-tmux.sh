@@ -74,7 +74,7 @@ if qtype tmux; then
         #   When I was developing this feature, I originally dumped all of my exported variables
         #   without a grep filter. This caused me grief because some bits were not parsing properly.
         # Quotes should help with values including spaces, but you may still run into problems with more exotic data.
-        env | grep -P "^(CONKY|DISPLAY|PROMPT)_" | sed -r -e 's/(^[^=]+=)/\1"/' -e 's/$/"/g' > "/tmp/${USER}/tmux/env.${1}"
+        env | grep -P "^(AUDIO|CONKY|DISPLAY|PROMPT)_" | sed -r -e 's/(^[^=]+=)/\1"/' -e 's/$/"/g' > "/tmp/${USER}/tmux/env.${1}"
         tmux new -s "$1"
     fi
   }

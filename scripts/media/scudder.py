@@ -42,7 +42,7 @@ else:
     COLOUR_OFF = ''
 
 def hexit(exit_code):
-    print "%s [-a allow-address/range] [-b bind-address] [-d deny-address/range] [-h] [-p port]" % os.path.basename(sys.argv[0])
+    print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-D deny-list-file] [-h] [-p port]" % os.path.basename(sys.argv[0])
     exit(exit_code)
 
 def process_arguments():
@@ -53,17 +53,21 @@ def process_arguments():
     access = NetAccess()
 
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:b:d:hp:")
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hp:")
     except getopt.GetoptError as e:
         print "GetoptError: %s" % str(e)
         hexit(1)
     for opt, arg in opts:
         if opt in ("-a"):
             error = access.add_whitelist(arg) or error
+        elif opt in ("-A"):
+            error = access.load_whitelist_file(arg) or error
         elif opt in ("-b"):
             args["bind"] = arg
         elif opt in ("-d"):
             error = access.add_blacklist(arg) or error
+        elif opt in ("-D"):
+            error = access.load_blacklist_file(arg) or error
         elif opt in ("-h"):
             hexit(0)
         elif opt in ("-p"):
@@ -122,6 +126,7 @@ class NetAccess:
 
     def add_access(self, addr_list, net_list, candidate):
         error = False
+        candidate = candidate.strip()
         if re.match(self.REGEX_INET4_CIDR, candidate):
             e, n = self.ip_validate_cidr(candidate)
             error = e
@@ -209,8 +214,9 @@ class NetAccess:
                         allowed = True
                         break
 
-        if len(self.denied_addresses) or len(self.denied_networks):
+        if allowed and len(self.denied_addresses) or len(self.denied_networks):
             # Blacklist processing. A blacklist argument one-ups a whitelist argument in the event of a conflict
+            # Do not bother to check the blacklist if the address is already denied.
 
             if address in [a[2] for a in self.denied_addresses]:
                 allowed = False
@@ -222,6 +228,20 @@ class NetAccess:
                         allowed = False
                         break
         return allowed
+
+    def load_access_file(self, fn, path, header):
+        if not os.path.isfile(path):
+            self.errors.append("Path to %s file does not exist: %s%s%s" % (header, COLOUR_GREEN, path, COLOUR_OFF))
+            return False
+        with open(path) as f:
+            for l in f.readlines():
+                fn(l)
+
+    def load_blacklist_file(self, path):
+        return self.load_access_file(self.add_blacklist, path, "blacklist")
+
+    def load_whitelist_file(self, path):
+        return self.load_access_file(self.add_whitelist, path, "whitelist")
 
 # Viewer
 class ViewController:
