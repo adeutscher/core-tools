@@ -81,7 +81,7 @@ build-tmux(){
     esac
 
     printf "Applying \"%s\" style...\n" "$style"
-    
+
 cat << EOF > $HOME/.tmux.conf
 
 ## Theming
@@ -92,7 +92,7 @@ set-window-option -g status-fg $fg
 set-option -g pane-border-fg ${border_bg:-$bg}
 set-option -g pane-active-border-fg ${border_fg:-$fg}
 
-set-window-option -g window-status-fg ${status_fg:-$fg} 
+set-window-option -g window-status-fg ${status_fg:-$fg}
 set-window-option -g window-status-bg ${status_bg:-$bg}
 set-window-option -g window-status-attr dim
 
@@ -109,7 +109,7 @@ bind M setw synchronize-panes
 bind R source-file ~/.tmux.conf
 
 EOF
-    
+
 }
 
 check-commands

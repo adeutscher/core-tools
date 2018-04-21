@@ -8,26 +8,42 @@ if [ -t 1 ]; then
   GREEN='\033[1;32m'
   RED='\033[1;31m'
   YELLOW='\033[1;93m'
+  PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
 fi
 
 error(){
-  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "${RED}"'Error'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
   __error_count=$((${__error_count:-0}+1))
 }
 
 notice(){
-  printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "${BLUE}"'Notice'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
+}
+
+question(){
+  unset __response
+  while [ -z "${__response}" ]; do
+    printf "$PURPLE"'Question'"$NC"'['"$GREEN"'%s'"$NC"']: %s: ' "$(basename $0)" "${1}"
+    [ -n "${2}" ] && local __o="-s"
+    read ${__o} -p "" __response
+    [ -n "${2}" ] && printf "\n"
+    if [ -z "${__response}" ]; then
+      error "Empty input."
+      # Negate error increment, not a true error
+      __error_count=$((${__error_count:-0}-1))
+    fi
+  done
 }
 
 success(){
-  printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "${GREEN}"'Success'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
   __success_count=$((${__success_count:-0}+1))
 }
 
 warning(){
-  printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "${YELLOW}"'Warning'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
   __warning_count=$((${__warning:-0}+1))
 }
 
@@ -50,10 +66,17 @@ function check_environment(){
 function handle_arguments(){
 
   # Read Arguments
-  while getopts "chlm:p:Pw" OPT $@; do
+  while getopts "cd:hlm:p:Pw" OPT $@; do
     case "${OPT}" in
       "c")
         __continue=1
+        ;;
+      "d")
+        if ! grep -Piq "^\d+x\d+(\+\d+){2}$" <<< "${OPTARG}"; then
+          error "Custom dimensions must be of the following format: WxH+X+Y"
+          continue
+        fi
+        __custom_dimensions="${OPTARG}"
         ;;
       "h")
         hexit 0
@@ -83,22 +106,15 @@ function handle_arguments(){
           fi
           __monitor_number=$(xrandr --current | grep -w connected | grep -in "^$__monitor\ " | cut -d':' -f 1)
         fi
-        __monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "^$__monitor " | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
+        __monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "^$__monitor " | grep -oPm1 "\d+x\d(\+\d{1,}){2}")"
         ;;
       "p")
         __password="${OPTARG}"
         ;;
       "P")
         unset __password
-        while [ -z "${__password}" ]; do
-          printf "Enter password:"
-          read -s __password
-          printf "\n"
-          if [ -z "${__password}" ]; then
-            error "$(printf "Empty password.")"
-            __error_count=$((${__error_count:-0}-1))
-          fi
-        done
+        question "Input password" 1
+        __password="${__response}"
         ;;
       "w")
         __write=1
@@ -133,7 +149,13 @@ function vnc(){
     notice "$(printf "Sharing monitor ${BOLD}#%d${NC} (${BOLD}%s${NC})" "${__monitor_number}" "${__monitor}")"
   fi
 
+  if [ -n "${__custom_dimensions}" ]; then
+    # Custom dimensions override monitor choice.
+    __monitor_info="${__custom_dimensions}"
+  fi
+
   if [ -n "${__monitor_info}" ]; then
+    notice "$(printf "Shared dimensions: ${BOLD}%s${NC}" "${__monitor_info}")"
     __options="${__options} -clip ${__monitor_info}"
   fi
 
@@ -153,7 +175,8 @@ function vnc(){
     __options="${__options} -loop100"
   fi
 
-  sleep 2
+  # Sleep briefly to give the user time to read above notices.
+  sleep 3
 
   if [ -n "${__password}" ]; then
     x11vnc -display :0 -auth guess -forever -shared ${__options} -passwd "${__password}"

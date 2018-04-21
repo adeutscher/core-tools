@@ -23,7 +23,7 @@ opts(){
     done
 }
 
-play(){ 
+play(){
 
 
     local dir=$HOME/Music

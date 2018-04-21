@@ -14,7 +14,7 @@
 
 if ls "${reportRoot}/"*sh 2> /dev/null >&2;  then
   for script in ${reportRoot}/*sh; do
-    bash $script 2> /dev/null >&2 &
+    bash ${script} 2> /dev/null >&2 &
   done
 fi
 

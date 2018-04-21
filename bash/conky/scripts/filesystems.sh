@@ -4,7 +4,7 @@
 # All of our file system parsing revolves around parsing /proc/1/mountinfo.
 #   If this file cannot be reached (I cannot imagine that it would not exist altogether), then do not bother continuing either.
 #   Do not print an error in either case.
-if (( "$CONKY_DISABLE_FILES" )) || [ ! -r "/proc/1/mountinfo" ]; then
+if (( "${CONKY_DISABLE_FILES}" )) || [ ! -r "/proc/1/mountinfo" ]; then
     exit 0
 fi
 
@@ -32,15 +32,15 @@ else
 fi
 
 # Basic file systems: / and /home (if separate from /)
-root_file_system=$(cut -d' ' -f $cut_fields < /proc/1/mountinfo | grep "/ / " | sed 's/ /\\236/g')
+root_file_system=$(cut -d' ' -f ${cut_fields} < /proc/1/mountinfo | grep "/ / " | sed 's/ /\\236/g')
 
 # If our home directory is within /home, apply an extra sed expression
-if [[ "$HOME" =~ ^/home ]]; then
+if [[ "${HOME}" =~ ^/home ]]; then
   # If my home directory is in a partition mounted on /home, then I want it to be displayed as simply '~'
   # The extra expression will cause this script to replace part of the displayed file path with '~' before it is displayed.
-  home_file_system=$(cut -d' ' -f $cut_fields < /proc/1/mountinfo | grep " /home " | sed -e "s| /home | $HOME |g" -e 's/ /\\236/g')
+  home_file_system=$(cut -d' ' -f ${cut_fields} < /proc/1/mountinfo | grep " /home " | sed -e "s| /home | ${HOME} |g" -e 's/ /\\236/g')
 else
-  home_file_system=$(cut -d' ' -f $cut_fields < /proc/1/mountinfo | grep " /home " | sed 's/ /\\236/g')
+  home_file_system=$(cut -d' ' -f ${cut_fields} < /proc/1/mountinfo | grep " /home " | sed 's/ /\\236/g')
 fi
 
 ## Dynamically include other significant mounted file systems.
@@ -60,26 +60,26 @@ fi
 #   - Anything mounted to or within /dev, /sys, /tmp, or /boot
 #   - Anything mounted directly onto /run
 #   - /run/cmanager/fs and /run/lock, two tmpfs directories on Ubuntu systems
-#   - gvfsd file system at /run/user/$UID/gvfs
+#   - gvfsd file system at /run/user/${UID}/gvfs
 # This should cover all other system-specific, temporary (USB drives, SD cards), or network, network file systems, etc.
-extra_file_systems="$(cut -d' ' -f $cut_fields < /proc/1/mountinfo | egrep ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf|hfsplus) ' | egrep -v '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/user/\d?|/gvfs|/run/cmanager/fs|/run/lock|/lib/live|/home | / / ))' | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
+extra_file_systems="$(cut -d' ' -f ${cut_fields} < /proc/1/mountinfo | egrep ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf|hfsplus) ' | egrep -v '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/user/\d?|/gvfs|/run/cmanager/fs|/run/lock|/lib/live|/home | / / ))' | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
 
 ##########
 # Header #
 ##########
 
-printf "\${color #${colour_local_path}}\${font Neuropolitical:size=16:bold}File Systems\$font\$color\$hr\n"
+printf "\${color #${colour_local_path}}\${font Neuropolitical:size=16:bold}File Systems\${font}\${color}\${hr}\n"
 
 # Cycle through all collected file systems, and print information.
 for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}; do
 
     # Reverse encoding
-    fs_data="$(sed 's/\\236/ /g' <<< "$raw_fs_data")"
+    fs_data="$(sed 's/\\236/ /g' <<< "${raw_fs_data}")"
 
     # FS Stored in /proc/1/mountinfo
     fs=$(cut -d' ' -f2  <<< "${fs_data}" | sed 's/\\040/ /g' )
 
-    if grep -Pqwm1 "$fs" <<< "$CONKY_IGNORE_FS"; then
+    if grep -Pqwm1 "${fs}" <<< "${CONKY_IGNORE_FS}"; then
         # Skip ignored file system.
         # Note: Might not play nicely with particular wacky
         #         mount points with spaces in the path at the moment
@@ -100,7 +100,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
     unset extra_text
 
     # Substitute home directory path for '~' and shorten.
-    fs_title="$(shorten_string "$(sed "s|^$HOME|\\~|g" <<< "$fs")" "$((34-$(expr length "$fs_type")))")"
+    fs_title="$(shorten_string "$(sed "s|^${HOME}|\\~|g" <<< "${fs}")" "$((34-$(expr length "${fs_type}")))")"
 
     # If the target directory does not even exist, do not bother continuing through the loop.
     # Made for static systems, since some target file systems are dynamically listed off of find command.
@@ -113,7 +113,13 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         fs_colour=${colour_local_path}
     fi
 
-    printf  "\${color #${fs_colour}}${fs_title}\$color (\${color red}${fs_type}\$color)\$color\n"
+    # Apply a special bracket colour to read-only file systems.
+    unset bracket_colour
+    if grep -qw ro <<< "${fs_options}"; then
+        bracket_colour=red
+    fi
+
+    printf  "\${color #${fs_colour}}${fs_title}\$color \${color ${bracket_colour}}(\${color red}${fs_type}\$color\${color ${bracket_colour}})\$color\n"
     
     if ! grep -q "^/$" <<< "${fs_bind_location}" && ! [[ "${fs_type}" =~ "cifs" ]]; then
         # Avoid redundant information by treating bind mounts differently.
@@ -132,11 +138,11 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         # This is necessary because "fs_bind_location" will not display the entire file path.
         # For example: Say that /home is a separate file system from / and /home/user is bind-mounted to /mnt.
         #     In that example, "fs_bind_location" would only show "/user"
-        fs_bind_parent="$(findmnt -D "$fs_source" | grep "$fs_source[^\[]" | awk -F' ' '{ if($7 != "/"){ print $7 }}' )"
-        printf " Bind: \${color #${fs_colour}}%s\$color\n" "$(shorten_string "${fs_bind_parent}${fs_bind_location}" 29)"
+        fs_bind_parent="$(findmnt -D "${fs_source}" | grep "${fs_source[^}\[]" | awk -F' ' '{ if($7 != "/"){ print $7 }}' )"
+        printf " Bind: \${color #${fs_colour}}%s\${color}\n" "$(shorten_string "${fs_bind_parent}${fs_bind_location}" 29)"
         # Note: In cases of multiple binds (e.g. A is bound to B, and B is bound to C), mountinfo will still show the original parent.
 
-    elif [[ "$fs_type" != "-" ]]; then
+    elif [[ "${fs_type}" != "-" ]]; then
         # If df/findmnt reports disk usage as a "-", then we will not be able to get these numbers through conky either.
         # If the file system is not supported by conky, do not try to print usage information.
 
@@ -152,7 +158,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         # TODO: Find a way to recycle the original idea of using a per-mount flag, but this time to mark a "near-ish" server that needs to go through a gateway BUT has a reliably low latency that showing the usage bar wouldn't be the end of the world for performance.
         # TODO: Apply this new far-away approach to NFS as well. Need to check if the fs option is different.
         if [[ "${fs_type}" =~ (cifs|nfs\d{1,}) ]]; then
-            if (( ! ${CONKY_ALL_NFS_FAR-0} )) && [ -z "$localNetworks" ]; then
+            if (( ! ${CONKY_ALL_NFS_FAR-0} )) && [ -z "${localNetworks}" ]; then
                 # Only get a list of networks if we need to (i.e. if a CIFS system is mounted)
                 # This avoids calling twice if we have multiple CIFS shares mounted.
 
@@ -165,7 +171,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
                 # The only gap this would leave would be a super-duper low latency VPN that I wanted to still get usage information for. So a rediculously tiny gap.
                 for network in $(route -n | awk '{ if($2 == "0.0.0.0" && $8 !~ /^t(un|ap)/ ){ print $1"/"$3 } }'); do
                     # Convert to numerical values just the once as well.
-                    localNetworks="$localNetworks\n$(cidr-low-dec "$network"),$(cidr-high-dec "$network")"
+                    localNetworks="${localNetworks}\n$(cidr-low-dec "${network}"),$(cidr-high-dec "${network}")"
                 done
             fi
 
@@ -181,7 +187,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
                 # Get share IP address
                 shareAddress=$(ip2dec "$(grep -o "addr=[^,]*" <<< "${fs_options}" | cut -d= -f2)")
 
-                if (( $(awk -F, '{if('"$shareAddress"' >= $1 && '"$shareAddress"' <= $2){print "1"; exit(0)}} DONE { print "0" }' <<< "$(printf "$localNetworks")") )); then
+                if (( $(awk -F, '{if('"$shareAddress"' >= $1 && '"$shareAddress"' <= $2){print "1"; exit(0)}} DONE { print "0" }' <<< "$(printf "${localNetworks}")") )); then
                     unset extra_text
                     print_usage=1
                 fi
@@ -190,17 +196,17 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
             print_usage=0
         fi
 
-        if (( $print_usage )); then
+        if (( ${print_usage} )); then
             printf " Usage: \${fs_used ${fs}}/\${fs_size ${fs}} - \${fs_used_perc ${fs}}%% \${fs_bar 6 ${fs}}\n"
         fi
 
         # Print remote location for CIFS.
         if [[ "${fs_type}" =~ "cifs" ]]; then
                 remote_point="$(shorten_string "${fs_source}" 31)"
-                printf " Share%s: \${color #${colour_network}}%s\$color\n" "$extra_text" "$(shorten_string ${remote_point} 23)"
+                printf " Share%s: \${color #${colour_network}}%s\${color}\n" "${extra_text}" "$(shorten_string ${remote_point} 23)"
         elif [[ "${fs_type}" =~ nfs4 ]]; then
                 remote_point="$(shorten_string "${fs_source}" 31)"
-                printf " Dir%s: \${color #${colour_network}}%s\$color\n" "$extra_text" "$(shorten_string ${remote_point} 28)"
+                printf " Dir%s: \${color #${colour_network}}%s\${color}\n" "${extra_text}" "$(shorten_string ${remote_point} 28)"
         fi
         # TODO: Do similarly to print the remote location for NFS.
     fi
@@ -214,10 +220,10 @@ if [ -r "/proc/mdstat" ]; then
   # md0 : active raid1 sdc1[1] sdb1[0]
   #       2930134464 blocks super 1.2 [2/2] [UU]
   #       [===============>.....]  resync = 79.1% (2319136896/2930134464) finish=115.7min speed=87983K/sec
-  resyncing_arrays="$(cat "/proc/mdstat" | sed -e '/^unused devices:/d' | grep -A2 "^[a-z]" | grep -B2 "resync =" | awk -F' ' 'BEGIN{stage=1}{if(stage==1){device=$1;type=$4;stage=2} else if(stage==2){stage=3} else if(stage==3){stage=1; split($6,s,"="); if(s[2]){sub(/\.[0-9]*/, "", s[2])}; print " '"\${color $colour_local_path}"'/dev/" device "'"\${color}"'(" type "): "  $4 "(ETC: " s[2] ")"} }')"
+  resyncing_arrays="$(cat "/proc/mdstat" | sed -e '/^unused devices:/d' | grep -A2 "^[a-z]" | grep -B2 "resync =" | awk -F' ' 'BEGIN{stage=1}{if(stage==1){device=$1;type=$4;stage=2} else if(stage==2){stage=3} else if(stage==3){stage=1; split($6,s,"="); if(s[2]){sub(/\.[0-9]*/, "", s[2])}; print " '"\${color ${colour_local_path}}"'/dev/" device "'"\${color}"'(" type "): "  $4 "(ETC: " s[2] ")"} }')"
 
   # We *could* have awk print out the information in CSV format in order to be able to colour different values differently without a massive nightmare of an awk script.
-  if [ -n "$resyncing_arrays" ]; then
-    printf "\${color #${colour_local_path}}\${font Neuropolitical:size=16:bold}Resyncing RAID Arrays\$font\$color\$hr\n%s" "$resyncing_arrays"
+  if [ -n "${resyncing_arrays}" ]; then
+    printf "\${color #${colour_local_path}}\${font Neuropolitical:size=16:bold}Resyncing RAID Arrays\${font}\${color}\${hr}\n%s" "${resyncing_arrays}"
   fi
 fi

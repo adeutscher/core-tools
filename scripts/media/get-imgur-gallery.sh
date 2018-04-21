@@ -9,7 +9,7 @@ if [ -t 1 ]; then
   Colour_BIYellow='\033[1;93m'
   Colour_Bold='\033[1m'
   Colour_Off='\033[0m' # No Color
-  
+
   Colour_NetworkAddress=$Colour_BIGreen
   Colour_FilePath=$Colour_BIGreen
   Colour_Command=$Colour_BIBlue

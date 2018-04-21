@@ -1,4 +1,4 @@
-#!/usr/bin/python   
+#!/usr/bin/python
 
 # Based off of (via StackExchange):
 #   * https://pymotw.com/2/BaseHTTPServer/index.html#module-BaseHTTPServer

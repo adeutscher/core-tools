@@ -63,7 +63,7 @@ eventually_add_hostnames_domain_to_search() {
         fi
 
         if [ ${status} -eq 0 ]; then
-            domain=$(echo "${HOSTNAME}" | cut -s -d "." -f 2-)
+            domain="$(cut -s -d "." -f 2- <<< "${HOSTNAME}")"
         fi
     else
           domain=$(hostname 2>/dev/null | cut -s -d "." -f 2-)
@@ -395,8 +395,8 @@ dhconfig() {
         ip -4 addr replace "${alias_ip_address}/${alias_prefix}" broadcast "${alias_broadcast_address}" dev "${interface}" label "${interface}:0"
         ip -4 route replace "${alias_ip_address}/32" dev "${interface}"
     fi
-    
-    # After dhclient brings an interface UP with a new IP address, subnet mask, 
+
+    # After dhclient brings an interface UP with a new IP address, subnet mask,
     # and routes, in the REBOOT/BOUND states -> search for "dhclient-up-hooks".
     if [ "${reason}" = "BOUND" ] || [ "${reason}" = "REBOOT" ] ||
        [ ! "${old_ip_address}" = "${new_ip_address}" ] ||
@@ -405,7 +405,7 @@ dhconfig() {
        [ ! "${old_broadcast_address}" = "${new_broadcast_address}" ] ||
        [ ! "${old_routers}" = "${new_routers}" ] ||
        [ ! "${old_interface_mtu}" = "${new_interface_mtu}" ]; then
-        
+
         if [ -x "${ETCDIR}/dhclient-${interface}-up-hooks" ]; then
             . "${ETCDIR}/dhclient-${interface}-up-hooks"
         elif [ -x ${ETCDIR}/dhclient-up-hooks ]; then

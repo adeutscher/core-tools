@@ -10,7 +10,7 @@ case "$1" in
             admin_flag='a'
         fi
         stat=`ps x$admin_flag | awk '{print $1}' | grep -v "PID" | xargs -n 1 ps lOp | grep -v "UID" | awk '{print"pid: "$3" *** parent_pid: "$4" *** status: "$10" *** process: "$13}' | grep ": Z"`
- 
+
         if ((${#stat} > 0));then
     	    echo zombie processes found:
 	    echo .

@@ -72,7 +72,7 @@ ssh_compile_config(){
     error "$(printf "Unable to create ${C_FILEPATH}%s${NC} directory." "$(dirname $sshConfig)")"
     return 1
   fi
-  
+
   # Double-check that we can write to the file and parent directory.
   if ( [ -f "$sshConfig" ] && [ ! -w "$sshConfig" ] ) || [ ! -w "$(dirname "$sshConfig")" ]; then
     error "$(printf "Config file ${C_FILEPATH}%s${NC} cannot be written to." "$(sed "s|^$HOME|~|" <<< "$sshConfig")")"
@@ -85,7 +85,7 @@ ssh_compile_config(){
   local totalConfigCount=0
 
   for toolDir in $(sort -t ':' -k 1n,2 <<< "$toolDirVariables" | cut -d':' -f2-); do
-    
+
     local totalModuleCount=$(($totalModuleCount+1))
     local moduleSSHDir="$(eval echo \${$toolDir})/ssh"
     local moduleSSHConfig="$moduleSSHDir/config"
@@ -165,7 +165,7 @@ ssh_compile_config(){
         else
           warning "$(printf "SSH config from ${C_FILEPATH}%s${NC} was corrupted. Someone removed the end marker..." "$moduleSSHDirDisplay/")"
         fi
-        
+
       elif [[ "$checksum" != "$sectionChecksum" ]]; then
         # This section needs to be separate, as it involves inserting a config block into our existing config instead of just appending.
 
@@ -212,12 +212,12 @@ ssh_compile_config(){
       else
         local updatedConfigCount=$(($updatedConfigCount-1))
         notice "$(printf "No changes to SSH config from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
-      fi 
+      fi
 
     else
       # Only making the lack of a configuration give notice (as opposed to a warning or error). I think that this message is more likely to be a silly FYI than a serious error.
       notice "$(printf "No SSH configuration located at ${GREEN}%s${NC}" "$(sed "s|^$HOME|~|" <<< "$moduleSSHConfig")")"
-    fi # End the else of the check for configuration file existing. 
+    fi # End the else of the check for configuration file existing.
   done # End config loop.
 
   if [ "$updatedConfigCount" -eq 0 ]; then

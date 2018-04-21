@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # If CONKY_DISABLE_NETWORK evaluates to true, then exit immediately.
-if (( "$CONKY_DISABLE_NETWORK" )); then
+if (( "${CONKY_DISABLE_NETWORK}" )); then
     exit 0
 fi
 
@@ -18,7 +18,7 @@ bridges=$(find -L /sys/class/net/ -maxdepth 2 -name bridge 2> /dev/null | cut -d
 bridge_members=$(brctl show 2> /dev/null | sed -e '/bridge name/d' -e 's/\t/\ /g' | awk '{ if(NF > 1){ $1="";$2="";$3="" } print $0 }' | tr '\n' ' ')
 
 # List of interfaces to exclude from listing.
-exclude_list="lo $CONKY_IGNORE_INTERFACES"
+exclude_list="lo ${CONKY_IGNORE_INTERFACES}"
 # Notes on exclude_list
 ## Space-delimited list. For example: "lo eth0 eth1"
 ## With the current approach, this would skip aliases entirely (e.g. blocking eth0 would block eth0:0),
@@ -42,37 +42,37 @@ gateway_spacing=10 # For " Gateway: "
 for ip in $(route -n | awk '{ if($1 == "0.0.0.0"){ print $2 } }' | sort -n | uniq); do
     gateway_count=$((gateway_count+1))
 
-    if [ "$gateway_count" -ge 3 ]; then
+    if [ "${gateway_count}" -ge 3 ]; then
         # Conky is set to only print "multiple" if there are 3 or more gateways present.
         # Break out and don't bother doing more processing that will not be displayed past 3.
         break
     fi
 
-    tentative_length=$(expr length "$ip")
+    tentative_length=$(expr length "${ip}")
 
     # Note: May need to add a bit of extra padding for spaces to the left side of the below IF statement
     #   if I decide that you want to display more than 2 gateways before busting out the "multiple" label in the future.
-    if [ "$(($tentative_length+$gateway_spacing))" -ge $characterWidthLimit ]; then
-        gateway_spacing=$(($tentative_length+12))
-        tentative_gateway="$tentative_gateway,\n             \${color #${colour_network_address}}$ip\$color"
+    if [ "$((${tentative_length}+$gateway_spacing))" -ge ${characterWidthLimit} ]; then
+        gateway_spacing=$((${tentative_length}+12))
+        tentative_gateway="${tentative_gateway},\n             \${color #${colour_network_address}}${ip}\${color}"
     else
-        gateway_spacing=$(($tentative_length+$gateway_spacing+2))
-        tentative_gateway="$tentative_gateway, \${color #${colour_network_address}}$ip\$color"
+        gateway_spacing=$((${tentative_length}+${gateway_spacing}+2))
+        tentative_gateway="${tentative_gateway}, \${color #${colour_network_address}}${ip}\${color}"
     fi
 done
 
-if [ "$gateway_count" -gt "0" ]; then
-    tentative_gateway="$(sed 's/^,\ //' <<< "$tentative_gateway")"
+if [ "${gateway_count}" -gt "0" ]; then
+    tentative_gateway="$(sed 's/^,\ //' <<< "${tentative_gateway}")"
     
-    if [ "$gateway_count" -ge 3 ]; then
+    if [ "${gateway_count}" -ge 3 ]; then
         # Too many gateways to fit on a line.
         # Fall back to conky's default output of just saying "multiple".
         gateway="Gateways: multiple"
-    elif [ "$gateway_count" -eq 1 ]; then
-        gateway="Gateway: $tentative_gateway"
+    elif [ "${gateway_count}" -eq 1 ]; then
+        gateway="Gateway: ${tentative_gateway}"
     else
         # Remaining case: More than one gateway, but under threshold (threshold is currently 3).
-        gateway="Gateways: $tentative_gateway"
+        gateway="Gateways: ${tentative_gateway}"
     fi
 else
     # No gateways at all
@@ -83,7 +83,7 @@ fi
 # Header and Basic Information #
 ################################
 
-printf "\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Networking\$font\$color\$hr\n $gateway\n"
+printf "\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Networking\${font}\${color}\${hr}\n ${gateway}\n"
 
 ##############
 # Interfaces #
@@ -103,7 +103,7 @@ for iface in ${interfaces}; do
         # Do not list information for down interfaces, even if they have addresses
         # Bridges are the exception to this, since we still want to print members.
         continue
-    elif [ -z "$address" ] && ! [[ "${bridges}" =~ (^|\ )"${iface}"($|\ ) ]] && ! ( [[ "${wireless_interfaces}" =~ (^|\ )"${iface}"($|\ ) ]] && iwconfig ${iface} 2>/dev/null | grep -q "Access Point: [A-F0-9]" ); then
+    elif [ -z "${address}" ] && ! [[ "${bridges}" =~ (^|\ )"${iface}"($|\ ) ]] && ! ( [[ "${wireless_interfaces}" =~ (^|\ )"${iface}"($|\ ) ]] && iwconfig ${iface} 2>/dev/null | grep -q "Access Point: [A-F0-9]" ); then
         # Do not print other UP interfaces without addresses.
         # Printing in a separate list.
         # Bridges are the exception to this, since we still want to print members.
@@ -119,7 +119,7 @@ for iface in ${interfaces}; do
     # * A DOWN interface that is an associated wireless interface
     # * A bridge member with an IP address
     if ! ((  ${bridge_member_with_ip:-0 } )); then
-        if [ -z "$address" ] || [[ "$address" =~ \/ ]]; then
+        if [ -z "${address}" ] || [[ "${address}" =~ \/ ]]; then
             printf " $(colour_interface ${iface}): $(colour_network_address "${address:-No Address}")"
         else
             # If the CIDR-form subnet mask is not already on IP output, then assume that it's a /32.
@@ -139,25 +139,25 @@ for iface in ${interfaces}; do
     else
         unset bridge_member_with_ip # Unset for next loop
         # Only go deeper with bridge members if they have addresses, which is unexpected
-        if [ -z "$address" ]; then
+        if [ -z "${address}" ]; then
             continue
         else
             printf " $(colour_interface ${iface}): \${color #${colour_alert}}Bridge Member w/ IP Address\${color}"
         fi
     fi
 
-    if [[ "$iface" =~ ^(tun|tap)[0-9]+ ]]; then
-        printf " (%d routes)" "$(route -n | grep -w "$iface" | wc -l)"
-        if route -n | grep -w "$iface" | grep -q "^0\.0"; then
-            if [ $gateway_count -gt 1 ]; then
-                printf "\n  \${color #${colour_network}}Default Gateway \#%d (VPN Redirected)\${color}" "$(route -n | grep "^0\.0" | grep -wn "$iface" | cut -d':' -f1)"
+    if [[ "${iface}" =~ ^(tun|tap)[0-9]+ ]]; then
+        printf " (%d routes)" "$(route -n | grep -w "${iface}" | wc -l)"
+        if route -n | grep -w "${iface}" | grep -q "^0\.0"; then
+            if [ ${gateway_count} -gt 1 ]; then
+                printf "\n  \${color #${colour_network}}Default Gateway \#%d (VPN Redirected)\${color}" "$(route -n | grep "^0\.0" | grep -wn "${iface}" | cut -d':' -f1)"
             else
                 printf "\n  \${color #${colour_network}}Default Gateway (VPN Redirected)\${color}"
             fi
         fi
-    elif route -n | grep -w "$iface" | grep -q "^0\.0"; then
-        if [ $gateway_count -gt 1 ]; then
-            printf "\n  \${color #${colour_network}}Default Gateway \#%d \${color}" "$(route -n | grep "^0\.0" | grep -wn "$iface" | cut -d':' -f1)"
+    elif route -n | grep -w "${iface}" | grep -q "^0\.0"; then
+        if [ ${gateway_count} -gt 1 ]; then
+            printf "\n  \${color #${colour_network}}Default Gateway \#%d \${color}" "$(route -n | grep "^0\.0" | grep -wn "${iface}" | cut -d':' -f1)"
         else
             printf "\n  \${color #${colour_network}}Default Gateway\${color}"
         fi
@@ -191,8 +191,8 @@ for iface in ${interfaces}; do
         printf '\n'
         mac="$(iwconfig ${iface} 2> /dev/null | grep -om1 "Access Point:\ [^\ ]*" | cut -d' ' -f 3)"
         # Attempt to look for a cached copy of the wireless summary to save a bit of time on label/vendor lookups.
-        if [ -f "$tempRoot/cache/wlan/$mac.txt" ]; then
-            cat "$tempRoot/cache/wlan/$mac.txt" | sed "s/INTERFACE/${iface}/g"
+        if [ -f "${tempRoot}/cache/wlan/${mac}.txt" ]; then
+            cat "${tempRoot}/cache/wlan/${mac}.txt" | sed "s/INTERFACE/${iface}/g"
         else
         wireless_report=$(printf "  ESSID: \${wireless_essid INTERFACE}\\n  BSSID: ${mac} (\${wireless_link_qual INTERFACE}%%%%)\n")
             location="$(__get_mac_specific_location "${mac}" 2> /dev/null)"
@@ -201,13 +201,13 @@ for iface in ${interfaces}; do
             else
                 # Try to resolve vendor instead
                 vendor="$(__get_mac_vendor "${mac}" 2> /dev/null)"
-                if [ -n "$vendor" ]; then
+                if [ -n "${vendor}" ]; then
                     # Consider clipping output if necessary...
-                    wireless_report="${wireless_report}\n$(printf "  AP Vendor: %s\n" "$(shorten_string "$vendor" 24)")"
+                    wireless_report="${wireless_report}\n$(printf "  AP Vendor: %s\n" "$(shorten_string "${vendor}" 24)")"
                 fi
             fi
-            mkdir -p "$tempRoot/cache/wlan"
-            printf "$wireless_report\n" | tee "$tempRoot/cache/wlan/$mac.txt" | sed "s/INTERFACE/${iface}/g"
+            mkdir -p "${tempRoot}/cache/wlan"
+            printf "${wireless_report}\n" | tee "${tempRoot}/cache/wlan/${mac}.txt" | sed "s/INTERFACE/${iface}/g"
         fi
 
     ###################
@@ -224,25 +224,25 @@ for iface in ${interfaces}; do
             printf "\n"
         fi
 
-        if [ $(wc -w <<< "$members") -gt "0" ]; then
+        if [ $(wc -w <<< "${members}") -gt "0" ]; then
 
             # "  Members:" is 10 characters
             characterIndex=10
     
             for member in ${members}; do
                 ifaceLength=$(expr length "${member}")
-                candidateLength=$(($characterIndex + $ifaceLength + 2))
+                candidateLength=$((${characterIndex} + ${ifaceLength} + 2))
                 if [[ "${down_interfaces}" =~ (^|\ )"${member}"($|\ ) ]]; then
                     memberDown="(\${color #${colour_warning}}D\${color})"
-                    candidateLength=$(($candidateLength+3))
+                    candidateLength=$((${candidateLength+3}))
                 fi
-                if [ $candidateLength -le $characterWidthLimit ]; then
-                    member_list="${member_list} $(colour_interface ${member})$memberDown,"
-                    characterIndex=$candidateLength
+                if [ ${candidateLength} -le ${characterWidthLimit} ]; then
+                    member_list="${member_list} $(colour_interface ${member})${memberDown,}"
+                    characterIndex=${candidateLength}
                 else
                     member_list="${member_list}@    $(colour_interface ${member}),"
                     # Number of format characters on new line is 5 (4 spaces and a comma)
-                    characterIndex=$(($ifaceLength+5))
+                    characterIndex=$((${ifaceLength+5}))
                 fi
                 unset memberDown
             done
@@ -257,8 +257,8 @@ for iface in ${interfaces}; do
     fi
 
     # Print out any aliases that we've assigned to this interface.
-    for alias_if in $(ip a s ${iface} | grep -oP "inet .*${iface}:\d*$" | awk '{ print $2","$NF}'); do
-        printf "  $(colour_interface $(cut -d',' -f 2 <<< "$alias_if")): \${color #${colour_network_address}}%s\$color\n" "$(cut -d',' -f 1 <<< "$alias_if")"
+    for alias_if in $(ip a s ${iface} | grep -oP "inet .*${iface}:\d*$" | awk '{ print $2","$NF }'); do
+      printf "  $(colour_interface $(cut -d',' -f 2 <<< "${alias_if}")): \${color #${colour_network_address}}%s\${color}\n" "$(cut -d',' -f 1 <<< "${alias_if}")"
     done
 
     if ! [[ "${down_interfaces}" =~ (^|\ )"${iface}"($|\ ) ]]; then
@@ -279,14 +279,14 @@ characterIndex=10
 
 for iface in ${other_up_interfaces}; do
     ifaceLength=$(expr length "${iface}")
-    candidateLength=$(($characterIndex + $ifaceLength + 2))
-    if [ $candidateLength -lt $characterWidthLimit ]; then
+    candidateLength=$((${characterIndex} + ${ifaceLength} + 2))
+    if [ ${candidateLength} -lt ${characterWidthLimit} ]; then
         up_display_list="${up_display_list} $(colour_interface ${iface}),"
-        characterIndex=$candidateLength
+        characterIndex=${candidateLength}
     else
         up_display_list="${up_display_list}@    $(colour_interface ${iface}),"
         # Number of format characters on new line is 5 (4 spaces and a comma)
-        characterIndex=$(($ifaceLength+5))
+        characterIndex=$((${ifaceLength+5}))
     fi
 done
 
@@ -307,17 +307,17 @@ for iface in ${down_interfaces}; do
     fi
 
     ifaceLength=$(expr length "${iface}")
-    candidateLength=$(($characterIndex + $ifaceLength + 2))
+    candidateLength=$((${characterIndex} + ${ifaceLength} + 2))
     # Maybe it's the late hour that this was written at,
     #   but I cannot see what's different about the down interfaces
     #   that makes them need an extra hard-coded character
-    if [ $candidateLength -le $characterWidthLimit ]; then
+    if [ ${candidateLength} -le ${characterWidthLimit} ]; then
         down_display_list="${down_display_list} $(colour_interface ${iface}),"
-        characterIndex=$candidateLength
+        characterIndex=${candidateLength}
     else
         down_display_list="${down_display_list}@    $(colour_interface ${iface}),"
         # Number of format characters on new line is 5 (4 spaces and a comma)
-        characterIndex=$(($ifaceLength+5))
+        characterIndex=$((${ifaceLength+5}))
     fi
 done
 
@@ -347,7 +347,8 @@ fi
 ##########################
 
 ephemeral_file="/proc/sys/net/ipv4/ip_local_port_range"
-ephemeral_lower=$(cat "$ephemeral_file" | awk '{ print $1 }')
+ephemeral_lower=$(awk '{print $1 }' < "${ephemeral_file}")
+
 # Collect connections from netstat, then format with awk
 connections_in=$(netstat -Wtun | grep ESTABLISHED  | awk -F' ' '{ match($4,/[1-90]*$/,a); l[2]=a[0]; sub(/:[1-90]*$/,"",$4); l[1]=$4; match($5,/[1-90]*$/,a); r[2]=a[0]; sub(/:[1-90]*$/,"",$5); r[1]=$5; if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 ~ /^tcp/) && ! (r[2] == 2049 && $1 ~ /^tcp/)){ print r[1] "." l[1] "." l[2] "." $1 " " $1 " " r[1] " " l[1] " " l[2] }; }' \
 	| sort -t. -k1,1n -k2,2n -k3,3n -k4,4n -k 5,5n -k 6,6n -k 7,7n -k 8,8n -k 9,9n -k 10,10 | cut -d' ' -f2- | uniq -c | grep --colour=never -Pvw '(127\.0\.0\.1|::1)' \
@@ -362,7 +363,7 @@ connections_in=$(netstat -Wtun | grep ESTABLISHED  | awk -F' ' '{ match($4,/[1-9
 ## Server (conky machine): nc -u -l 1234 > /dev/null
 ## Client: cat /dev/zero | nc -u any-address-but-localhost 1234 
 
-if [ -n "$connections_in" ]; then
+if [ -n "${connections_in}" ]; then
     # Print a separate header and report content.
-    printf "\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Incoming Connections\$font\$color\$hr\n${connections_in}"
+    printf "\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Incoming Connections\${font}\${color}\${hr}\n${connections_in}"
 fi

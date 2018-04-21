@@ -74,7 +74,7 @@ fix_directory(){
 }
 
 handle_arguments(){
-  for opt in $(getopt ":a" $@); do 
+  for opt in $(getopt ":a" $@); do
     case "$opt" in
     "-a")
       address_only=1
@@ -92,7 +92,7 @@ handle_arguments(){
 
 run_dhclient(){
   umask 077
-    
+
   local dhclient_script=./dhclient-script.sh
   local short_options="subnet-mask, broadcast-address, host-name, interface-mtu"
   if [ -z "$address_only" ]; then

@@ -11,7 +11,7 @@ PATH=/usr/bin:/bin
 defaultImageDir="$HOME/Pictures/backgrounds"
 imageDir=${backgroundDirectory:-$defaultImageDir}
 
-# Indexing our backgrounds in /tmp to shave a few milliseconds off of our execution time for frequent background shifting (and avoid unnecessary disk IO).    
+# Indexing our backgrounds in /tmp to shave a few milliseconds off of our execution time for frequent background shifting (and avoid unnecessary disk IO).
 backgroundIndexFile=/tmp/$USER/background-index.txt
 
 # Set default mode
@@ -90,7 +90,7 @@ fi
 
 if [ ! -d "$imageDir" ] && (( "$verbose" )); then
     printf "Image directory not found at %s\n" "$imageDir"
-    exit 1 
+    exit 1
 fi
 
 # Define functions

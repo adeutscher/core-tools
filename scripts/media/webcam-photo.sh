@@ -85,7 +85,7 @@ for command in avconv fswebcam; do
             if ! fswebcam -r 640x480 -d /dev/video0 $other_args "$target_path"; then
                 val=$?
                 error "$(printf "${BLUE}%s${NC} failed (exit code ${BOLD}%d${NC})." "$command" "$val")"
-            else 
+            else
                 __done=1
             fi
             ;;

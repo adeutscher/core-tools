@@ -1,5 +1,5 @@
 #/bin/bash
- 
+
 link='http://downloads.raspberrypi.org/raspbian_latest'
 
 #set -x
@@ -28,7 +28,7 @@ get_raspbian(){
             printf "You have %d seconds to abort.\n" "$sleepTime"
             sleep "$sleepTime" || return
         fi
-        
+
         # Download the image.
         # The "raspbian_latest" link goes through two redirects before it gets to the actual image link.
         zip_link=$(curl -s $(curl "$link" -s | grep images\/ | cut -d \" -f 2) 2> /dev/null | grep images\/ | cut -d \" -f 2)
@@ -42,11 +42,11 @@ get_raspbian(){
         else
                 printf "File has already been downloaded: ${Colour_BIGreen}%s${Colour_Off}\n" "$file_name"
         fi
-             
+
         # If you wanted to, you could unzip the archive here.
         # Keep the zipped version around to skip redundant downloads.
         # Personally, I don't think it's worth possibly wasting space for.
 }
- 
+
 get_raspbian $1
 

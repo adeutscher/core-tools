@@ -35,7 +35,7 @@ get_opts(){
             drush_enabled=1
             ;;
         "-l")
-            if [ -z "$local_path" ]; then             
+            if [ -z "$local_path" ]; then
                 local_path=$2
                 notice "$(printf "Local path for backups: $GREEN%s$NC" "$local_path")"
             fi
@@ -47,13 +47,13 @@ get_opts(){
             fi
             ;;
         "-r")
-            if [ -z "$remote_path" ]; then             
+            if [ -z "$remote_path" ]; then
                 remote_path=$2
                 notice "$(printf "Remote path for site: $GREEN%s$NC" "$remote_path")"
             fi
             ;;
         "-s")
-            if [ -z "$ssh_alias" ]; then             
+            if [ -z "$ssh_alias" ]; then
                 ssh_alias=$2
                 notice "$(printf "SSH credentials/alias for remote site: $BOLD%s$NC" "$ssh_alias")"
             fi
@@ -116,7 +116,7 @@ backup_drupal(){
             local pass=No
         fi
 
-        notice "$(printf "Database info (as seen by remote server): $BOLD%s$NC@$GREEN%s$NC (User: $BOLD%s$NC, Have Password: $BOLD%s$NC)" "$db_name" "$db_host" "$db_user" "$pass")" 
+        notice "$(printf "Database info (as seen by remote server): $BOLD%s$NC@$GREEN%s$NC (User: $BOLD%s$NC, Have Password: $BOLD%s$NC)" "$db_name" "$db_host" "$db_user" "$pass")"
         if [ -z "$db_name" ] || [ -z "$db_user" ] || [ -z "$db_host" ] || [ -z "$db_password" ]; then
             error "Was unable to parse at least one database field."
             return 3

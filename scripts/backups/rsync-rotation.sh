@@ -27,7 +27,7 @@ die_help (){
         -m          Monochrome mode. Do not print terminal colours.
         -o          Directory that backups will be placed in. Mandatory argument
         -t          Test mode. The script will go through its regular behaviour, EXCEPT for actually running rsync
-        -v          Verbose mode. Print more output.  
+        -v          Verbose mode. Print more output.
 EOF
     exit 0
 }
@@ -153,13 +153,13 @@ handle_arguments(){
     fi
 
     if [ "${__dupes:-__dupes_default}" -gt 0 ]; then
-        
+
         if ! type fdupes 2> /dev/null >&2; then
             mark_error "The fdupes command is not installed on this system."
         else
             # Some packagings of fdupes do not support the -L/--linkhard option to reduce duplicates with hard links.
             # For example, Ubuntu 12.04 supports this feature, while CentOS 6.5 does not.
-            
+
             # Checking the --help menu for a listing
             fdupes --help 2> /dev/null | grep -q '\-\-linkhard'
             if [ "$?" -gt 0 ]; then
@@ -180,7 +180,7 @@ handle_arguments(){
         fi
 
         print_error "${error_count} error${plural} found..."
-        
+
         die_usage 2
     fi
     }
@@ -193,7 +193,7 @@ mark_error(){
 print_debug (){
     if [ "$__verbose" -gt 0 ]; then
         printf "${BIYellow}[Debug]${Color_Off} $1\n"
-        
+
     fi
 }
 
@@ -217,7 +217,7 @@ set_defaults(){
     # Test mode flag
     __default_test="0"
     __test="$__default_test"
-    
+
     # Rsync Rotation Count
     __default_count="7"
     __count="$__default_count"
@@ -255,7 +255,7 @@ backup_directory (){
     # Check for a previous backup to base our content on.
     if [ -n "$last_backup" ]; then
         print_notice "Pre-existing backup (${BIGreen}$last_backup${Color_Off}). Making a hard linked copy to base our backup off of.";
-        
+
         cp_command="cp -rl \"$__output_path/$last_backup\" \"$backup_dest\""
         print_debug "cp command: $cp_command"
         if [ "$__test" -eq 0 ]; then
@@ -277,7 +277,7 @@ backup_directory (){
     rsync_command="rsync -av --delete --progress $__other_rsync_args \"$__input_path/\" \"$backup_dest/\""
     print_debug "rsync command: $rsync_command"
     if [ "$__test" -eq 0 ]; then
-        
+
         eval $rsync_command
         result="$?"
         if [ "$result" -gt 0 ]; then
@@ -286,7 +286,7 @@ backup_directory (){
     else
         print_notice ${BIRed}'TEST MODE ENABLED! RSYNC IS NOT ACTUALLY BEING RUN!'${Color_Off}
     fi
-    
+
     # If selected, attempt to use fdupes to replace duplicates with hard links.
     if [ "${__dupes:-__dupes_default}" -gt 0 ]; then
         print_notice "Removing duplicates with hard links."
@@ -318,7 +318,7 @@ backup_directory (){
         # Strip out old backups.
         for i in $(ls -r $__output_path/ 2> /dev/null | egrep '^[0-9]{4}(\-[0-9]{2}){5}$' | tail -n +$((1+$__count))); do
             print_notice "Removing old backup: '${BIGreen}$__output_path/$i${Color_Off}'";
-            
+
             rm_command="rm -rf \"$__output_path/$i\""
             print_debug "rm command: $rm_command"
             if [ "$__test" -eq 0 ]; then

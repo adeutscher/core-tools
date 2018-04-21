@@ -45,7 +45,7 @@ except ValueError as e:
 
 while True:
     dataBlock = inputFile.read(maxKeyBytes)
-    
+
     if len(dataBlock) == 0:
         # Done
         break
@@ -53,7 +53,7 @@ while True:
         cipherBlock = publicKeyObj.encrypt(dataBlock,'k')[0]
         #print >> sys.stderr, "Converted %d of plaintext to %d of ciphertext" % tuple([len(dataBlock), len(cipherBlock)])
         outputFile.write(cipherBlock)
-        
+
         if instaFlush:
             outputFile.flush()
 

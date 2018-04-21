@@ -53,7 +53,7 @@ usage(){
 
 options(){
 
-    # Default 
+    # Default
     # Location of our storage location and symbolic link, relative to the working directory.
     # Using relative links avoids problems with temp files in mounted locations.
     TEMPDIR=./.temp
@@ -124,28 +124,28 @@ options(){
         esac
         shift
     done
-    
+
     if [ -n "$_TEMPDIR" ]; then
         TEMPDIR="$_TEMPDIR"
         notice "$(printf "Temporary directories will be stored in $GREEN%s$NC" "$TEMPDIR")"
     else
         notice "$(printf "Temporary directories will be stored in $GREEN%s$NC (default location)" "$TEMPDIR")"
     fi
-    
+
     if [ -n "$_TEMPLINK" ]; then
         TEMPLINK="$_TEMPLINK"
         notice "$(printf "The link to the current temp dir will be placed at $GREEN%s$NC" "$TEMPLINK")"
     else
         notice "$(printf "The link to the current temp dir will be placed at $GREEN%s$NC (default location)" "$TEMPLINK")"
     fi
-    
+
     if [ -n "$_LASTTEMPLINK" ]; then
         LASTTEMPLINK="$_LASTTEMPLINK"
         notice "$(printf "The link to the previous temp dir will be placed at $GREEN%s$NC" "$LASTTEMPLINK")"
     else
         notice "$(printf "The link to the previous temp dir will be placed at $GREEN%s$NC (default location)" "$LASTTEMPLINK")"
     fi
-    
+
     if [ -n "$_WORKINGDIRECTORY" ]; then
         WORKINGDIRECTORY="$_WORKINGDIRECTORY"
         notice "$(printf "Relative links will be based out of $GREEN%s/$NC" "$WORKINGDIRECTORY")"
@@ -176,9 +176,9 @@ function make_temp {
     # Remove directories.
     # Soft delete. Will fail as intended if the directory has any contents.
     $RMDIR "$TEMPDIR/"* 2> /dev/null
-    
+
     # Make sure that the temporary directory for the current day exists.
-    
+
     if [ -d "$DAILYTEMPDIR/" ]; then
         # Remove lock, if it was placed.
         if [ -f "$DAILYTEMPDIR/.rotate-lock" ]; then
@@ -187,15 +187,15 @@ function make_temp {
     else # End 'directory exists' block.
         # Directory does not currently exist. Create directory.
         $MKDIR -p "$DAILYTEMPDIR" 2> /dev/null
-    
+
         # If we have just created the daily temp dir, then this is a proper rotation
         #    (as opposed to a re-do on the same day.
-        
+
         # Get the most recent temp folder that is NOT the current daily temp directory.
         local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}(\-[a-z]{3,}day)?' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
         # If static resources exist, carry them forward from the last directory to today.
         if [ -d "$TEMPDIR/$lastDir/static/" ]; then
-        
+
             # Weak rmdir to make sure that the static directory isn't empty.
             if ! $RMDIR "$TEMPDIR/$lastDir/static" 2> /dev/null; then
                 $MV "$TEMPDIR/$lastDir/static/" "$DAILYTEMPDIR/static/"
@@ -203,7 +203,7 @@ function make_temp {
                 # Weakly try to remove the last temp directory again.
                 $RMDIR "$TEMPDIR/$lastDir" 2> /dev/null
             fi # End weak rmdir check
-            
+
         fi # End static check
     fi # End 'temp directory did not exist' block
 
@@ -216,7 +216,7 @@ function make_temp {
     ## Step 2: Update the link to the current temporary directory if necessary.
     if [ ! -L "$TEMPLINK" ] || [[ $(__abs_path "$DAILYTEMPDIR") != "$($READLINK $TEMPLINK)" ]]; then
         # Temporary link doesn't exist
-        # OR   
+        # OR
         # Points to a different location.
         $RM "$TEMPLINK" 2> /dev/null
 
@@ -248,7 +248,7 @@ function make_temp {
             # The likely cause of this is that you've cleaned out the contents all of the non-current days, leavinng empty directories.
         fi
     fi # End double-check to check if the container folder exists.
-    
+
 }
 
 # Function to get absolute path without realpath command.

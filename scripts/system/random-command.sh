@@ -41,7 +41,7 @@ if (( "$stream" )); then
     while sleep 4; do
         cat $filteredTempFile | shuf -n1
     done
-else 
+else
     cat $filteredTempFile | shuf -n1
 fi
 

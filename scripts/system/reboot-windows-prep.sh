@@ -79,7 +79,7 @@ reboot_windows_prep(){
     if [ ! -w "$grubenv" ]; then
         local sudo=sudo
     fi
-    
+
     # The && does not really matter at the moment,
     #   since failing to set grub2-editenv will not
     #   give a non-zero exit code (with an unedited grub2-reboot script)...

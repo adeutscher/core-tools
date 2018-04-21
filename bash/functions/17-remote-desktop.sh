@@ -27,17 +27,19 @@ if qtype x11vnc; then
   }
 
   vnc-quick-write(){
+    local _s="${toolsDir}/scripts/networking/vnc-quick-share.sh"
+
     if [ -z "${1}" ]; then
-      error "Usage: vnc-quick-write password"
-      return 1
+      "${_s}" -w -P
+    else
+      "${_s}" -w -p "${1}"
     fi
-    "${toolsDir}/scripts/networking/vnc-quick-share.sh" -w -p "${1}"
   }
 
   vnc-share-mon-read(){
     local _s="${toolsDir}/scripts/networking/vnc-quick-share.sh"
     if [ -z "${1}" ]; then
-      error "Usage: vnc-quick-read monitor password"
+      error "Usage: vnc-quick-read monitor [password]"
       "${_s}" -l
       return 1
     fi
@@ -51,12 +53,17 @@ if qtype x11vnc; then
 
   vnc-share-mon-write(){
     local _s="${toolsDir}/scripts/networking/vnc-quick-share.sh"
-    if [ -z "${2}" ]; then
-      error "Usage: vnc-quick-write monitor password"
+    if [ -z "${1}" ]; then
+      error "Usage: vnc-quick-write monitor [password]"
       "${_s}" -l
       return 1
     fi
-    "${_s}" -w -m "${1}" -p "${1}"
+
+    if [ -z "${2}" ]; then
+      "${_s}" -m "${1}" -w -P
+    else
+      "${_s}" -m "${1}" -w -p "${2}"
+    fi
   }
 
 

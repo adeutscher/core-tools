@@ -92,7 +92,7 @@ translate_seconds(){
   local __i=0
 
   # Each "module" should be the unit and the number of that unit until the next phrasing.
-  local __modules=(s:60 m:60 h:24 d:7 weeks:52 y:100 c:100)
+  local __modules=(s:60 m:60 h:24 d:7 w:52 y:100 c:100)
 
   local __modules_count="$(wc -w <<< "${__modules[*]}")"
   while [ "$__i" -lt "$__modules_count" ]; do

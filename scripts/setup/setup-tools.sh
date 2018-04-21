@@ -18,7 +18,7 @@ setup(){
         local marker="core-tools-marker"
         global=1
     fi
-    
+
     # Using the WINDIR environment variable as a lazy litmus test for
     #   whether or not we're in a Windows machine using MobaXterm.
     if [ -n "$WINDIR" ]; then

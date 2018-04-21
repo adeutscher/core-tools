@@ -288,7 +288,7 @@ __compile(){
     # TODO: If zone addition through rndc were working, we would instead be removing the domain (for good measure) and adding it here.
     printf 'zone "%s" { type forward; forwarders { %s; }; forward only; }; // Interface: %s\n' "$domain" "$nameserver" "$interface"
   done | sort | uniq > "$DNS_COMPILER_TARGET"
-  
+
 }
 
 __do_connect(){

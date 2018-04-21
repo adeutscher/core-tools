@@ -67,7 +67,7 @@ if qtype tmux; then
         #  which can be used to get the session name and load in the variables.
         mkdir -p "/tmp/${USER}/tmux"
         chmod 700 "/tmp/${USER}"
-        echo new
+
         # For the moment, the only variables that we care about exporting to a new session
         #   are our display username/hostname, our prompt flags, and conky variables.
         # A reminder in case you are thinking about expanding on this:

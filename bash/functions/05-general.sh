@@ -42,14 +42,25 @@ __translate_seconds(){
   #  local __stime=$(stat -c%X /proc/$PPID)
   #  local __time_output="$(__translate_seconds "$(($__ctime - $__stime))")"
 
+  # The optional second argument to this function specifies the format mode.
+  # Mode and format examples:
+  # 0: 3 hours, 2 minutes, and 1 second (DEFAULT)
+  # 1: 3 hours, 2 minutes, 1 second
+  # 2: 3h 2m 1s
+
   local __num=$1
   local __c=0
   local __i=0
 
-  # Each "module" should be a pairing of a name (in plural form),
-  #  the number of that unit until the next phrasing,
-  #  and (optionally) the phrasing of a single unit (in case lopping an 's' off of the end won't cut it)
-  local __modules=(seconds:60 minutes:60 hours:24 days:7 weeks:52 years:100 centuries:100:century)
+  if [ "${2:-0}" -eq 2 ]; then
+    # Each "module" should be the unit and the number of that unit until the next phrasing.
+    local __modules=(s:60 m:60 h:24 d:7 w:52 y:100 c:100)
+  else
+    # Each "module" should be a pairing of a name (in plural form),
+    #  the number of that unit until the next phrasing,
+    #  and (optionally) the phrasing of a single unit (in case lopping an 's' off of the end won't cut it)
+    local __modules=(seconds:60 minutes:60 hours:24 days:7 weeks:52 years:100 centuries:100:century)
+  fi
 
   local __modules_count="$(wc -w <<< "${__modules[*]}")"
   while [ "$__i" -lt "$__modules_count" ]; do
@@ -69,31 +80,49 @@ __translate_seconds(){
   unset __module
 
   local __i=$(($__c-1))
-
   while [ "$__i" -ge "0" ]; do
-    # Cycling through used units in reverse.
-    if [ -z "${2}" ] && (( ! $__i )) && [ "$__c" -gt 1 ]; then
-      printf "and "
-    fi
+    # Splitting logic for compressed version (mode 2) and
+    #   other phrasings requires much less tangled code.
+    if [ "${2:-0}" -eq 2 ]; then
+      # Short, compressed, and space-efficient version.
 
-    if [ "${__times[$__i]}" -eq 1 ]; then
-      local __s="$(cut -d':' -f3 <<< "${__modules[$__i]}")"
-      if [ -n "$__s" ]; then
-        printf "${__times[$__i]} $__s"
-      else
-        printf "${__times[$__i]} $(cut -d':' -f1 <<< "${__modules[$__i]}" | sed 's/s$//')"
+      printf "${__times[$__i]}$(cut -d':' -f1 <<< "${__modules[$__i]}")"
+
+      if (( $__i )); then
+        printf " "
       fi
     else
-      printf "${__times[$__i]} $(cut -d':' -f1 <<< "${__modules[$__i]}")"
-    fi
+      # Long version
 
-    if (( $__i )); then
-      if [ "$__c" -gt 2 ]; then
-        # Prepare for the next unit.
-        # If you aren't a fan of the Oxford comma, then you have some adjusting to do.
-        printf ", "
+      # Cycling through used units in reverse.
+      if [ "${2:-0}" -eq 0 ] && (( ! $__i )) && [ "$__c" -gt 1 ]; then
+        printf "and "
+      fi
+
+      # Handle plural
+      if [ "${__times[$__i]}" -eq 1 ]; then
+        # Attempt special singluar unit.
+        local __s="$(cut -d':' -f3 <<< "${__modules[$__i]}")"
+        if [ -n "$__s" ]; then
+          # Singular unit had content.
+          printf "${__times[$__i]} $__s"
+        else
+          # Lop the 's' off of unit plural for singular.
+          printf "${__times[$__i]} $(cut -d':' -f1 <<< "${__modules[$__i]}" | sed 's/s$//')"
+        fi
       else
-        printf " "
+        # Standard plural.
+        printf "${__times[$__i]} $(cut -d':' -f1 <<< "${__modules[$__i]}")"
+      fi
+
+      if (( $__i )); then
+        if [ "$__c" -gt 2 ]; then
+          # Prepare for the next unit.
+          # If you aren't a fan of the Oxford comma, then you have some adjusting to do.
+          printf ", "
+        else
+          printf " "
+        fi
       fi
     fi
 
@@ -218,32 +247,39 @@ alias mkpasswd='mkpasswd -m sha-512'
 
 countdown-seconds(){
 
-  # If not an integer, return
+  # Count down to the specified number of seconds.
+  # Note that the CPU time spent calculating and outputting a printout adds some drift.
+  # Example, "countdown-seconds 300" (5 minutes) took 5 minutes and 5 seconds on one test machine (1.6% drift).
+  # I could add calculations to estimate for this, but it would probably cause too much confusion for myself and others.
+  # Therefore, if you need EXACT times you should be using sleep or wrappers like sleep-minutes.
+
+  # If not a positive integer integer, return
   egrep -q "^[0-9]{1,}$" <<< "${1}" || return 1
+  (( "${1:-0}" )) || return 1
 
   local _c="${1}"
-  local _max="$(expr length "$(__translate_seconds "${_c}" 1) remaining")"
+
   until (( ! "${_c:-0}" )); do
     local _c="$((${_c}-1))"
-    printf "\r%-0${_max}s\r%s remaining" " " "$(__translate_seconds "${_c}" 1)"
+    printf "\33[2K\r%s remaining" " " "$(__translate_seconds "${_c}" 1)"
     sleep 1
   done
-  printf " \r%-0${_max}s\n" "$(__translate_seconds "${1}" 1) elapsed"
+  printf "\33[2K\r%s\n" "$(__translate_seconds "${1}" 1) elapsed"
 }
 
 countdown-minutes(){
   # Count down minutes remaining.
-  countdown-seconds $((60*${1}))
+  countdown-seconds $((60*${1:-0}))
 }
 
 countdown-hours(){
   # Count down hours remaining.
-  countdown-seconds $((60*60*${1}))
+  countdown-seconds $((60*60*${1:-0}))
 }
 
 countdown-days(){
   # Count down days remaining.
-  countdown-seconds $((24*60*60*${1}))
+  countdown-seconds $((24*60*60*${1:-0}))
 }
 
 sleep-minutes(){

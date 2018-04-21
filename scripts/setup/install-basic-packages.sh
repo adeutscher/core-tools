@@ -46,7 +46,7 @@ get-os(){
         # Debian
         os="Debian $(cat /etc/debian_version)"
     elif [ -f /etc/redhat-release ]; then
-        
+
         os=`cat /etc/redhat-release`
     else
         os="$(uname -s) $(uname -r)"

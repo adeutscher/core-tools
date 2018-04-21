@@ -17,7 +17,7 @@ if [ -t 1 ]; then
 fi
 
 error(){
-  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "${RED}"'Error'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename ${0})" "${@}"
 }
 
 # Script Functions
@@ -38,7 +38,7 @@ if [ -z "${_a}" ]; then
 fi
 
 ping -w1 -c1 "${_a}" 2> /dev/null >&2
-if [ "$?" -eq 2 ]; then
+if [ "${?}" -eq 2 ]; then
   error "$(printf "Invalid address: ${GREEN}%s${NC}" "${_a}")"
   exit 1
 fi

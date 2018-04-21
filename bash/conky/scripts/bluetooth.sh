@@ -2,7 +2,7 @@
 
 # If CONKY_DISABLE_BLUETOOTH evaluates to true, then exit immediately
 # Also do this if hcitool command is not available
-if (( $CONKY_DISABLE_BLUETOOTH )) || ! type hcitool 2> /dev/null >&2; then
+if (( ${CONKY_DISABLE_BLUETOOTH} )) || ! type hcitool 2> /dev/null >&2; then
   exit 0
 fi
 
@@ -17,27 +17,27 @@ for device in ${devices}; do
     # For adding future device titles, I would advise a maximum length of 15 unless you want
     #    to bump up your Conky window width.
 
-    if [ -f "$tempRoot/cache/bluetooth/$device.txt" ]; then
-        report="${report}$(cat "$tempRoot/cache/bluetooth/$device.txt")\n"
+    if [ -f "${tempRoot}/cache/bluetooth/${device.txt}" ]; then
+        report="${report}$(cat "${tempRoot}/cache/bluetooth/${device}.txt")\n"
     else
 
-        label="$(__get_mac_label "$device")"
+        label="$(__get_mac_label "${device}")"
 
         # Append to current banner.
         entry=" ${label:-"Unknown Device"} [${device}]\n"
 
-        if [ -z "$label" ]; then
-            vendor="$(__get_mac_vendor "$device")"
+        if [ -z "${label}" ]; then
+            vendor="$(__get_mac_vendor "${device}")"
 
-            if [ -n "$vendor" ]; then
+            if [ -n "${vendor}" ]; then
                 entry="${entry}  └─Vendor: ${vendor}\n"
             fi
         fi
 
         report="${report}${entry}"
         # Cache entry for later.
-        mkdir -p "$tempRoot/cache/bluetooth"
-        printf "${entry}" > "$tempRoot/cache/bluetooth/$device.txt"     
+        mkdir -p "${tempRoot}/cache/bluetooth"
+        printf "${entry}" > "${tempRoot}/cache/bluetooth/${device}.txt"
 
         # TODO: What would be a nice colour to assign to some of this?
         ## Remember that this would require moving the sourcing of the 'common' file up a bit.
@@ -49,6 +49,6 @@ if [ -n "${report}" ]; then
 
 
     # Print banner and report content
-    printf "\n\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Bluetooth\$font\$color\$hr\n${report}"
+    printf "\n\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Bluetooth\${font}\${color}\${hr}\n${report}"
 
 fi

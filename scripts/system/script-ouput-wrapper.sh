@@ -7,7 +7,7 @@
 
 tempFile="$(mktemp)"
 targetFile=$1
-shift 
+shift
 if [ -n "$($@ | tee "$tempFile")" ]; then
   # Only replace file if there was content to replace it with.
   mv -f "$tempFile" "$targetFile"

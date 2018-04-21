@@ -47,7 +47,7 @@ old_backup_dir="${backup_destination}/$(ls "${backup_destination}" | tail -n2 | 
 # Use a lazy string comparison to make sure that we haven't grabbed our newly-made directory as the most recent one.
 if [ -n "$old_backup_dir" ] && [[ "$(basename "$old_backup_dir")" != "$(basename "$backup_dir")" ]]; then
     rsync -av --progress "$old_backup_dir/" "$backup_dir"
-    
+
     # temporary fix for short term testing.
     #rmdir "$backup_dir"
     #ln -s $(realpath "$old_backup_dir/") "$backup_dir"
