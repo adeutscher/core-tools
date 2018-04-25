@@ -69,9 +69,13 @@ for extension in ${extensions}; do
       ;&
     .cpp)
       ;&
+    .css)
+      ;&
     .h)
       ;&
     .hpp)
+      ;&
+    .js)
       switches="--style=linux -xj -cnN --lineend=linux"
       ;;
     *)

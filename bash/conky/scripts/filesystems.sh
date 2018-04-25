@@ -115,7 +115,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
 
     # Apply a special bracket colour to read-only file systems.
     unset bracket_colour
-    if grep -qw ro <<< "${fs_options}"; then
+    if egrep -q -e "(^|,)ro($|,)" <<< "${fs_options}"; then
         bracket_colour=red
     fi
 

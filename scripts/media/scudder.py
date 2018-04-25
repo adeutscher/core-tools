@@ -4,7 +4,7 @@
 # This is a one-file version of a Django application that I kludged together for quickly browsing images from another machine.
 # Usage ./scudder.py [directory]
 
-import getopt, getpass, os, mimetypes, posixpath, re, shutil, socket, struct, sys, urllib, BaseHTTPServer
+import base64, getopt, getpass, os, mimetypes, posixpath, re, shutil, socket, struct, sys, urllib, BaseHTTPServer
 from random import randint
 from BaseHTTPServer import HTTPServer
 from SimpleHTTPServer import SimpleHTTPRequestHandler
@@ -41,6 +41,8 @@ else:
     COLOUR_BOLD = ''
     COLOUR_OFF = ''
 
+DEFAULT_AUTH_PROMPT = "Authorization Required"
+
 def hexit(exit_code):
     print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-D deny-list-file] [-h] [-p port]" % os.path.basename(sys.argv[0])
     exit(exit_code)
@@ -53,7 +55,7 @@ def process_arguments():
     access = NetAccess()
 
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hp:")
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hp:", ["password=", "prompt=", "user="])
     except getopt.GetoptError as e:
         print "GetoptError: %s" % str(e)
         hexit(1)
@@ -72,6 +74,13 @@ def process_arguments():
             hexit(0)
         elif opt in ("-p"):
             args["port"] = int(arg)
+        elif opt in ("--password"):
+            args["password"] = arg
+        elif opt in ("--prompt"):
+            args["auth-prompt"] = arg
+        elif opt in ("--user"):
+            args["user"] = arg
+
     switch_arg = False
     if len(flat_args):
         args["dir"] = flat_args[len(flat_args)-1]
@@ -556,6 +565,24 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             if not self.parse_request():
                 # An error code has been sent, just exit
                 return
+
+            wanted_user = args.get("user", "")
+            wanted_password = args.get("password", "")
+            if wanted_user or wanted_password:
+                raw_creds = self.headers_dict.get("Authorization", "").split()
+                if not raw_creds or len(raw_creds) < 2:
+                    # No creds message
+                    return self.send_error(401, args.get("auth-prompt", DEFAULT_AUTH_PROMPT))
+                creds_list = base64.b64decode(raw_creds[1]).split(":")
+                if len(creds_list) < 2:
+                    # Creds message invalid, too few fields within.
+                    return self.send_error(401, args.get("auth-prompt", DEFAULT_AUTH_PROMPT))
+                user = creds_list[0]
+                password = ":".join(creds_list[1:])
+                if user != wanted_user or password != wanted_password:
+                    # Bad Credentials
+                    return self.send_error(401, args.get("auth-prompt", DEFAULT_AUTH_PROMPT))
+
             mname = 'do_' + self.command
             if not hasattr(self, mname):
                 self.send_error(501, "Unsupported method (%r)" % self.command)
@@ -704,6 +731,77 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         else:
             sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
 
+    def parse_request(self):
+        """Parse a request (internal).
+        The request should be stored in self.raw_requestline; the results
+        are in self.command, self.path, self.request_version and
+        self.headers.
+        Return True for success, False for failure; on failure, an
+        error is sent back.
+        """
+        self.command = None  # set in case of error on the first line
+        self.request_version = version = self.default_request_version
+        self.close_connection = 1
+        requestline = self.raw_requestline
+        requestline = requestline.rstrip('\r\n')
+        self.requestline = requestline
+        words = requestline.split()
+        if len(words) == 3:
+            command, path, version = words
+            if version[:5] != 'HTTP/':
+                self.send_error(400, "Bad request version (%r)" % version)
+                return False
+            try:
+                base_version_number = version.split('/', 1)[1]
+                version_number = base_version_number.split(".")
+                # RFC 2145 section 3.1 says there can be only one "." and
+                #   - major and minor numbers MUST be treated as
+                #      separate integers;
+                #   - HTTP/2.4 is a lower version than HTTP/2.13, which in
+                #      turn is lower than HTTP/12.3;
+                #   - Leading zeros MUST be ignored by recipients.
+                if len(version_number) != 2:
+                    raise ValueError
+                version_number = int(version_number[0]), int(version_number[1])
+            except (ValueError, IndexError):
+                self.send_error(400, "Bad request version (%r)" % version)
+                return False
+            if version_number >= (1, 1) and self.protocol_version >= "HTTP/1.1":
+                self.close_connection = 0
+            if version_number >= (2, 0):
+                self.send_error(505,
+                          "Invalid HTTP Version (%s)" % base_version_number)
+                return False
+        elif len(words) == 2:
+            command, path = words
+            self.close_connection = 1
+            if command != 'GET':
+                self.send_error(400,
+                                "Bad HTTP/0.9 request type (%r)" % command)
+                return False
+        elif not words:
+            return False
+        else:
+            self.send_error(400, "Bad request syntax (%r)" % requestline)
+            return False
+        self.command, self.path, self.request_version = command, path, version
+
+        # Examine the headers and look for a Connection directive
+        self.headers = self.MessageClass(self.rfile, 0)
+        # I was not able to successfully use the MIMEMessage object, so parsing it into a dictionary instead.
+        self.headers_dict = {l.split(":")[0]:":".join(l.split(":")[1:]) for l in str(self.headers).split("\r\n") if l}
+
+        conntype = self.headers.get('Connection', "")
+        if conntype.lower() == 'close':
+            self.close_connection = 1
+        elif (conntype.lower() == 'keep-alive' and
+              self.protocol_version >= "HTTP/1.1"):
+            self.close_connection = 0
+        return True
+
+    def quote_html(self, html):
+        return html.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
     def render_breadcrumbs(self, path, trailer=True):
         current = "/browse/"
         items = [ [ current, "Root" ] ]
@@ -796,6 +894,33 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.end_headers()
         return f
 
+    def send_error(self, code, message=None):
+        """Send and log an error reply.
+        Arguments are the error code, and a detailed message.
+        The detailed message defaults to the short entry matching the
+        response code.
+        This sends an error response (so it must be called before any
+        output has been generated), logs the error, and finally sends
+        a piece of HTML explaining the error to the user.
+        """
+        try:
+            short, long = self.responses[code]
+        except KeyError:
+            short, long = '???', '???'
+        if message is None:
+            message = short
+        explain = long
+        self.log_error("code %d, message %s", code, message)
+        # using _quote_html to prevent Cross Site Scripting attacks (see bug #1100201)
+        content = (self.error_message_format % {'code': code, 'message': self.quote_html(message), 'explain': explain})
+        self.send_response(code, message)
+        self.send_header("Content-Type", self.error_content_type)
+        self.send_header('Connection', 'close')
+        if code == 401:
+            self.send_header('WWW-Authenticate', 'Basic realm="%s"' % message)
+        self.end_headers()
+        if self.command != 'HEAD' and code >= 200 and code not in (204, 304):
+            self.wfile.write(content)
 
     def send_head(self):
         """Common code for GET and HEAD commands.
@@ -909,6 +1034,10 @@ if __name__ == '__main__':
         exit(1)
 
     print "Sharing images in %s%s%s on %s%s:%d%s" % (COLOUR_GREEN, os.path.realpath(GALLERY_PATH), COLOUR_OFF, COLOUR_GREEN, bind_address, bind_port, COLOUR_OFF)
+
+    if args.get("user"):
+        print "Basic authentication enabled (User: %s%s%s)" % (COLOUR_BOLD, args.get("user", "<EMPTY>"), COLOUR_OFF)
+
     try:
         server = ThreadedHTTPServer((bind_address, bind_port), ImageMirrorRequestHandler)
         print "Starting server, use <Ctrl-C> to stop"

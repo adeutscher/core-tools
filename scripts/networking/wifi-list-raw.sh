@@ -38,7 +38,7 @@ wifi_list_raw(){
     local _s="sudo"
   fi
 
-  "${_s}" iw dev "$iface" scan | tac | awk '
+  ${_s} iw dev "$iface" scan | tac | awk '
     BEGIN {
       defaultSecurity="OPEN";
       security=defaultSecurity;

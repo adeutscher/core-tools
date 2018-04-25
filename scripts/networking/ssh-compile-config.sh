@@ -216,7 +216,11 @@ ssh_compile_config(){
 
     else
       # Only making the lack of a configuration give notice (as opposed to a warning or error). I think that this message is more likely to be a silly FYI than a serious error.
-      notice "$(printf "No SSH configuration located at ${GREEN}%s${NC}" "$(sed "s|^$HOME|~|" <<< "$moduleSSHConfig")")"
+      if [ -d "$(sed -r "s/(\/[^\/]+){2}$//g" <<< "${moduleSSHConfig}")" ]; then
+        notice "$(printf "No SSH configuration located at ${GREEN}%s${NC}" "$(sed "s|^$HOME|~|" <<< "$moduleSSHConfig")")"
+      else
+        error "$(printf "Module directory not found: ${GREEN}%s${NC}" "$(sed "s|^$HOME|~|" <<< "$(sed -r "s/(\/[^\/]+){2}$//g" <<< "${moduleSSHConfig}")")")"
+      fi
     fi # End the else of the check for configuration file existing.
   done # End config loop.
 

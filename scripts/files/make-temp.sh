@@ -173,6 +173,11 @@ function make_temp {
         $TOUCH "$DAILYTEMPDIR/.rotate-lock"
     fi
 
+    # Step 1.5: Remove next/previous navigation links
+    while read __link; do
+        [ -n "${__link}" ] && ${RM} "${__link}"
+    done <<< "$(find .temp -type l -name next -o -type l -name previous | sort)"
+
     # Remove directories.
     # Soft delete. Will fail as intended if the directory has any contents.
     $RMDIR "$TEMPDIR/"* 2> /dev/null
@@ -207,11 +212,8 @@ function make_temp {
         fi # End static check
     fi # End 'temp directory did not exist' block
 
-
     # If static resources exist, carry them forward from the last directory to today.
-        if [ -d "$lastDir/static/" ]; then
-            $MV "$lastDir/static/" "$DAILYTEMPDIR/static/"
-        fi
+    [ -d "$lastDir/static/" ] && $MV "$lastDir/static/" "$DAILYTEMPDIR/static/"
 
     ## Step 2: Update the link to the current temporary directory if necessary.
     if [ ! -L "$TEMPLINK" ] || [[ $(__abs_path "$DAILYTEMPDIR") != "$($READLINK $TEMPLINK)" ]]; then
@@ -238,17 +240,34 @@ function make_temp {
         # Make sure that we aren't removing and re-adding the very same link.
         if [ -n "$lastDir" ] && ([ ! -L "$LASTTEMPLINK" ] || [[ "$TEMPDIR/$lastDir" != "$($READLINK $LASTTEMPLINK)" ]]); then
             $RM "$LASTTEMPLINK" 2> /dev/null
-            if [ -d "$TEMPDIR/$lastDir" ]; then
-                $LN "$TEMPDIR/$lastDir" "$LASTTEMPLINK"
-            fi # End directory exists check.
+            # Create link to previous directory if such a thing exists.
+            [ -d "$TEMPDIR/$lastDir" ] && $LN "$TEMPDIR/$lastDir" "$LASTTEMPLINK"
         # End check to see if updating the previous temporary directory link is necessary.
         elif [ -L "$LASTTEMPLINK" ] && [ ! -d "$(readlink "$LASTTEMPLINK")" ]; then
             # If there is NO candidate for a last temp link and the link currently exists as a dead link, then axe the link.
             rm "$LASTTEMPLINK"
-            # The likely cause of this is that you've cleaned out the contents all of the non-current days, leavinng empty directories.
+            # The likely cause of this is that you've cleaned out the contents all of the non-current days, leaving empty directories.
         fi
     fi # End double-check to check if the container folder exists.
 
+    # Step 4: Create links to the next/previous directory.
+    unset __previous_monitored
+    while read __current_directory; do
+      [ -z "${__current_directory}" ] && continue
+      if [ -n "${__previous_monitored}" ]; then
+        ${LN} "../$(basename "${__previous_monitored}")" "${__current_directory}/previous"
+      fi
+      __previous_monitored="${__current_directory}"
+    done <<< "$(find "${HOME}/.temp" -mindepth 1 -maxdepth 1 | sort)"
+
+    unset __previous_monitored
+    while read __current_directory; do
+      [ -z "${__current_directory}" ] && continue
+      if [ -n "${__previous_monitored}" ]; then
+        ${LN} "../$(basename "${__previous_monitored}")" "${__current_directory}/next"
+      fi
+      __previous_monitored="${__current_directory}"
+    done <<< "$(find "${HOME}/.temp" -mindepth 1 -maxdepth 1 | sort | tac)"
 }
 
 # Function to get absolute path without realpath command.
