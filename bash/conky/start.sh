@@ -123,17 +123,26 @@ handle_arguments(){
 }
 
 get_coords(){
-    local __target=$1
+    local __target="${1}"
     local __add_x=${2:-0}
     local __add_y=${3:-0}
     # Adjust X calculation for secondary bottom-left display.
     local __is_bl=${4:-0}
+    local __note="${5}"
 
     if [ -z "$__target" ]; then
         return 1
     fi
 
-    ! get_monitor_info "$__target" && return 1
+    if (( ${DEBUG:-0} )); then
+        printf "Fetching Monitor Points for %s\n" "${__target}"
+        [ -n "${__note}" ] && echo "${__note}"
+    fi
+
+    if ! get_monitor_info "$__target"; then
+        printf "Failed to get monitor info for %s\n" "${__target}"
+        return 1
+    fi
 
     if (( $__is_bl )); then
         # Bottom-left
@@ -145,16 +154,22 @@ get_coords(){
             # If primary monitor is to the left of target monitor (primary br_x < monitor br_x),
             #   then subtract (target monitor BR corner - primary_monitor_br_corner)
             TARGET_X="$(($TARGET_X - ($MONITOR_CORNER_BR_X - $__primary_monitor_br_x)))"
-        else
+        elif [ "$__primary_monitor_br_x" -gt "$MONITOR_CORNER_BR_X" ]; then
             # If primary monitor is to the left of target monitor (primary br_x > monitor br_x),
             #   then subtract (primary_monitor_br_corner - target monitor BR corner)
             TARGET_X="$(($TARGET_X - ($__primary_monitor_br_x - $MONITOR_CORNER_BR_X)))"
+        else
+            # Monitor is the primary monitor, or is otherwise in alignment with the primary monitor.
+            # As offsets are calculated relative to the primary monitor, use plain offset without any further calculations.
+            TARGET_X="${__add_x}"
         fi
     fi
 
+    # TODO: Do similar calculations to X co-ordinates in 
     TARGET_Y="$(( $MONITOR_CORNER_BR_Y - $__primary_monitor_br_y + $__add_y ))"
 }
 
+# Get dimensions for a monitor.
 get_monitor_info(){
 
     local __monitor="$1"
@@ -243,6 +258,7 @@ monitor_check(){
             fi
         fi
     fi
+
     if (( ${__setup_failure:-0} )); then
         # A setup error occurred.
 
@@ -299,7 +315,7 @@ setup_global_values(){
 
     monitor_check "${CONKY_SCREEN:-$__primary_monitor}" "${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}"
 
-    ! get_monitor_info "$__primary_monitor" 1 && return 1
+    get_monitor_info "$__primary_monitor" 1 || return 1
 
     __primary_monitor_width=$MONITOR_WIDTH
     __primary_monitor_height=$MONITOR_HEIGHT
@@ -319,15 +335,19 @@ handle_arguments $@
 
 setup_global_values
 
-if ! get_coords "${CONKY_SCREEN:-$__primary_monitor}" "${CONKY_PADDING_X:-$DEFAULT_PADDING_X}" "${CONKY_PADDING_Y:-$DEFAULT_PADDING_Y}"; then
-    setup_failure "$(printf "Failed to get X dimensions for primary conky display (%s)! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)" "${CONKY_SCREEN:-$__primary_monitor}")"
+__primary_display_screen="${CONKY_SCREEN:-$__primary_monitor}"
+__secondary_display_screen="${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}"
+
+if ! get_coords "${__primary_display_screen}" "${CONKY_PADDING_X:-$DEFAULT_PADDING_X}" "${CONKY_PADDING_Y:-$DEFAULT_PADDING_Y}" 0 "  Primary Display"; then
+    setup_failure "$(printf "Failed to get X dimensions for primary conky display (%s)! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)" "${__primary_display_screen}")"
 fi
+
 POS_PRIMARY_X=$TARGET_X
 POS_PRIMARY_Y=$TARGET_Y
 
 if (( ${CONKY_ENABLE_TASKS:-0} )); then
-   if ! get_coords "${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}" "${CONKY_SECONDARY_PADDING_X:-${CONKY_PADDING_X:-$DEFAULT_PADDING_X}}" "${CONKY_SECONDARY_PADDING_Y:-${CONKY_PADDING_Y:-$DEFAULT_PADDING_Y}}" 1; then
-       setup_failure "$(printf "Failed to get X dimensions for secondary conky display (%s)! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)" "${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}")"
+   if ! get_coords "${__secondary_display_screen}" "${CONKY_SECONDARY_PADDING_X:-${CONKY_PADDING_X:-$DEFAULT_PADDING_X}}" "${CONKY_SECONDARY_PADDING_Y:-${CONKY_PADDING_Y:-$DEFAULT_PADDING_Y}}" 1 "  Secondary Display"; then
+       setup_failure "$(printf "Failed to get X dimensions for secondary conky display (%s)! Is the DISPLAY variable set (e.g. export DISPLAY=:0.0)" "${__secondary_display_screen}")"
    fi
    POS_SECONDARY_X=$TARGET_X
    POS_SECONDARY_Y=$TARGET_Y
@@ -410,11 +430,11 @@ fi
 
 # Try running notify-send, ignoring all error messages
 #   (like if notify-send is not present, for example)
-timeout 0.5 notify-send --icon=esd "$(printf "%s\nLocation: %s" "$message" "$location")" 2> /dev/null >&2
+timeout 0.5 notify-send --icon=esd "Starting Conky" "$(printf "%s\n  Display: %s\n  Location: %s" "$message" "${CONKY_SCREEN:-$__primary_monitor}" "$location")" 2> /dev/null >&2
 # Print the message to stdout for good measure.
 echo "$message"
 
-if (( "$DEBUG" )); then
+if (( "${DEBUG:-0}" )); then
     # Debug mode
     # If we're in debug mode, run conky immediately in the foreground.
 
