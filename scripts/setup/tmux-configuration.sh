@@ -1,14 +1,9 @@
 #!/bin/bash
 
-check-commands(){
-  # No harm in setting up a tmux config with no tmux command,
-  #   but we will give a quick reminder.
-  if ! type tmux 2> /dev/null >&2; then
-    printf "Reminder: tmux is not yet installed on this machine!\n"
-  fi
-}
+# Load common functions.
+. "$(dirname "${0}")/functions.sh"
 
-build-tmux(){
+build_tmux(){
 
     case "${DISPLAY_HOSTNAME:-$HOSTNAME}" in
     "datacomm")
@@ -80,9 +75,10 @@ build-tmux(){
     ;;
     esac
 
-    printf "Applying \"%s\" style...\n" "$style"
+    notice "$(printf "Applying ${BOLD}\"%s\"${NC} style...\n" "$style")"
 
-cat << EOF > $HOME/.tmux.conf
+  # Note: Stretching command output across multiple lines makes geany colour formatting act strangely, but BASH has no problems with running it.
+  CONTENT="$(cat << EOF
 
 ## Theming
 
@@ -109,8 +105,29 @@ bind M setw synchronize-panes
 bind R source-file ~/.tmux.conf
 
 EOF
+)"
 
+  "${DOTFILE_SCRIPT}" "${HOME}/.tmux.conf" core-tools-tmux - <<< "${CONTENT}"
 }
 
-check-commands
-build-tmux
+check_commands(){
+  # No harm in setting up a tmux config with no tmux command,
+  #   but we will give a quick reminder.
+  if ! type tmux 2> /dev/null >&2; then
+    warning "$(printf "Reminder: ${BLUE}%s${NC} is not yet installed on this machine. Configuration will still be written.\n" "tmux")"
+  fi
+
+  # Script is expected to be in scripts/setup/.
+  # Need to get at an updater script in scripts/system/
+  DOTFILE_SCRIPT="$(readlink -f "$(dirname "$(readlink -f "${0}")")/../system/update-dotfile.sh")"
+
+  if ! ( [ -f "${DOTFILE_SCRIPT}" ] && [ -x "${DOTFILE_SCRIPT}" ] ); then
+    error "$(printf "Dotfile update script not found or not runnable: ${GREEN}%s${NC}" "$(sed "s|^${HOME}|~|" <<< "${DOTFILE_SCRIPT}")")"
+  fi
+
+  (( ${__error_count:-0} )) && return 1
+  return 0
+}
+
+check_commands || exit 1
+build_tmux

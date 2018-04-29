@@ -1,11 +1,13 @@
 #!/bin/bash
 
-# A lazy script to run multiple setup aspects at once.
-# Not combining them only for organizational purposes.
+# Load common functions.
+. "$(dirname "${0}")/functions.sh"
 
-cd "$(dirname "$(readlink -f "$0")")"
+notice "Running all major tool setup scripts."
 
-for s in setup-tools.sh tmux-configuration.sh crontab-setup.sh; do
-  echo "Running $s"
-  ./$s
+for s in setup-tools.sh crontab-setup.sh tmux-configuration.sh vimrc-setup.sh; do
+  notice "$(printf "Running ${GREEN}%s${NC}" "${s}")"
+  ./$s || error "$(printf "Setup failed for ${GREEN}%s${NC}" "${s}")"
 done
+
+exit 0

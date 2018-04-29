@@ -1,9 +1,7 @@
 #!/bin/bash
 
-# Get the path to the tools directory.
-# Script is currently stored in 'scripts/setup/', relative to the root of the tools directory.
-# No need to resolve the path with readlink.
-toolsDir="$(readlink -f "$(dirname $0)/../..")"
+# Load common functions.
+. "$(dirname "${0}")/functions.sh"
 
 setup(){
 
@@ -60,21 +58,17 @@ setup(){
 
             ;;
         *)
-            printf "Unsupported shell: %s\n" "$SHELL" >&2
+            error "$(printf "Unsupported shell: ${GREEN}%s${NC}" "$SHELL")" >&2
             exit 1
             ;;
          esac
     fi
 
-    if [ ! -f "$file" ] || ! grep -q "$marker" "$file"; then
-
-        # If we are writing to a path outside of our home directory,
-        #     then it is assumed that we have write permissions (probably from being root).
-        printf "Applying source statement to $file\n"
-        cat << EOF >> "$file"
-
+    # If we are writing to a path outside of our home directory,
+    #     then it is assumed that we have write permissions (probably from being root).
+    CONTENTS="$(cat << EOF
 #####################################
-# $marker
+# Core-Tools Suite
 export toolsDir="$(pwd)"
 if printf "\$-" | grep -q i || ( [ -z "\$SSH_CLIENT" ] && printf "\$TERM" | grep -q '^dumb$' ); then
     # Load tools if we are in an interactive shell or if we are running a script from
@@ -84,9 +78,9 @@ if printf "\$-" | grep -q i || ( [ -z "\$SSH_CLIENT" ] && printf "\$TERM" | grep
     fi
 fi
 #####################################
-
 EOF
-    fi
+)"
+    "${DOTFILE_SCRIPT}" "${file}" core-tools-marker - <<< "${CONTENTS}"
 
 }
 

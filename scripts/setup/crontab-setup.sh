@@ -1,27 +1,27 @@
 #!/bin/bash
 
-# Fallback in case toolsDir isn't picked up by the script for some reason.
-if [ -z "$toolsDir" ]; then
-    toolsDir="$(readlink -f "${0%/*}")"
-fi
+# Load common functions.
+. "$(dirname "${0}")/functions.sh"
 
-crontab_marker=common-crontab-marker
-crontab_contents="$(crontab -l)"
+crontab_contents="$(crontab -l)\n"
 
 # Prep new tasks in case we need to use them.
 # Mostly outside of the if statement just because it looks better without indentation shenanigans.
-new_tasks=$(cat << EOF
-# $crontab_marker for grep's benefit.
+new_tasks="$(cat << EOF
 # Rotate temporary directory.
 @reboot "$toolsDir/scripts/files/make-temp.sh" 2>/dev/null >&2
 1 0 * * * "$toolsDir/scripts/files/make-temp.sh" 2>/dev/null >&2
-# End $crontab_marker jobs
 EOF
-)
+)"
 
-if ! grep -qm1 "$crontab_marker" <<< "$crontab_contents"; then
-    printf "Installing common crontab jobs...\n"
-    printf "%s\n\n%s\n" "$crontab_contents" "$new_tasks" | crontab -
-else
-    printf "Common crontab tools are already installed!\n"
+temp_file="$(mktemp)"
+printf "${crontab_contents}" > "${temp_file}"
+temp_file_checksum="$(md5sum "${temp_file}" | cut -d' ' -f1)"
+"${DOTFILE_SCRIPT}" "${temp_file}" core-tools-crontab - <<< "${new_tasks}"
+temp_file_checksum_new="$(md5sum "${temp_file}" | cut -d' ' -f1)"
+
+if [[ "${temp_file_checksum}" != "${temp_file_checksum_new}" ]]; then
+  cat "${temp_file}" | crontab -
+  success "Installing new crontab"
 fi
+rm "${temp_file}"
