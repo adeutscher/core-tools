@@ -26,10 +26,15 @@ success(){
   __success_count=$((${__success_count:-0}+1))
 }
 
+warning(){
+  printf "${YELLOW}"'Warning'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
+  __warning_count=$((${__warning:-0}+1))
+}
+
 # Need to get at an updater script in scripts/system/
 DOTFILE_SCRIPT="$(readlink -f "$(dirname "$(readlink -f "${0}")")/../system/update-dotfile.sh")"
 
-if ! (( ${IGNORE_DOTFILES:-0)) && ! ( [ -f "${DOTFILE_SCRIPT}" ] && [ -x "${DOTFILE_SCRIPT}" ] ); then
+if ! (( ${IGNORE_DOTFILES:-0} )) && ! ( [ -f "${DOTFILE_SCRIPT}" ] && [ -x "${DOTFILE_SCRIPT}" ] ); then
   error "$(printf "Dotfile update script not found or not runnable: ${GREEN}%s${NC}" "$(sed "s|^${HOME}|~|" <<< "${DOTFILE_SCRIPT}")")"
   exit 1
 fi
