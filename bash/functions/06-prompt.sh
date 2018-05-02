@@ -114,7 +114,7 @@ __build_prompt() {
   # - (slightly) shorter SSH path.
   # - Shorten username to one letter
   if ! (( ${PROMPT_ALWAYS_COMPRESS:-0} )); then
-	local typing_space=$(($(stty size | cut -d' ' -f 2)-$(__strlen "$(pwd | sed "s|^$HOME|H|g")${__host}$USER")-${ssh_space_count:-0}-${vc_count:-0}-7))
+	local typing_space=$(($(stty size 2> /dev/null | cut -d' ' -f 2)-$(__strlen "$(pwd | sed "s|^$HOME|H|g")${__host}$USER")-${ssh_space_count:-0}-${vc_count:-0}-7))
   else
 	local typing_space=0
   fi

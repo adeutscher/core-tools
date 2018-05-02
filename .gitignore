@@ -3,6 +3,8 @@
 *.swp
 # Python bytecode
 *.pyc
+# Ansible retry files
+*.retry
 
 # OS generated files (though very few Linux items) #
 # ##################################################

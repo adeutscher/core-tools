@@ -1,0 +1,84 @@
+---
+
+# Set up a Fedora Workstation.
+# My first major effort with Ansible playbooks.
+
+- hosts: "{{ variable_host | default('fedora-workstations') }}"
+  # Example to override 'fedora-workstations' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  environment:
+    ANSIBLE: 1
+
+  tasks:
+  - name: Install Fedora Packages
+    block:
+      # Restrict to Fedora systems for the time being.
+      # Support for other RedHat-based distributions can be added pending testing.
+      - name: "Confirm DNF System"
+        fail: msg="DNF not our primary package manager."
+        when: not (ansible_pkg_mgr == "dnf")
+
+      ## Development Tools and CLI items
+
+      - name: install other development tools and cli items
+        dnf: name={{item}} state=latest
+        with_items:
+          - vim      # vim editor
+          - tmux     # tmux multiplexer
+          - svn      # Subversion version control
+          - git      # Git version control
+          - astyle   # Artistic Style code formatter
+
+      - name: install the 'development-tools' package group
+        dnf: name='@development-tools' state=latest
+        become: yes
+        # Install failed when run against a Fedora 25 machine due to a module problem.
+        # F25 is already EoL at time of writing anyways (2018-05-01, Ansible 2.4.1), so this is not a major concern.
+        # Tested on:
+        #   F25->F27 (Success)
+        #   F25->F25 (FAIL)
+        #   F26->F25 (Success)
+        #   F26->F26 (Success)
+        # Possibly related to https://github.com/ansible/ansible/issues/26868.
+        when: (ansible_distribution == "Fedora" and ansible_distribution_version >= "26")
+
+      ## Desktop Items
+
+      - name: install desktop machine packages
+        dnf: name={{item}} state=latest
+        with_items:
+          - conky         # Desktop information display
+          - firefox       # Web Browser
+          - geany         # Code Editor
+          - tigervnc      # VNC Client
+          - x11vnc        # Ad-Hoc VNC Server
+          - slick-greeter # Really neat-looking greeter (originated with Ubuntu?)
+
+      # Remove Default Greeter for Fedora MATE spin
+      - name: remove lightdm-gtk greeter
+        dnf: name=lightdm-gtk state=absent
+        become: yes
+
+      ## Network-Based Items
+
+      - name: install network utilities
+        dnf: name={{item}} state=latest
+        with_items:
+          - nmap
+          - nmap-ncat
+          - wireshark
+          - openvpn
+
+      - name: check dnf version
+        shell: warn=false dnf --version | head -n1
+        register: dnf_check
+        changed_when: false # Never announce as changed.
+
+      # Tidy Up
+      - name: Autoremove unneeded packages installed as dependencies
+        dnf: autoremove=yes
+        become: yes
+        # Requires DNF v2.0.1 or greater.
+        when: dnf_check.stdout is version('2.0.1', '>=')
+    # Some Fedora checks are a bit redundant in this version.
+    when: (ansible_distribution == "Fedora")

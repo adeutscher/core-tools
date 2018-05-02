@@ -10,10 +10,13 @@ do_forwarding(){
   if ! type nc 2> /dev/null >&2; then
     printf  "nc is not installed.\n" >&2
     local _err="$((${_err:-0}+1))"
+  elif ! nc -h 2>&1 | grep -q nmap; then
+    printf "Must use nmap-ncat for forwarding.\n" >&2
+    local _err="$((${_err:-0}+1))"
   fi
 
   if [ -z "${3}" ]; then
-    printf "Insufficient arguments."
+    printf "Insufficient arguments.\n" >&2
     hexit 1
   fi
 

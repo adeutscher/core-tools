@@ -42,18 +42,23 @@ do_dynamic_setup(){
     # * Setting own_window_type to 'desktop' on Fedora 23 (conky 1.9) makes the conky
     #     display vanish when the desktop is clicked on. Fixed by
     #     setting to 'override'
-    # * Setting own_window_type to 'override' on Fedora 25 (conky 1.10) makes the
+    # * Setting own_window_type to 'override' on Fedora 25 (conky 1.10) once made the
     #     conky display crash and burn. Fixed by setting to 'desktop', with
     #     the above clicking issues not showing up.
-    # To solve BOTH of the above problems, making a dynamic conkyrc file.
-    # File contents are based on conky version, at least for the short-term.
+    # * Setting own_window_type to 'override' on Fedora 27 (conky 1.10.7) makes the
+    #     conky display not appear at all (joy).
+    # To try to solve ALL of the above problems, making a dynamic conkyrc file with a configurable mode.
 
     # To make things even more annoying, my laptop running Fedora 25
     #  in fact has problems with the desktop mode.
-    # For the moment, only the affected datacomm machines shall go to "desktop" mode.
 
     # TODO: Get a better idea about why these problems occur.
-    local window_type="${CONKY_WINDOW_TYPE:-override}"
+
+    # If using Cinnamon, set to dock unless we explicitly override it.
+    [[ "${GDMSESSION}" == "cinnamon" ]] && local default_window_type=dock
+
+    # Default
+    local window_type="${CONKY_WINDOW_TYPE:-${default_window_type:-override}}"
     if [[ "$window_type" == "none" ]]; then
         # Eliminate the line altogether
         sed -i "/OWN_WINDOW_TYPE/d" "$CONKYRC_PRIMARY"

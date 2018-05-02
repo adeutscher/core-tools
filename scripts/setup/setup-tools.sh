@@ -9,11 +9,9 @@ setup(){
 
     if pwd | grep -Pq "$HOME($|/)"; then
         # Setting up the tools locally for a user.
-        local marker="$(whoami)-tools-marker"
         global=0
     else
         # Setting up tools in a common directory (implied to be system-wide)
-        local marker="core-tools-marker"
         global=1
     fi
 
@@ -31,7 +29,7 @@ setup(){
 
         case "$SHELL" in
         "/bin/bash")
-            if uname | grep -qi "^Darwin" || uname | grep -qi "FreeBSD"; then
+            if uname | grep -qi -e "^Darwin" -e "FreeBSD"; then
                 printf "BSD-like operations are not supported at this time.\n"
                 exit 3
             fi
@@ -69,13 +67,18 @@ setup(){
     CONTENTS="$(cat << EOF
 #####################################
 # Core-Tools Suite
-export toolsDir="$(pwd)"
-if printf "\$-" | grep -q i || ( [ -z "\$SSH_CLIENT" ] && printf "\$TERM" | grep -q '^dumb$' ); then
-    # Load tools if we are in an interactive shell or if we are running a script from
-    #     from within a "dumb" shell with no value to $SSH_CLIENT (suggesting a Desktop Startup Script).
-    if [ -f "\$toolsDir/bash/bashrc" ]; then
-        . \$toolsDir/bash/bashrc
-    fi
+export toolsDir="${toolsDir}"
+if [[ \$- == *i* ]] || (( \${ANSIBLE:-0} )) || ( [ -z "\$SSH_CLIENT" ] && [[ "\$TERM" == 'dumb' ]] ); then
+  # Load tools if one of the following is true:
+  #   * We are in an interactive shell
+  #   * ANSIBLE variable is set to a non-zero number (library author's addition)
+  #   * We are running a script from from within a "dumb" shell with no value to \$SSH_CLIENT (suggesting a Desktop Startup Script).
+  if [ -f "\${toolsDir}/bash/bashrc" ]; then
+    . \${toolsDir}/bash/bashrc
+
+    # Convenient marker that tools have been loaded for later in bashrc.
+    TOOLS_LOADED=1
+  fi
 fi
 #####################################
 EOF

@@ -300,32 +300,6 @@ sleep-days(){
   sleep $((24*60*60*$1))
 }
 
-##########
-# Super-duper-lazy wait functions
-##########
-
-# Wait for a specified process to be done.
-# Different from the BASH built-in 'wait',
-#   as the built-in will only support children of the current shell.
-# The trade-off is that this function will not support returning exit codes.
-# It will also not support multiple PIDs, though that may change in the future.
-wait-for-pid(){
-  if [ -z "$1" ]; then
-    error "No PID provided."
-    return 1
-  fi
-  if ! grep -Pq '\d*' <<< "$1" || ! [ -d "/proc/$1" ]; then
-    error "$(printf "$BOLD%s$NC is not an active PID." "$1")"
-    return 2
-  fi
-
-  # Loop so long as the process exists.
-  # Assume that a replacement PIDs will not pop up in the meantime to replace the target.
-  while [ -d "/proc/$1" ]; do
-    sleep 1
-  done
-}
-
 #########
 # Silly #
 #########
