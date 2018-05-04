@@ -1,0 +1,21 @@
+---
+# Setup playbook for playing on a fresh Raspbian system.
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  remote_user: pi
+
+  tasks:
+    - name: abort if not raspbian
+      when: (ansible_lsb and ansible_lsb.id != "Raspbian")
+      fail: msg="Non-Raspbian distribution - {{ ansible_os_family }} ({{ ansible_distribution }})"
+
+    - name: install packages
+      become: yes
+      apt: name="{{ item }}" state="present"
+      with_items:
+        - tmux
+        - vim
+        - git
+        - subversion

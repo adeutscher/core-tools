@@ -11,6 +11,7 @@
 
 # Define colours
 if [ -t 1 ]; then
+  BOLD='\033[1m'
   RED='\033[1;31m'
   GREEN='\033[1;32m'
   NC='\033[0m' # No Color
@@ -30,10 +31,13 @@ end(){
 trap end SIGINT
 
 _a="${1}" # Address
-_t=60 # Target number
+_t="${2:-60}" # Target number
 
 if [ -z "${_a}" ]; then
   error "No address provided."
+  exit 1
+elif ! grep -Pq "^\d+$" <<< "${_t}"; then
+  error "$(printf "Invalid ping count: ${BOLD}%s${NC}" "${_t}")"
   exit 1
 fi
 

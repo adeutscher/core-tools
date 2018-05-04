@@ -3,14 +3,58 @@
 # Set up a Fedora Workstation.
 # My first major effort with Ansible playbooks.
 
-- hosts: "{{ variable_host | default('fedora-workstations') }}"
-  # Example to override 'fedora-workstations' grouping: --extra-vars "variable_host=127.0.0.1"
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
 
   environment:
     ANSIBLE: 1
 
   tasks:
+
+  - name: Install Repositories (Fedora)
+    become: yes
+    when: (ansible_distribution == "Fedora")
+    block:
+      - name: rpmfusion repositories
+        yum_repository:
+          name: "fedora-rpmfusion-{{ item }}"
+          description: "RPMFusion ({{ item }})"
+          baseurl: "http://download1.rpmfusion.org/{{ item }}/fedora/releases/{{ ansible_distribution_major_version }}/Everything/{{ ansible_architecture }}/os/"
+          metalink: "https://mirrors.rpmfusion.org/metalink?repo={{ item }}-fedora-{{ ansible_distribution_major_version }}&arch={{ ansible_architecture }}"
+          gpgcheck: yes
+          gpgkey: "https://rpmfusion.org/keys?action=AttachFile&do=view&target=RPM-GPG-KEY-rpmfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
+          ip_resolve: 4
+        with_items:
+          - "free"
+          - "nonfree"
+
+      - name: freerdp-nightly repository
+        yum_repository:
+          name: freerdp-nightly
+          description: freerdp-nightly
+          baseurl: http://pub.freerdp.com/repositories/rpm/fedora/{{ ansible_distribution_major_version }}/freerdp-nightly/
+          metadata_expire: 43200 # 12 hours
+          ip_resolve: 4
+
+      - name: google-chrome repository
+        yum_repository:
+          name: google-chrome
+          description: google-chrome
+          baseurl: "http://dl.google.com/linux/chrome/rpm/stable/{{ ansible_architecture }}"
+          gpgcheck: yes
+          gpgkey: "https://dl.google.com/linux/linux_signing_key.pub"
+
+      - name: skype-stable repository (skypeforlinux)
+        yum_repository:
+          name: skype-stable
+          description: skypeforlinux repo
+          baseurl: "https://repo.skype.com/rpm/stable/"
+          gpgcheck: yes
+          gpgkey: "https://repo.skype.com/data/SKYPE-GPG-KEY"
+
   - name: Install Fedora Packages
+    # Some Fedora checks are a bit redundant in this version.
+    when: (ansible_distribution == "Fedora")
     block:
       # Restrict to Fedora systems for the time being.
       # Support for other RedHat-based distributions can be added pending testing.
@@ -20,65 +64,101 @@
 
       ## Development Tools and CLI items
 
-      - name: install other development tools and cli items
+      - name: install/confirm other development tools and cli items
         dnf: name={{item}} state=latest
+        become: yes
         with_items:
           - vim      # vim editor
           - tmux     # tmux multiplexer
           - svn      # Subversion version control
           - git      # Git version control
           - astyle   # Artistic Style code formatter
+          - wget     # Network downloaded
+          - curl     # URL Handler
+          - python   # Python
+          - python3  # Python v3
+
+      - name: standard package updates
+        # Make sure that some boring common packages are up to date.
+        # Very similar
+        dnf: name={{item}} state=latest
+        become: yes
+        with_items:
+          - sed
+          - tar
+          - bash
+          - coreutils
+          - unzip
+          - zip
 
       - name: install the 'development-tools' package group
-        dnf: name='@development-tools' state=latest
         become: yes
+        dnf: name='@development-tools' state=latest
         # Install failed when run against a Fedora 25 machine due to a module problem.
         # F25 is already EoL at time of writing anyways (2018-05-01, Ansible 2.4.1), so this is not a major concern.
         # Tested on:
         #   F25->F27 (Success)
         #   F25->F25 (FAIL)
-        #   F26->F25 (Success)
+        #   F26->F25 (FAIL)
         #   F26->F26 (Success)
         # Possibly related to https://github.com/ansible/ansible/issues/26868.
         when: (ansible_distribution == "Fedora" and ansible_distribution_version >= "26")
 
-      ## Desktop Items
-
-      - name: install desktop machine packages
+      ## Network-Based Items
+      - name: install network utilities
+        become: yes
         dnf: name={{item}} state=latest
         with_items:
-          - conky         # Desktop information display
-          - firefox       # Web Browser
-          - geany         # Code Editor
-          - tigervnc      # VNC Client
-          - x11vnc        # Ad-Hoc VNC Server
-          - slick-greeter # Really neat-looking greeter (originated with Ubuntu?)
+          - nmap             # Network discovery
+          - nmap-ncat        # Network Swiss Army Knife
+          - wireshark        # Packet Captures
+          - tcpdump          # Packet Captures
+          - openconnect      # OpenConnect VPN (compatible with Cisco AnyConnect)
+          - vpnc-script      # Used by openconnect
+          - openvpn          # OpenVPN
+          - openssh-clients  # SSH Client
+          - openssh-server   # SSH Server
+          - openssl          # OpenSSL
+
+      ## Desktop Items
+
+      - name: install/update desktop machine packages
+        become: yes
+        dnf: name={{item}} state=latest
+        with_items:
+          - conky               # Desktop information display
+          - firefox             # Web Browser
+          - google-chrome       # Fallback Web Browser
+          - geany               # Code Editor
+          - tigervnc            # VNC Client
+          - x11vnc              # Ad-Hoc VNC Server
+          - slick-greeter       # Really neat-looking greeter (originated with Ubuntu?)
+          - freerdp-nightly     # RDP Client
+          - skypeforlinux       # Chat client
+          - wireshark-gtk       # Wireshark GUI
+          - libreoffice-calc    # Spreadsheets
+          - libreoffice-writer  # Word
+          - libreoffice-impress # Slideshows
+          - NetworkManager      # Network Management Service
 
       # Remove Default Greeter for Fedora MATE spin
       - name: remove lightdm-gtk greeter
         dnf: name=lightdm-gtk state=absent
         become: yes
 
-      ## Network-Based Items
-
-      - name: install network utilities
-        dnf: name={{item}} state=latest
-        with_items:
-          - nmap
-          - nmap-ncat
-          - wireshark
-          - openvpn
-
+      # Tidy Up
       - name: check dnf version
         shell: warn=false dnf --version | head -n1
         register: dnf_check
         changed_when: false # Never announce as changed.
 
-      # Tidy Up
       - name: Autoremove unneeded packages installed as dependencies
-        dnf: autoremove=yes
         become: yes
+        dnf: autoremove=yes
         # Requires DNF v2.0.1 or greater.
-        when: dnf_check.stdout is version('2.0.1', '>=')
-    # Some Fedora checks are a bit redundant in this version.
-    when: (ansible_distribution == "Fedora")
+        # 'version_compare' was renamed to 'version' with Ansible 2.5.
+        # However, the old 'version_compare' name is still available with no apparent strings attached.
+        when: (dnf_check.stdout and dnf_check.stdout is version_compare('2.0.1', '>='))
+
+  - name: openssh service
+    service: name=sshd state=started

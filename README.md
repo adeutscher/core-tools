@@ -17,7 +17,11 @@ The `scripts/setup/` directory also contains the following setup assist scripts:
 
 ## Useful Features
 
-The core tools hold a number of useful functions.
+The core tools hold a number of useful scripts and functions.
+
+### Ansible
+
+The `files/ansible/` directory is made to hold playbooks that I use for setting up my environments.
 
 ### Battery
 
