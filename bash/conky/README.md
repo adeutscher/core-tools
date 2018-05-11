@@ -24,76 +24,35 @@ Switches:
 | `-d`        | Debug mode. Runs `conky` in the foreground instead of the normal behavior of working in the background.                               |
 | `-r`        | Restart. Runs `killall` to kill ***all*** `conky` instances before starting this display. Beware if running a separate configuration. |
 
-### Variables (Primary Display)
+### Variables
 
-The main `conky` display uses the following environment variables:
+The following environment variables can be exported to affect my `conky` display:
 
-* Export a different value to `DISPLAY_HOSTNAME` to change the
-    displayed hostname. Useful for if you need to temporarily
-    obfuscate your hostname for a screenshot.
-* The `$CONKY_SCREEN` environment variable controls which screen that
-    the primary `conky` display will appear in the bottom-right corner of.
-  * Use `xrandr` to list your connected displays. Example values:
-    * DVI-0
-    * DVI-1
-    * HDMI-0
-  * If no value is given in either the `CONKY_SCREEN` variable or the
-      `-s` switch, then the default screen is your primary display.
-* The `CONKY_WINDOW_TYPE` variable (default **override**) sets the `own_window_type` property in your conky config.
-* The `CONKY_PADDING_X` (default **10**) and `CONKY_PADDING_Y`
-    (default **35**) variables determine the offset of your primary
-    conky display from your chosen screen.
-  * The defaults were chosen to give a sliver of padding from the
-      right-hand side of a screen and a MATE panel.
-* Set `CONKY_IGNORE_INTERFACES` to tell `conky` which network interface(s) to ignore.
-  * `CONKY_IGNORE_INTERFACES` should be a space-delimited list.
-  * Example content to ignore both `wlan0` and `wlan1`:
-      `export CONKY_IGNORE_INTERFACES="wlan0 wlan1"`
-* Set `CONKY_IGNORE_FS` to tell `conky` which file system(s) to ignore.
-  * `CONKY_IGNORE_FS` should be a space-delimited list.
-  * Example content to ignore the file systems mounted to `/mnt` and `/srv`:
-      `export CONKY_IGNORE_FS="/mnt /srv"`
-* Set `CONKY_ALL_NFS_FAR` to **1** to treat **all** NFS/CIFS mounts as remote by default
-    (i.e. do not print usage info).
-* Set `CONKY_NETWORK_INDEX` and `CONKY_NETWORK_CACHE` to set where
-    `conky` for a CSV to use for resolving MAC addresses to
-    user-friendly labels (see below for notes on using labels).
-  * By default, `CONKY_NETWORK_INDEX` links to my "secure" module using
-      the `secureToolsDir` variable. This makes the default fairly
-      useless to anyone who doesn't use an identical naming scheme.
-* Some environment variables beginning with `CONKY_DISABLE_` disable
-    specific features if you absolutely do not want a feature on a
-    particular system.
-  * Set `CONKY_DISABLE_TMUX` to **1** to disable the display of `tmux` sessions.
-  * Set `CONKY_DISABLE_FILES` to **1** to disable the display of
-      file system information.
-  * Set `CONKY_DISABLE_NETWORK` to **1** to disable the display of
-      networking information.
-  * Set `CONKY_DISABLE_BLUETOOTH` to **1** to disable the display of
-      connected Bluetooth devices.
-  * Set `CONKY_DISABLE_VMS` to **1** to skip the VM display in `scripts/vms.sh`
+| Variable                  | Effect                                                                                                        | Example Value(s)    |
+|---------------------------|---------------------------------------------------------------------------------------------------------------|---------------------|
+| CONKY_SCREEN              | Controls primary display location. Display will be placed in the bottom-right corner.                         | DVI-1, HDMI-0       |
+| CONKY_PADDING_X           | Horizontal offset of primary display from bottom-right corner (default: 10).                                  | 10                  |
+| CONKY_PADDING_Y           | Vertical offset of primary display from bottom-right corner (default: 35).                                    | 35                  |
+| CONKY_ENABLE_CLOCK        | Set to '1' to enable a time display in system information area.                                               | 1                   |
+| CONKY_ENABLE_TASKS        | Set to '1' to enable the secondary display (off by default). See "Tasks Display" section for more information | 1                   |
+| CONKY_SECONDARY_SCREEN    | Controls secondary display location. Display will be placed in the bottom-right corner.                       | DVI-1, HDMI-0       |
+| CONKY_SECONDARY_PADDING_X | Horizontal offset of secondary display from bottom-left corner (default: 10).                                 | 10                  |
+| CONKY_SECONDARY_PADDING_Y | Vertical offset of secondary display from bottom-left corner (default: 35).                                   | 35                  |
+| CONKY_TASKS_FILE          | Path to tasks CSV file read by secondary display.                                                             | ${HOME}/tasks.csv   |
+| CONKY_WINDOW_TYPE         | Customize `own_window_type` window type property in `conky` configuration.                                    | override, dock      |
+| CONKY_IGNORE_INTERFACES   | Space-delimited list of network interfaces to be ignored.                                                     | "lo eth0"           |
+| CONKY_IGNORE_FS           | Space-delimited list of file systems to be ignored.                                                           | "/srv/data"         |
+| CONKY_ALL_NFS_FAR         | Treat all NFS/CIFS mounts as "remote" by default and do not print space information.                          | 1, 0                |
+| CONKY_NETWORK_INDEX       | Set location of MAC label index (see below for notes on using MAC labels).                                    | "${HOME}/index.csv" |
+| CONKY_NETWORK_INDEX       | Set location of MAC label cache (see below for notes on using MAC labels).                                    | "/tmp/index.csv"    |
+| CONKY_DISABLE_TMUX        | Do not run list `tmux` sessions.                                                                              | 1                   |
+| CONKY_DISABLE_FILES       | Do not list file system information.                                                                          | 1                   |
+| CONKY_DISABLE_NETWORK     | Do not run list network interface information.                                                                | 1                   |
+| CONKY_DISABLE_BLUETOOTH   | Do not list connected Bluetooth devices.                                                                      | 1                   |
+| CONKY_DISABLE_VMS         | Do not list virtual machines.                                                                                 | 1                   |
+| DISPLAY_HOSTNAME          | Spoof hostname display. Useful for screenshots. Can also be set with `prompt-set-hostname` function           | demo.localdomain    |
 
-### Tasks Display
-
-This `conky` setup also has an optional tasks display.
-Unlike the primary displays options, this feature is disabled by default.
-
-* Set `$CONKY_ENABLE_TASKS` to **1** to enable the secondary display.
-    Off by defaut. See the ***Calendar*** section for more information
-    on the secondary display.
-* The `$CONKY_SECONDARY_SCREEN` environment variable controls which screen that
-    the `conky` tasks display will appear in the bottom-right corner of.
-  * Use `xrandr` to list your connected displays. Example values:
-    * DVI-0
-    * DVI-1
-    * HDMI-0
-* The `CONKY_SECONDARY_PADDING_X` (default **10**) and `CONKY_SECONDARY_PADDING_Y`
-    (default **35**) variables determine the offset of your secondary
-    `conky` display from your chosen screen.
-  * The defaults were chosen to give a sliver of padding from the
-      left-hand side of a screen and a MATE panel.
-* Set `CONKY_TASKS_FILE` to set the path of the CSV file that the tasks display
-    will read from. See below for format details. The default path is `$HOME/tools/tasks.csv`.
+#### Tasks Display
 
 Example format of the CSV file specified by `CONKY_TASKS_FILE`:
 
@@ -109,8 +68,8 @@ Populating this file is the responsibility of the user,
 ## `virsh`
 
 In order to use `virsh` to list virtual machines, it's assumed that the user
-    has permissions to list VMs in a terminal. I do this by creating
-    a PolKit rule like this one in a `.rules` file in `/etc/polkit-1/rules.d/`:
+    has permissions to list VMs in a terminal. This can be done with a PolKit rule
+    in a `.rules` file in `/etc/polkit-1/rules.d/` such as the one below for the ***wheel*** group:
 
     polkit.addRule(function(action, subject) {
         if (action.id == "org.libvirt.unix.manage" &&
@@ -128,4 +87,4 @@ Below is a sample of the format used by the files specified in the
   `CONKY_NETWORK_INDEX` and `CONKY_NETWORK_CACHE` environment variables:
 
     owner,type,mac,label,general-location,specific-location,description,notes
-    Bob,Bluetooth,18:2a:7b:3d:aa:bb,WiiU Pro,Home,Bookshelf,Used for games,purchased 2014
+    Bob,Bluetooth Device,18:2a:7b:3d:aa:bb,WiiU Pro,Home,Bookshelf,Used for games,purchased 2014

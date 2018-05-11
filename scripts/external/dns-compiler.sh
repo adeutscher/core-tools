@@ -106,8 +106,11 @@ __get_connection_nameserver(){
     local nameservers="$INTERNAL_IP4_DNS"
     ;;
   "$TYPE_NETWORK_MANAGER")
-    # Space-delimited (Source: NetworkConnect man page)
-    local nameservers="$IP4_NAMESERVERS"
+    # IP4_NAMESERVERS is space-delimited (Source: NetworkConnect man page)
+    # DHCP4_DOMAIN_NAME_SERVERS is also space-delimited.
+    # Also using DHCP4_DOMAIN_NAME_SERVERS.
+    # IP4_NAMESERVERS can be overridden by user-specific preferences for a DNS server, so it should be a fallback for domains.
+    local nameservers="${DHCP4_DOMAIN_NAME_SERVERS} ${IP4_NAMESERVERS}"
     ;;
   "$TYPE_OPENVPN")
     # Cycle through opts for push "DNS" options
@@ -135,7 +138,7 @@ __get_connection_nameserver(){
 }
 
 __get_connection_domains(){
-  # Get connection domains and print them out as a space-delimited listing
+  # Get connection domains and print them out as a deduplicated, space-delimited listing.
   case "$(__get_connection_type)" in
   "$TYPE_CISCO")
     # anyconnect gives domains in comma-delimited format
@@ -144,7 +147,8 @@ __get_connection_domains(){
     ;;
   "$TYPE_NETWORK_MANAGER")
     # IP4_DOMAINS is already space-delimited (see: NetworkManager man page)
-    local domains="$IP4_DOMAINS"
+    # A server may alternately (or also?) hand out an item in DHCP4_DOMAIN_NAME
+    local domains="${DHCP4_DOMAIN_NAME} ${IP4_DOMAINS}"
     ;;
   "$TYPE_OPENVPN")
     # Cycle through opts for push "DNS" options
@@ -164,7 +168,7 @@ __get_connection_domains(){
     if __is_domain "$domain"; then
       printf "%s\n" "$domain"
     fi
-  done
+  done | sort | uniq
   unset domain
 }
 

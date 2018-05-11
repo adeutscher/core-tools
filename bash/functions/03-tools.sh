@@ -11,7 +11,7 @@ if __is_unix; then
         unset __toolCount
 
         # Unset module directories so that they can be re-initialized as if freshly loaded if necessary.
-        for __var in $((set -o posix; set) | grep ToolsDir= | cut -d'=' -f1); do
+        for __var in $(env | grep -P "^[^=]+ToolsDir=" | cut -d'=' -f1); do
             unset $__var
         done
 
@@ -73,7 +73,7 @@ if type -ftptP git 2> /dev/null >&2 || type -ftptP svn 2> /dev/null >&2; then
             return 1
         fi
 
-        update-repo "$toolsDir" "tools"
+        update-repo "$toolsDir" "tools" || return 1
 
         # Apply updates to various files.
         for __script in setup-tools crontab-setup tmux-configuration vimrc-setup; do

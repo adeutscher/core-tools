@@ -174,6 +174,8 @@ urldecode() {
 alias vsed="perl -ne 'print unless /(^|\/)((\.svn|\.hg|\.git)\/)/'"
 # Strip out BASH colours
 alias csed='sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g"'
+# Snip trailing spaces
+alias ssed='sed -r "s/\s+$//g"'
 
 # Xargs Aliases
 alias xargs-0="xargs -0"

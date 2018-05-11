@@ -1,0 +1,19 @@
+---
+
+- hosts: all
+
+  vars:
+    repo:
+      name: "freerdp-nightly"
+      url: "https://pub.freerdp.com/repositories/rpm/fedora/$releasever/freerdp-nightly/"
+
+  tasks:
+    - name: "{{ repo.name }} repository"
+      become: yes
+      yum_repository:
+        name: "{{ repo.name }}"
+        description: "{{ repo.name }}"
+        baseurl: "{{ repo.url }}"
+        metadata_expire: 43200 # 12 hours
+        ip_resolve: 4
+        gpgcheck: no

@@ -1,0 +1,32 @@
+---
+
+- hosts: all
+
+  tasks:
+
+    - name: rpmfusion fedora repositories
+      when: (ansible_distribution == "Fedora")
+      block:
+
+      - name: "rpmfusion gpg keys for fedora {{ ansible_distribution_major_version }}"
+        get_url:
+          url: "https://rpmfusion.org/keys?action=AttachFile&do=get&target=RPM-GPG-KEY-rpmfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
+          dest: "/etc/pki/rpm-gpg/RPM-GPG-KEY-rmpfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
+          owner: "root"
+          group: "root"
+        with_items:
+          - "free"
+          - "nonfree"
+
+      - name: "rpmfusion repositories"
+        yum_repository:
+          name: "fedora-rpmfusion-{{ item }}"
+          description: "RPMFusion ({{ item }})"
+          baseurl: "http://download1.rpmfusion.org/{{ item }}/fedora/releases/$releasever/Everything/$basearch/os/"
+          metalink: "https://mirrors.rpmfusion.org/metalink?repo={{ item }}-fedora-$releasever&arch=$basearch"
+          gpgcheck: yes
+          gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-rmpfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
+          ip_resolve: 4
+        with_items:
+          - "free"
+          - "nonfree"

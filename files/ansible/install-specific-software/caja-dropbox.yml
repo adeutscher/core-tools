@@ -1,0 +1,58 @@
+---
+
+- hosts: all
+
+  vars:
+
+    git:
+      name: "caja-dropbox"
+      src: "https://github.com/mate-desktop/caja-dropbox.git"
+      dest: "{{ ansible_user_dir }}/.local/ansible-deployments/caja-dropbox"
+
+    packages_redhat:
+      # TODO: Confirm that the package list is complete.
+      - gcc
+      - make
+      - caja-devel
+      - mate-common
+      - python2-docutils
+
+  tasks:
+    - name: install dependencies (dnf)
+      become: yes
+      when: ansible_pkg_mgr == "dnf"
+      dnf: name="{{ item }}" state="latest"
+      with_items: "{{ packages_redhat }}"
+
+    - name: get {{ git.name }}
+      git:
+        repo: "{{ git.src }}"
+        dest: "{{ git.dest }}"
+      notify: autogen {{ git.name }}
+
+  handlers:
+
+    - name: autogen caja-dropbox
+      shell: ./autogen.sh
+      args:
+        chdir: "{{ git.dest }}"
+      notify: configure {{ git.name }}
+
+    - name: configure caja-dropbox
+      shell: ./configure
+      args:
+        chdir: "{{ git.dest }}"
+      notify: build {{ git.name }}
+
+    - name: build caja-dropbox
+      shell: make
+      args:
+        chdir: "{{ git.dest }}"
+
+      notify: install {{ git.name }}
+
+    - name: install caja-dropbox
+      become: yes
+      shell: make install
+      args:
+        chdir: "{{ git.dest }}"

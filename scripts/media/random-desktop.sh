@@ -39,8 +39,8 @@ while getopts "d:fhst:v" opt; do
         fi
         ;;
     f)
-        if [ -f "$backgroundIndexFile" ]; then
-            rm "$backgroundIndexFile"
+        if [ -n "${backgroundIndexFile}" ] [ -f "${backgroundIndexFile}" ]; then
+            rm "${backgroundIndexFile}"
         fi
         ;;
     h)
@@ -83,13 +83,11 @@ if (( ${haveError:-0} )); then
 fi
 
 # If the image directory does not exist, do not bother continuing the script.
-if [ -z "$imageDir" ] && (( "$verbose" )); then
-    printf "\$imageDir variable is blank. No image directory specified...\n"
+if [ -z "$imageDir" ]; then
+    printf "\$imageDir variable is blank. No image directory specified...\n" >&2
     exit 1
-fi
-
-if [ ! -d "$imageDir" ] && (( "$verbose" )); then
-    printf "Image directory not found at %s\n" "$imageDir"
+elif [ ! -d "$imageDir" ]; then
+    printf "Image directory not found at %s\n" "$imageDir" >&2
     exit 1
 fi
 
@@ -123,10 +121,12 @@ __select_random_background(){
             __old_dbus="$DBUS_SESSION_BUS_ADDRESS"
         fi
 
-        # Delete an index that is older than 3 hours (.125 * 24)
+        # Delete an index that is either:
+        #   * Older than 3 hours (.125 * 24)
+        #   * Empty (suggesting an index error earlier on).
         # Ignore any errors
         #   Any stderr output should be due to the index file not currently existing (fresh boot?)
-        find "$backgroundIndexFile" -mtime +.125 2> /dev/null | xargs -I{} rm {}
+        find "$backgroundIndexFile" -mtime +.125 -o -size 0 2> /dev/null | xargs -I{} rm {}
 
         # Index our backgrounds if we have not already done so.
         if [ ! -f "$backgroundIndexFile" ]; then
@@ -144,6 +144,7 @@ __select_random_background(){
         fi # End index file check
 
         newBg=$(cat "$backgroundIndexFile" | shuf -n 1)
+
         if [ -n "$newBg" ]; then
 
             if (( "$verbose" )); then
@@ -166,6 +167,7 @@ __select_random_background(){
             done
         else
             # background was blank
+            printf "No potential image found.\n" >&2
             local __return_value=2
         fi
 

@@ -1,0 +1,30 @@
+---
+
+- hosts: all
+
+  vars:
+    google_repo:
+      name: "google-chrome"
+      url: "http://dl.google.com/linux/chrome/rpm/stable/$basearch"
+      gpgkey:
+        src: "https://dl.google.com/linux/linux_signing_key.pub"
+        dest: "/etc/pki/rpm-gpg/google_linux_signing_key.pub"
+
+  tasks:
+
+  - name: "install google gpg key"
+    become: yes
+    get_url:
+      url: "{{ google_repo.gpgkey.src }}"
+      dest: "{{ google_repo.gpgkey.dest }}"
+      owner: "root"
+      group: "root"
+
+  - name: "{{ google_repo.name }} repository"
+    become: yes
+    yum_repository:
+      name: "{{ google_repo.name }}"
+      description: "{{ google_repo.name }}"
+      baseurl: "{{ google_repo.url }}"
+      gpgcheck: yes
+      gpgkey: "file://{{ google_repo.gpgkey.dest }}"

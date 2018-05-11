@@ -326,7 +326,7 @@ __prompt_hostname_colour (){
 
 __prompt_username_colour (){
   case "${1:-${DISPLAY_USER:-$(whoami)}}" in
-    "redacted-username"|"redacted-name")
+    "adeutscher"|"redacted-name")
       printf "$Colour_BIBlue"
       ;;
     "root")

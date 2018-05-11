@@ -24,23 +24,14 @@ unset __BAT_NUM
 if [ -n "$__BATTERY_DIR" ]; then
     alias battery='echo "Battery status: $(cat "$__BATTERY_DIR/capacity")% ($(cat "$__BATTERY_DIR/status"))"'
     alias battery-short="cat $__BATTERY_DIR/capacity"
+    alias __is_laptop="(( 1 ))"
 else
     # For desktop machines.
     alias battery='echo "No battery detected..."'
     # Add a command so that getting the short battery is not just "not found".
     alias battery-short="echo 0"
+    alias __is_laptop="(( 0 ))"
 fi
-
-__is_laptop(){
-    if [ -d /proc/acpi/battery/BAT* ] || [ -h /sys/class/power_supply/BAT* ]; then
-        # For the moment, using the presence or lack of a battery
-        #     as a lazy litmus test for the current system being a laptop or not.
-        # Not a whole lot of desktops with batteries, but I'd still like to
-        #     find a better method to use in the future...
-        return 0
-    fi
-    return 1
-}
 
 # Make default memory display more verbose.
 alias free='free -m -l -t' # show sizes in MB, with verbose information.

@@ -34,7 +34,8 @@ warning(){
 # Need to get at an updater script in scripts/system/
 DOTFILE_SCRIPT="$(readlink -f "$(dirname "$(readlink -f "${0}")")/../system/update-dotfile.sh")"
 
-if ! (( ${IGNORE_DOTFILES:-0} )) && ! ( [ -f "${DOTFILE_SCRIPT}" ] && [ -x "${DOTFILE_SCRIPT}" ] ); then
+if ! (( ${IGNORE_DOTFILES:-0} )) && ! ( [ -f "${DOTFILE_SCRIPT}" ] && ( [ -n "${WINDIR}" ] || [ -x "${DOTFILE_SCRIPT}" ] ) ); then
+  echo "${DOTFILE_SCRIPT}"
   error "$(printf "Dotfile update script not found or not runnable: ${GREEN}%s${NC}" "$(sed "s|^${HOME}|~|" <<< "${DOTFILE_SCRIPT}")")"
   exit 1
 fi

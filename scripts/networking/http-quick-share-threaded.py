@@ -392,6 +392,8 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         printf!).
         The client host and current date/time are prefixed to
         every message.
+
+        Modified to have a bit more colour, as Apache-style logging was not deemed a requirement for this script.
         """
 
         if type(args[0]) == int:
@@ -414,11 +416,19 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         elif args[1] == "404":
             extra_info = '[%s%s%s]' % (COLOUR_RED, "File Not Found", COLOUR_OFF)
 
+        # Does address string match the client address? If not, print both.
         s = self.address_string()
+
+        # A 400 (bad request) error is more likely to contain corrupted information.
+        # A likely cause of a bad request is a non-HTTP protocol being used (e.g. HTTPS, SSH).
+        # We do not want to print this information, so we will be overwriting our args tuple.
+        if args[1] == "400":
+            args = ("%s%s%s" % (COLOUR_RED, "BAD REQUEST", COLOUR_OFF), args[1], args[2])
+
         if s == self.client_address[0]:
             sys.stdout.write("%s%s%s [%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
         else:
-            sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
+            sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, s, COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
 
     def parse_request(self):
         """Parse a request (internal).

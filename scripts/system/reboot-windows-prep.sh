@@ -76,7 +76,11 @@ reboot_windows_prep(){
     local grubenv=$(find /boot -type f -name grubenv 2> /dev/null | head -n1)
 
     # Only call sudo if we cannot already write to the file.
-    if [ ! -w "$grubenv" ]; then
+    if [ -z "$grubenv" ]; then
+        notice "$(printf "No ${GREEN}%s${NC} file found, ${BLUE}%s${NC} will be used." "grubenv" "sudo")"
+        local sudo=sudo
+    elif [ ! -w "$grubenv" ]; then
+        notice "$(printf "The ${GREEN}%s${NC} file is not writable by current user ${BOLD}%s${NC}, ${BLUE}%s${NC} will be used." "${grubenv}" "$(whoami)" "sudo")"
         local sudo=sudo
     fi
 
@@ -90,7 +94,15 @@ reboot_windows_prep(){
 
 check_env
 
+# Use the first grub config that we can find.
 GRUB_CONFIG=$(find /boot -name 'grub.cfg' 2> /dev/null | head -n1)
+
+if [ -z "${GRUB_CONFIG}" ]; then
+  error "$(printf "Unable to find a GRUB config file in ${GREEN}%s${NC}." "/boot")"
+  # The most likely reason for not being able to find a configuration is that the directory is only readable by root.
+  (( "${EUID}" )) && notice "$(printf "Does the ${BOLD}%s${NC} user have proper read permissions?" "${USER}")"
+  exit 1
+fi
 
 if [ -n "$GRUB_CONFIG" ]; then
     # Trust that only the Windows OS will have "Windows" in the menuentry line.

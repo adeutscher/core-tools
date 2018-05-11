@@ -5,13 +5,6 @@
 ${0%/*}/../../bash/conky/start.sh
 
 if [ -f "$HOME/.local/DiscordCanary/DiscordCanary" ]; then
-    "$HOME/.local/DiscordCanary/DiscordCanary" &
+  "$HOME/.local/DiscordCanary/DiscordCanary" &
 fi
-
-#
-if type skype 2> /dev/null >&2; then
-    skype &
-fi
-
-
 

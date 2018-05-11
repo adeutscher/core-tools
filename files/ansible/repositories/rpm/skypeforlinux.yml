@@ -1,0 +1,30 @@
+---
+
+- hosts: all
+
+  vars:
+    skype_repo:
+      name: "skype-stable"
+      url: "https://repo.skype.com/rpm/stable/"
+      gpgkey:
+        src: "https://repo.skype.com/data/SKYPE-GPG-KEY"
+        dest: "/etc/pki/rpm-gpg/SKYPE-GPG-KEY"
+
+  tasks:
+
+  - name: "install {{ skype_repo.name }} gpg key"
+    become: yes
+    get_url:
+      url: "{{ skype_repo.gpgkey.src }}"
+      dest: "{{ skype_repo.gpgkey.dest }}"
+      owner: "root"
+      group: "root"
+
+  - name: "{{ skype_repo.name }} repository"
+    become: yes
+    yum_repository:
+      name: "{{ skype_repo.name }}"
+      description: "{{ skype_repo.name }}"
+      baseurl: "{{ skype_repo.url }}"
+      gpgcheck: yes
+      gpgkey: "file://{{ skype_repo.gpgkey.dest }}"

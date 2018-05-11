@@ -1,0 +1,40 @@
+---
+
+- hosts: all
+
+  vars:
+    pkg: "python-setuptools"
+    git_src: "https://github.com/rg3/youtube-dl.git"
+    git_dest: "{{ ansible_user_dir }}/.local/youtube-dl"
+
+  tasks:
+
+  - name: install package (dnf)
+    become: yes
+    when: ansible_pkg_mgr == "dnf"
+    dnf: name="{{ pkg }}" state="latest"
+
+  - name: install package (yum)
+    become: yes
+    when: ansible_pkg_mgr == "yum"
+    yum: name="{{ pkg }}" state="latest"
+
+  - name: get youtube-dl source
+    git:
+      repo: "{{ git_src }}"
+      dest: "{{ git_dest }}"
+    notify: build youtube-dl
+
+  handlers:
+
+  - name: build youtube-dl
+    shell: python setup.py clean && python setup.py build
+    args:
+      chdir: "{{ git_dest }}"
+    notify: install youtube-dl
+
+  - name: install youtube-dl
+    become: yes
+    shell: python setup.py install
+    args:
+      chdir: "{{ git_dest }}"

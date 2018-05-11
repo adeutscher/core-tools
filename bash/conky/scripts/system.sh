@@ -12,8 +12,10 @@ printf "\${color #${colour_header}}\${font Neuropolitical:size=16:bold}%s\${font
 # Time #
 ########
 
-# If you do not have a clock applet running, print the time.
-if ! pgrep -u ${UID} clock-applet > /dev/null; then
+# Print the time on request.
+# This check used to hinge off of detecting the clock-applet, but a later version of the MATE desktop spawned no new processes
+#   for the applet. The check probably wasn't entirely compatible with other desktop environments to begin with, anyways.
+if (( ${CONKY_ENABLE_CLOCK:-0} )); then
     printf "\${color grey}Time:\${color} \${time %%I}:\${time %%M}:\${time %%S} \${time %%P} (\${time %%Y}-\${time %%m}-\${time %%d}) \n"
 fi
 

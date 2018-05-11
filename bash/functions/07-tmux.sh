@@ -45,7 +45,6 @@ if qtype tmux; then
       local __etas="${__etas}E"
     fi
  
-    local __etas="${__etas}d"
     # Check if the session already exists.
     if tmux list-sessions 2> /dev/null | grep -qP "^${1}:"; then
         # Session exists, attach.

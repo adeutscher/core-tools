@@ -23,7 +23,7 @@ build_tmux(){
     "laptop."*)
         # Imitate laptop colouring
         bg=colour34
-        fg=colour220
+        fg=colour226
         status_fg="black"
         style=laptop
     ;;
@@ -79,8 +79,7 @@ build_tmux(){
 
   # Note: Stretching command output across multiple lines makes geany colour formatting act strangely, but BASH has no problems with running it.
   CONTENT="$(cat << EOF
-
-## Theming
+## "${style}" Theming
 
 set-window-option -g status-bg $bg
 set-window-option -g status-fg $fg
@@ -103,7 +102,7 @@ bind M setw synchronize-panes
 
 # Reload
 bind R source-file ~/.tmux.conf
-
+##
 EOF
 )"
 
@@ -115,14 +114,6 @@ check_commands(){
   #   but we will give a quick reminder.
   if ! type tmux 2> /dev/null >&2; then
     warning "$(printf "Reminder: ${BLUE}%s${NC} is not yet installed on this machine. Configuration will still be written.\n" "tmux")"
-  fi
-
-  # Script is expected to be in scripts/setup/.
-  # Need to get at an updater script in scripts/system/
-  DOTFILE_SCRIPT="$(readlink -f "$(dirname "$(readlink -f "${0}")")/../system/update-dotfile.sh")"
-
-  if ! ( [ -f "${DOTFILE_SCRIPT}" ] && [ -x "${DOTFILE_SCRIPT}" ] ); then
-    error "$(printf "Dotfile update script not found or not runnable: ${GREEN}%s${NC}" "$(sed "s|^${HOME}|~|" <<< "${DOTFILE_SCRIPT}")")"
   fi
 
   (( ${__error_count:-0} )) && return 1

@@ -6,6 +6,27 @@
 - hosts: "{{ variable_host | default('all') }}"
   # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
 
+  vars:
+    # Maximum version of Fedora that supports the freerdp-nightly repository
+    # A check is necessary because the repository is not present immediately after the launch of a new Fedora version.
+    # For example, the fedora-28 repository did not exist as of 2018-05-04.
+    # This variable makes for an easy toggle.
+    freerdp_nightly_max_version: "27"
+
+    google_repo:
+      name: "google-chrome"
+      url: "http://dl.google.com/linux/chrome/rpm/stable/$basearch"
+      gpgkey:
+        src: "https://dl.google.com/linux/linux_signing_key.pub"
+        dest: "/etc/pki/rpm-gpg/google_linux_signing_key.pub"
+
+    skype_repo:
+      name: "skype-stable"
+      url: "https://repo.skype.com/rpm/stable/"
+      gpgkey:
+        src: "https://repo.skype.com/data/SKYPE-GPG-KEY"
+        dest: "/etc/pki/rpm-gpg/SKYPE-GPG-KEY"
+
   environment:
     ANSIBLE: 1
 
@@ -15,42 +36,73 @@
     become: yes
     when: (ansible_distribution == "Fedora")
     block:
-      - name: rpmfusion repositories
+
+      - name: "rpmfusion gpg keys for fedora {{ ansible_distribution_major_version }}"
+        get_url:
+          url: "https://rpmfusion.org/keys?action=AttachFile&do=get&target=RPM-GPG-KEY-rpmfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
+          dest: "/etc/pki/rpm-gpg/RPM-GPG-KEY-rmpfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
+          owner: "root"
+          group: "root"
+        with_items:
+          - "free"
+          - "nonfree"
+
+      - name: "rpmfusion repositories"
         yum_repository:
           name: "fedora-rpmfusion-{{ item }}"
           description: "RPMFusion ({{ item }})"
-          baseurl: "http://download1.rpmfusion.org/{{ item }}/fedora/releases/{{ ansible_distribution_major_version }}/Everything/{{ ansible_architecture }}/os/"
-          metalink: "https://mirrors.rpmfusion.org/metalink?repo={{ item }}-fedora-{{ ansible_distribution_major_version }}&arch={{ ansible_architecture }}"
+          baseurl: "http://download1.rpmfusion.org/{{ item }}/fedora/releases/$releasever/Everything/$basearch/os/"
+          metalink: "https://mirrors.rpmfusion.org/metalink?repo={{ item }}-fedora-$releasever&arch=$basearch"
           gpgcheck: yes
-          gpgkey: "https://rpmfusion.org/keys?action=AttachFile&do=view&target=RPM-GPG-KEY-rpmfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
+          gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-rmpfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
           ip_resolve: 4
         with_items:
           - "free"
           - "nonfree"
 
       - name: freerdp-nightly repository
+        when: ansible_distribution_major_version <= freerdp_nightly_max_version
         yum_repository:
           name: freerdp-nightly
           description: freerdp-nightly
-          baseurl: http://pub.freerdp.com/repositories/rpm/fedora/{{ ansible_distribution_major_version }}/freerdp-nightly/
+          baseurl: https://pub.freerdp.com/repositories/rpm/fedora/$releasever/freerdp-nightly/
           metadata_expire: 43200 # 12 hours
           ip_resolve: 4
+          gpgcheck: no
 
-      - name: google-chrome repository
-        yum_repository:
-          name: google-chrome
-          description: google-chrome
-          baseurl: "http://dl.google.com/linux/chrome/rpm/stable/{{ ansible_architecture }}"
-          gpgcheck: yes
-          gpgkey: "https://dl.google.com/linux/linux_signing_key.pub"
+      - name: "install google gpg key"
+        become: yes
+        get_url:
+          url: "{{ google_repo.gpgkey.src }}"
+          dest: "{{ google_repo.gpgkey.dest }}"
+          owner: "root"
+          group: "root"
 
-      - name: skype-stable repository (skypeforlinux)
+      - name: "{{ google_repo.name }} repository"
+        become: yes
         yum_repository:
-          name: skype-stable
-          description: skypeforlinux repo
-          baseurl: "https://repo.skype.com/rpm/stable/"
+          name: "{{ google_repo.name }}"
+          description: "{{ google_repo.name }}"
+          baseurl: "{{ google_repo.url }}"
           gpgcheck: yes
-          gpgkey: "https://repo.skype.com/data/SKYPE-GPG-KEY"
+          gpgkey: "file://{{ google_repo.gpgkey.dest }}"
+
+      - name: "install {{ skype_repo.name }} gpg key"
+        become: yes
+        get_url:
+          url: "{{ skype_repo.gpgkey.src }}"
+          dest: "{{ skype_repo.gpgkey.dest }}"
+          owner: "root"
+          group: "root"
+
+      - name: "{{ skype_repo.name }} repository"
+        become: yes
+        yum_repository:
+          name: "{{ skype_repo.name }}"
+          description: "{{ skype_repo.name }}"
+          baseurl: "{{ skype_repo.url }}"
+          gpgcheck: yes
+          gpgkey: "file://{{ skype_repo.gpgkey.dest }}"
 
   - name: Install Fedora Packages
     # Some Fedora checks are a bit redundant in this version.
@@ -78,9 +130,14 @@
           - python   # Python
           - python3  # Python v3
 
+      - name: fun cli items
+        dnf: name={{item}} state=latest
+        become: yes
+        with_items:
+          - mpg123 # Play sounds from the command line
+
       - name: standard package updates
         # Make sure that some boring common packages are up to date.
-        # Very similar
         dnf: name={{item}} state=latest
         become: yes
         with_items:
@@ -133,13 +190,18 @@
           - tigervnc            # VNC Client
           - x11vnc              # Ad-Hoc VNC Server
           - slick-greeter       # Really neat-looking greeter (originated with Ubuntu?)
-          - freerdp-nightly     # RDP Client
           - skypeforlinux       # Chat client
           - wireshark-gtk       # Wireshark GUI
           - libreoffice-calc    # Spreadsheets
           - libreoffice-writer  # Word
           - libreoffice-impress # Slideshows
           - NetworkManager      # Network Management Service
+          - wine                # Windows compatibility
+
+      - name: install freerdp-nightly
+        become: yes
+        dnf: name=freerdp-nightly state=latest # RDP Client
+        when: ansible_distribution_major_version <= freerdp_nightly_max_version
 
       # Remove Default Greeter for Fedora MATE spin
       - name: remove lightdm-gtk greeter
@@ -160,5 +222,5 @@
         # However, the old 'version_compare' name is still available with no apparent strings attached.
         when: (dnf_check.stdout and dnf_check.stdout is version_compare('2.0.1', '>='))
 
-  - name: openssh service
-    service: name=sshd state=started
+  - name: openssh service enabled
+    service: name="sshd" state="started" enabled="yes"

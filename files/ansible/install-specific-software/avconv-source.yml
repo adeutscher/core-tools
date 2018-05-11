@@ -1,0 +1,51 @@
+---
+
+- hosts: all
+
+  vars:
+
+    git:
+      src: git://git.libav.org/libav.git
+      dest: "{{ ansible_user_dir }}/.local/ansible-deployments/libav"
+
+    packages_redhat:
+      # TODO: Confirm that the package list is complete.
+      - gcc
+      - make
+      - lame-devel
+      - libvorbis-devel
+      - x264-devel
+      - yasm
+
+  tasks:
+    - name: install dependencies (dnf)
+      become: yes
+      when: ansible_pkg_mgr == "dnf"
+      dnf: name="{{ item }}" state="latest"
+      with_items: "{{ packages_redhat }}"
+
+    - name: get libav
+      git:
+        repo: "{{ git.src }}"
+        dest: "{{ git.dest }}"
+      notify: configure libav
+
+  handlers:
+
+    - name: configure libav
+      shell: ./configure --enable-libmp3lame --enable-gpl --enable-nonfree --enable-libx264
+      args:
+        chdir: "{{ git.dest }}"
+      notify: build libav
+
+    - name: build libav
+      shell: make
+      args:
+        chdir: "{{ git.dest }}"
+      notify: install libav
+
+    - name: install libav
+      become: yes
+      shell: make install
+      args:
+        chdir: "{{ git.dest }}"

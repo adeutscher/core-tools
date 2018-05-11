@@ -3,8 +3,8 @@ The `net` command can be used to interact with various Windows or Windows-like (
 
 ## List Remote Shares
 
-List shares on 10.11.12.10 with the username 'redacted-username'
-    net  -I 10.11.12.10 -U 'redacted-username' rap share
+List shares on 10.11.12.10 with the username 'adeutscher'
+    net  -I 10.11.12.10 -U 'adeutscher' rap share
 
 ## Remote Shutdown of Windows Machine
 

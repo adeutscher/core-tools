@@ -98,7 +98,7 @@ compile(){
   rm -f "$tempRoot/$cacheDir/$fullReport.new" "$tempRoot/$cacheDir/$fullReport"
   for mac in $(cat $tempRoot/$cacheDir/$reportPrefix* | sort | cut -d' ' -f 2 | uniq); do
     # Add the most recent entry for a MAC address to the finished report.
-    grep -Rhm1 "\ $mac\ " $(ls $tempRoot/$cacheDir/$reportPrefix* | tac) | head -n1 >> "$tempRoot/$cacheDir/$fullReport.new"
+    grep -Rhm1 "\ $mac\ " $(ls -r "$tempRoot/$cacheDir/$reportPrefix"*) | head -n1 >> "$tempRoot/$cacheDir/$fullReport.new"
   done
   # Apply the new report.
   mv "$tempRoot/$cacheDir/$fullReport.new" "$tempRoot/$cacheDir/$fullReport"

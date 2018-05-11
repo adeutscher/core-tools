@@ -6,7 +6,8 @@ SNAT_CHAIN=POSTROUTING
 SNAT_LABEL=iptables
 
 # You may wish to add other qualifiers on what gets SNAT applied to it and what does not.
-OTHER_FILTERS='-s 10.11.12.0/24'
+# Uncomment and edit this if this is the case.
+# OTHER_FILTERS='-s 10.11.12.0/24'
 
 # NetworkManager command
 IPTABLES='/usr/sbin/iptables -t nat'
@@ -22,7 +23,7 @@ function clean_snat_references(){
   # Make sure that this chain exists.
   $IPTABLES -N $SNAT_TABLE 2> /dev/null
 
-  for line in $($IPTABLES -nvL "$SNAT_CHAIN" --line-numbers | grep "snat-$CLEAN_IF\." | grep '^[0-9]*' | cut -d' ' -f 1 | tac); do
+  for line in $($IPTABLES -nvL "$SNAT_CHAIN" --line-numbers | grep -w "snat-$CLEAN_IF\." | grep '^[0-9]*' | cut -d' ' -f 1 | tac); do
     if [ ! -z "$line" ]; then
       # Axe the previous rule if it exists.
       $IPTABLES -D $SNAT_CHAIN $line
@@ -63,3 +64,10 @@ function fix_interface_snat(){
 
     fix_snat "$TARGET_IF" "$TARGET_IP"
 }
+
+# Attempt using the variables for multiple types of handler scripts, in the following order:
+# NetworkManager: DEVICE_IFACE
+# OpenVPN: dev
+# OpenConnect: TUNDEV
+
+fix_interface_snat "${DEVICE_IFACE:-${dev:-${TUNDEV}}}"

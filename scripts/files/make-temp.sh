@@ -176,7 +176,7 @@ function make_temp {
     # Step 1.5: Remove next/previous navigation links
     while read __link; do
         [ -n "${__link}" ] && ${RM} "${__link}"
-    done <<< "$(find .temp -type l -name next -o -type l -name previous | sort)"
+    done <<< "$(find "${TEMPDIR}" -type l -name next -o -type l -name previous 2> /dev/null | sort)"
 
     # Remove directories.
     # Soft delete. Will fail as intended if the directory has any contents.
@@ -250,6 +250,8 @@ function make_temp {
         fi
     fi # End double-check to check if the container folder exists.
 
+    local __directories="$(find "${TEMPDIR}" -mindepth 1 -maxdepth 1 | grep -P "\/\d{4}(\-\d{2}){2}(-(mon|tues|wednes|thurs|fri|sat|sun)day)?$" | sort)"
+
     # Step 4: Create links to the next/previous directory.
     unset __previous_monitored
     while read __current_directory; do
@@ -258,7 +260,7 @@ function make_temp {
         ${LN} "../$(basename "${__previous_monitored}")" "${__current_directory}/previous"
       fi
       __previous_monitored="${__current_directory}"
-    done <<< "$(find "${HOME}/.temp" -mindepth 1 -maxdepth 1 | sort)"
+    done <<< "${__directories}"
 
     unset __previous_monitored
     while read __current_directory; do
@@ -267,7 +269,7 @@ function make_temp {
         ${LN} "../$(basename "${__previous_monitored}")" "${__current_directory}/next"
       fi
       __previous_monitored="${__current_directory}"
-    done <<< "$(find "${HOME}/.temp" -mindepth 1 -maxdepth 1 | sort | tac)"
+    done <<< "$(tac <<< "${__directories}")"
 }
 
 # Function to get absolute path without realpath command.

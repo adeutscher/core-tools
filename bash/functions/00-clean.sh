@@ -10,8 +10,8 @@
 # Fighting Fedora 24 deprecation nudging by unsetting the 'ifconfig' and 'service' functions.
 # These functions print complain (rightly) about the function being deprecated and exit out without doing anything.
 # Note: There is also a function to override 'yum', but I am happy with leaving that in.
-unset -f ifconfig service
+unset -f ifconfig service 2> /dev/null
 
 # 2018-04-30
 # Converted wait-for-pid to a script, mostly to allow it to itself be waited for.
-unset -f wait-for-pid
+unset -f wait-for-pid 2> /dev/null
