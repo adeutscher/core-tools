@@ -52,7 +52,17 @@ validate_pids(){
       notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${pid}")"
 
       # Get results, sanitizing options beginning in '-'.
-      results="$(pgrep "$(sed "s/-/\\\\-/g" <<< "${pid}")")"
+      # Strip out PID of script and the subshell that collects input to respectively
+      # avoid infinite waiting when waiting for other invocations of this script and
+      #  to cut down on output on account of insta-done processes.
+
+      # The BASHPID SHOULD be stuck to the PID of the current BASH process.
+      # However, it seems that piped output is itself its own PID. TIL.
+      # Our options in this case are:
+      #  A: Store BASHPID in a separate variable before piping. I went with this option.
+      #  B: Use mktemp to avoid subshells altogether. Seems like a bit of a waste.
+
+      results="$(bpid="${BASHPID}"; pgrep "$(sed "s/-/\\\\-/g" <<< "${pid}")" | sed -e "/^${$}$/d" -e "/^${bpid}$/d")"
 
       if [ -z "${results}" ]; then
         error "$(printf "No matching processes: ${BOLD}%s${NC}" "${pid}")"

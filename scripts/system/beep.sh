@@ -18,7 +18,7 @@ error(){
 
 warning(){
   printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
-  __warning_count=$((${__warning:-0}+1))
+  __warning_count=$((${__warning_count:-0}+1))
 }
 
 # Script functions
