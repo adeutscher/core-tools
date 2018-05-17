@@ -2,8 +2,8 @@
 
 # Common message functions.
 
-# Define colours
-if [ -t 1 ]; then
+set_colours(){
+  # Define colours
   BLUE='\033[1;34m'
   GREEN='\033[1;32m'
   RED='\033[1;31m'
@@ -11,7 +11,9 @@ if [ -t 1 ]; then
   PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
-fi
+  grep -Pq c <<< "${label_switches}" || label_switches="${label_switches}c"
+}
+[ -t 1 ] && set_colours
 
 error(){
   printf "${RED}"'Error'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
@@ -202,12 +204,12 @@ get_interface_info(){
   if [ "$network_count" -gt 0 ]; then
     for network in $networks; do
       # TODO, consider adjusting format from 192.168.0.0/255.255.255.0-ish (for example) to 192.168.0.0/24-ish.
-      ITEM="$((${ITEM:-0}+1))"
-      ITEMS[${ITEM}]="${network}"
+      ITEM_COUNT="$((${ITEM_COUNT:-0}+1))"
+      ITEMS[${ITEM_COUNT}]="${network}"
       if (( "${INTERFACE_RANGES:-0}" )); then
-        IS_CIDR[${ITEM}]=1
+        IS_CIDR[${ITEM_COUNT}]=1
       else
-        IS_ADDRESS[${ITEM}]=1
+        IS_ADDRESS[${ITEM_COUNT}]=1
       fi
     done
     unset network # Axe loop variable
@@ -247,7 +249,7 @@ hexit(){
 cat << EOF
 Display active connection information.
 
-Usage: ./connections.sh [-aclLmoqrRsv] [matches]
+Usage: ./connections.sh [-acChlLmoqrRsv] [matches]
 
 By default, displays incoming connections. Use -o to display outgoing connections instead.
 
@@ -263,7 +265,8 @@ Valid matches:
 Switches:
   -a: All-mode. When using conntrack, do not restrict to just our device's addresses.
   -c: Conntrack-mode. Use conntrack instead of netstat to detect connections. Must be root to use.
-  -h: Help. Print help menu and exit.
+  -C: Force colours, even if output is not a terminal.
+  -h: Help. Print this help menu and exit.
   -l: Show loopback connections, which are ignored by default. Will only work with netstat.
   -L: LAN-only mode. Only show incoming connections from LAN addresses (or to LAN addresses for outgoing mode).
   -m: Monitor mode. Constantly re-poll and print out connection information.
@@ -299,7 +302,8 @@ print_line(){
     message="$(printf "${GREEN}%s:%d${NC} -> ${GREEN}%s:%d${NC} (${BOLD}%s${NC})" "${last_from}" "${last_from_p}" "${last_to}" "${last_to_p}" "${last_proto}")"
     notice "${message}"
   fi
-  (( "${VERBOSE:-0}" )) && getlabel "${last_from}"
+
+  (( "${VERBOSE:-0}" )) && getlabel -${label_switches}l "${last_from}"
 }
 
 # Script Operations
@@ -310,85 +314,97 @@ REGEX_IP4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 REGEX_IP4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})/((([0-9]){1,3}\.){3}([0-9]{1,3})|\d{1,2})$'
 
 # Handle arguments
+##
+
+# Some default values.
+# Most of these were originally implemented/phrased as 'toggle on' switches rather than 'toggle off'.
 SUMMARIZE=1
 NETSTAT=1
 INCOMING=1
-while getopts ":achlLmoqrRsv" OPT $@; do
-  case "${OPT}" in
-    a)
-      SHOW_ALL=1
-      ;;
-    c)
-      NETSTAT=0
-      ;;
-    h)
-      hexit 0
-      ;;
-    l)
-      LOCALHOST=1
-      ;;
-    L)
-      LAN_ONLY=1
-      ;;
-    m)
-      MONITOR=1
-      ;;
-    o)
-      INCOMING=0
-      ;;
-    q)
-      QUIET=1
-      ;;
-    r)
-      INTERFACE_RANGES=1
-      ;;
-    R)
-      REMOTE_ONLY=1
-      ;;
-    s)
-      SUMMARIZE=0
-      ;;
-    v)
-      VERBOSE=1
-      ;;
-    *)
-      error "$(printf "Unhandled option: ${BOLD}%s${NC}" "${OPT}")"
-      ;;
-  esac
+
+while [ -n "${1}" ]; do
+  while getopts ":acChlLmoqrRsv" OPT $@; do
+    case "${OPT}" in
+      a)
+        SHOW_ALL=1
+        ;;
+      c)
+        NETSTAT=0
+        ;;
+      C)
+        set_colours
+        ;;
+      h)
+        hexit 0
+        ;;
+      l)
+        LOCALHOST=1
+        ;;
+      L)
+        LAN_ONLY=1
+        ;;
+      m)
+        MONITOR=1
+        ;;
+      o)
+        INCOMING=0
+        ;;
+      q)
+        QUIET=1
+        ;;
+      r)
+        INTERFACE_RANGES=1
+        ;;
+      R)
+        REMOTE_ONLY=1
+        ;;
+      s)
+        SUMMARIZE=0
+        ;;
+      v)
+        VERBOSE="$((${VERBOSE:-0}+1))"
+        [ "${VERBOSE:-0}" -eq 2 ] && label_switches="${label_switches}v"
+        ;;
+      *)
+        error "$(printf "Unhandled option: ${BOLD}%s${NC}" "${OPT}")"
+        ;;
+    esac
+  done
+
+  # Set $1 to first operand, $2 to second operands, etc.
+  shift $((OPTIND - 1))
+
+  # Validate operands
+  while [ -n "${1}" ]; do
+    grep -q "^\-" <<< "${1}" && break
+    ITEM_COUNT="$((${ITEM_COUNT:-0}+1))"
+    FILTER_COUNT="$((${FILTER_COUNT:-0}+1))"
+
+    ITEMS[${ITEM_COUNT}]="${1}"
+    if grep -Pq "${REGEX_IP4}" <<< "${1}"; then
+      IS_ADDRESS[${ITEM_COUNT}]=1
+    elif grep -Pq "${REGEX_IP4_CIDR}" <<< "${1}"; then
+      IS_CIDR[${ITEM_COUNT}]=1
+    elif ip a s "${1}" 2> /dev/null >&2; then
+      IS_INTERFACE[${ITEM_COUNT}]=1
+    else
+      error "$(printf "Invalid address(es)/interface: ${BOLD}%s${NC}" "${1}")"
+    fi
+    shift
+  done
+done
+
+# All interfaces must have at least one network range.
+while [ "${i:-0}" -lt "${ITEM_COUNT:-0}" ]; do
+  i="$((${i:-0}+1))"
+  (( ${IS_INTERFACE[${i}]:-0} )) || continue
+  interface="${ITEMS[${i}]}"
+  get_interface_info "${interface}" "${i}"
 done
 
 # Set method label.
 METHOD="netstat"
 (( "${NETSTAT:-0}" )) || METHOD="conntrack"
-
-# Set $1 to first operand, $2 to second operands, etc.
-shift $((OPTIND - 1))
-
-# Validate operands
-if (( ${#} )); then
-  for opt in $@; do
-    ITEM="$((${ITEM:-0}+1))"
-    ITEMS[${ITEM}]="${opt}"
-    if grep -Pq "${REGEX_IP4}" <<< "${opt}"; then
-      IS_ADDRESS[${ITEM}]=1
-    elif grep -Pq "${REGEX_IP4_CIDR}" <<< "${opt}"; then
-      IS_CIDR[${ITEM}]=1
-    elif ip a s "${opt}" 2> /dev/null >&2; then
-      IS_INTERFACE[${ITEM}]=1
-    else
-      error "$(printf "Invalid address(es)/interface: ${BOLD}%s${NC}" "${opt}")"
-    fi
-  done
-
-  # All interfaces must have at least one network range.
-  while [ "${i:-0}" -le "${#}" ]; do
-    i="$((${i:-0}+1))"
-    (( ${IS_INTERFACE[${i}]:-0} )) || continue
-    interface="${ITEMS[${i}]}"
-    get_interface_info "${interface}" "${i}"
-  done
-  ITEM_COUNT="${ITEM}" # Preserve in a less loop-y variable name.
-fi
 
 # Handling other argument errors.
 
@@ -423,11 +439,11 @@ if (( "${MONITOR:-0}" )); then
   fi
 
   HEADER="$(printf "%s connections via ${BLUE}%s${NC} %s the following sources:" "${DIRECTION_WORDING_A}" "${METHOD}" "${DIRECTION_WORDING_B}")"
-  (( "${#}" )) || HEADER="$(sed 's/the following/all/' <<< "${HEADER}")"
+  (( "${ITEM_COUNT}" )) || HEADER="$(sed 's/the following/all/' <<< "${HEADER}")"
 
-  if (( "${#}" )); then
+  if (( "${ITEM_COUNT}" )); then
     i=0;
-    while [ "${i}" -lt "${#}" ]; do
+    while [ "${i}" -lt "${FILTER_COUNT}" ]; do
       i="$((${i:-0}+1))"
       if (( "${IS_CIDR[${i}]}" )); then
         HEADER="$(printf "%s\n  - CIDR Range: ${GREEN}%s${NC}" "${HEADER}" "${ITEMS[${i}]}")"
