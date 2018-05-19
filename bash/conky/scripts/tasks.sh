@@ -16,7 +16,7 @@ printf "\${color #FFA500}\${font Neuropolitical:size=16:bold}Tasks\${font}\${col
 
 # Abort if the target file does not exist.
 if [ ! -f "${CONKY_TASKS_FILE}" ]; then
-    printf "Taks file not found:\n  %s\n" "${CONKY_TASKS_FILE}"
+    printf "Tasks file not found:\n    %s\n" "$(sed "s|^${HOME}|\\~|g" <<< "${CONKY_TASKS_FILE}")"
     exit 0
 fi
 
@@ -84,7 +84,7 @@ for i in `seq -2 14`; do
       CORNER="┗"
     fi
 
-    printf "\${color1}${CORNER━}"
+    printf "\${color1}${CORNER}"
 
     TEST=0
     if grep -q -e 'test' -e 'exam' <<< "${TASK}"; then
@@ -122,7 +122,6 @@ for i in `seq -2 14`; do
     fi
 
     printf "%s \${color1}- " "${TIME}"
-    #printf "$(echo ${WORD} | awk '{print ${2}}') \${color1}- "
 
     if [ ${HW} -eq 1 ]; then
         printf "\${color4}"
@@ -149,7 +148,7 @@ for i in `seq -2 14`; do
     printf "${TASK}\n"
   done <<< "${TASK_CONTENTS}" # End TASK_CONTENTS loop.
 
-  printf "${FILLER}\n"
+  printf "${FILLER}"
   unset FILLER
 done
 

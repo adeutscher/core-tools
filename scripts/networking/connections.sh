@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/bash
 
 # Common message functions.
 
@@ -39,26 +39,26 @@ warning(){
 ########################
 
 ip2dec(){
-  local a b c d ip=$@
-  IFS=. read -r a b c d <<< "$ip"
+  local a b c d ip="${@}"
+  IFS=. read -r a b c d <<< "${ip}"
   printf '%d\n' "$((a * 256 ** 3 + b * 256 ** 2 + c * 256 + d))"
 }
 
 dec2ip(){
-  local ip dec=$@
+  local ip dec="${@}"
   for e in {3..0}
   do
     ((octet = dec / (256 ** e) ))
     ((dec -= octet * 256 ** e))
-    ip+=$delim$octet
+    ip+="${delim}${octet}"
     local delim=.
   done
   unset e octet dec
-  printf '%s\n' "$ip"
+  printf '%s\n' "${ip}"
 }
 
 cidr_low(){
-  printf $(dec2ip $(cidr-low-dec "$1"))
+  printf $(dec2ip $(cidr_low_dec "$1"))
 }
 
 cidr_low_dec(){
@@ -79,11 +79,11 @@ cidr_low_dec(){
     local plus=0
   fi
 
-  printf $(($(ip2dec "$network")+$plus))
+  printf $(($(ip2dec "${network}")+${plus}))
 }
 
 cidr_high(){
-  printf $(dec2ip $(cidr-high-dec "$1"))
+  printf $(dec2ip $(cidr_high_dec "$1"))
 }
 
 cidr_high_dec(){
@@ -94,24 +94,24 @@ cidr_high_dec(){
   # Calculating netmask manually because ipcalc does not support
   #   calculating the minimum/maximum addresses in all distributions.
 
-  local network=$(cut -d'/' -f1 <<< "$1")
-  local netmask=$(cut -d'/' -f2 <<< "$1")
+  local network="$(cut -d'/' -f1 <<< "$1")"
+  local netmask="$(cut -d'/' -f2 <<< "$1")"
 
-  if ! grep -qP "^\d{1,}$" <<< "$netmask"; then
+  if ! grep -qP "^\d{1,}$" <<< "${netmask}"; then
     # Netmask was not in CIDR format.
-    local netmask=$(printf %.$2f $(awk '{ print 32-log(4294967295-'"$(ip2dec "$netmask")"')/log(2)}' <<< ""))
+    local netmask=$(printf %.$2f $(awk '{ print 32-log(4294967295-'"$(ip2dec "${netmask}")"')/log(2)}' <<< ""))
   fi
 
   # Subtract 2 for network id and broadcast addresss
   #   (unless we have a /32 address)
   local subtract=2
-  if [ "$netmask" -eq "32" ]; then
+  if [ "${netmask}" -eq "32" ]; then
     # /32 networks are single-host networks,
     #   wherein the network ID is the only usable address.
     local subtract=0
   fi
 
-  printf $(($(ip2dec "$network")+(2 ** (32-netmask))-$subtract))
+  printf $(($(ip2dec "${network}")+(2 ** (32-netmask))-${subtract}))
 }
 
 # Script Functions
@@ -565,6 +565,7 @@ while (( 1 )); do
 
     # Print content, skipping empty lines (assumed to be headerspace in one-off listing).
     printf "${CONTENT}" | sed '/^$/d'
+    [ -n "${CONTENT}" ] && HAD_CONTENT=1
     unset CONTENT
   elif ! (( ${QUIET:-0} )) && ! (( "${NETSTAT:-0}" )); then
     # In non-quiet mode, empty netstat output is not note-worthy.
@@ -574,7 +575,7 @@ while (( 1 )); do
   if (( "${MONITOR:-0}" )); then
     sleep 1
   else
-    if ! (( "${QUIET:-0}" )) && [ -n "${CONNECTIONS}" ]; then
+    if ! (( "${QUIET:-0}" )) && (( "${HAD_CONTENT:-0}" )); then
       # Print trailing newline.
       printf "\n"
     fi

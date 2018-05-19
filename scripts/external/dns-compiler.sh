@@ -10,11 +10,11 @@ PATH="/sbin:/usr/sbin:$PATH"
 #############
 
 # Directory that temporary configuration should be written to.
-DNS_COMPILER_DATA=/tmp/dns-compiler.csv
+DNS_COMPILER_DATA="/tmp/dns-compiler.csv"
 # Configuration will be written here
 # NOTE: You must separately adjust your BIND9 installation to load in this file.
-DNS_COMPILER_TARGET=/etc/named/dns-compiler.conf
-#DNS_COMPILER_TARGET=/tmp/dns-compiler.conf
+DNS_COMPILER_TARGET="/etc/named/dns-compiler.conf"
+DNS_LOCAL_CONF="/etc/named/named.conf.local"
 
 ###############
 ## Functions ##
@@ -229,7 +229,10 @@ __apply_interface(){
   #     so until the configuration can be changed I must add it to my domain list manually.
 
   for domain in $domains; do
-    printf "%s,%s,%s\n" "$interface" "$domain" "$nameserver" >> "$DNS_COMPILER_DATA"
+    # Add a domain if it is not already specifically mentioned in local named configuration.
+    # Assume that matches are active and not commented-out.
+    grep -Pq "[\"\']${domain//./\.}[\"\']" "${DNS_LOCAL_CONF}" || \
+      printf "%s,%s,%s\n" "$interface" "$domain" "$nameserver" >> "$DNS_COMPILER_DATA"
   done
 
   return $count

@@ -1,8 +1,8 @@
 
 # Common message functions.
 
-# Define colours
-if [ -t 1 ]; then
+set_colours(){
+  # Define colours
   BLUE='\033[1;34m'
   GREEN='\033[1;32m'
   RED='\033[1;31m'
@@ -10,7 +10,8 @@ if [ -t 1 ]; then
   PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
-fi
+}
+[ -t 1 ] && set_colours
 
 error(){
   printf "${RED}"'Error'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"

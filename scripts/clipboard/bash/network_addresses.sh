@@ -1,5 +1,5 @@
 
-# IPv4 Address Functions
+# IPv4 Address Handling Functions
 ##
 
 ip2dec(){

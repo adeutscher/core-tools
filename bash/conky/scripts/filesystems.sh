@@ -171,7 +171,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
                 # The only gap this would leave would be a super-duper low latency VPN that I wanted to still get usage information for. So a rediculously tiny gap.
                 for network in $(route -n | awk '{ if($2 == "0.0.0.0" && $8 !~ /^t(un|ap)/ ){ print $1"/"$3 } }'); do
                     # Convert to numerical values just the once as well.
-                    localNetworks="${localNetworks}\n$(cidr-low-dec "${network}"),$(cidr-high-dec "${network}")"
+                    localNetworks="${localNetworks}\n$(cidr_low_dec "${network}"),$(cidr_high_dec "${network}")"
                 done
             fi
 
