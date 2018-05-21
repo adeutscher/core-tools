@@ -261,6 +261,7 @@ Valid matches:
                If a bridge member is added by accident, then the bridge can be detected.
   * IPv4 address (e.g. 192.168.0.1)
   * IPv4 CIDR range (e.g. 192.168.0.0/24)
+  * Destination port number (e.g. 22).
 
 Switches:
   -a: All-mode. When using conntrack, do not restrict to just our device's addresses.
@@ -387,8 +388,11 @@ while [ -n "${1}" ]; do
       IS_CIDR[${ITEM_COUNT}]=1
     elif ip a s "${1}" 2> /dev/null >&2; then
       IS_INTERFACE[${ITEM_COUNT}]=1
+    elif grep -Pq "^\d+$" <<< "${1}"; then
+      [ "${1}" -ge 65536 ] && error "$(printf "Invalid port: ${BOLD}%s${NC}" "${1}")"
+      IS_PORT[${ITEM_COUNT}]=1
     else
-      error "$(printf "Invalid address(es)/interface: ${BOLD}%s${NC}" "${1}")"
+      error "$(printf "Invalid filter subject (not an address, range, interface, or port): ${BOLD}%s${NC}" "${1}")"
     fi
     shift
   done
@@ -432,10 +436,10 @@ if (( "${MONITOR:-0}" )); then
   # One-off monitor headings.
 
   DIRECTION_WORDING_A="Outgoing"
-  DIRECTION_WORDING_B="from"
+  DIRECTION_WORDING_B="to"
   if (( "${INCOMING:-0}" )); then
     DIRECTION_WORDING_A="Incoming"
-    DIRECTION_WORDING_B="to"
+    DIRECTION_WORDING_B="from"
   fi
 
   HEADER="$(printf "%s connections via ${BLUE}%s${NC} %s the following sources:" "${DIRECTION_WORDING_A}" "${METHOD}" "${DIRECTION_WORDING_B}")"
@@ -451,6 +455,8 @@ if (( "${MONITOR:-0}" )); then
         HEADER="$(printf "%s\n  - IPv4 Address: ${GREEN}%s${NC}" "${HEADER}" "${ITEMS[${i}]}")"
       elif (( "${IS_INTERFACE[${i}]}" )); then
         HEADER="$(printf "%s\n  - Interface: ${BOLD}%s${NC} (${GREEN}%s${NC})" "${HEADER}" "${ITEMS[${i}]}" "${NETWORKS[${i}]}")"
+      elif (( "${IS_PORT[${i}]}" )); then
+        HEADER="$(printf "%s\n  - Port: ${BOLD}tcp/%s${NC}" "${HEADER}" "${ITEMS[${i}]}")"
       else
         HEADER="$(printf "%s\n  - ${RED}%s${NC}: ${BOLD}%s${NC}" "${HEADER}" "UNHANDLED" "${ITEMS[${i}]}")"
       fi
@@ -470,8 +476,6 @@ while (( 1 )); do
   # Grab our data,
   get_data
 
-  TARGET=2 # Default target, match against "from"
-  (( "${INCOMING:-0}" )) && TARGET="3" # If -i, match against "to"
   if [ -n "${CONNECTIONS}" ]; then
     while read connection; do
       [ -n "${connection}" ] || continue
@@ -486,10 +490,13 @@ while (( 1 )); do
       # Restrict to "ESTABLISHED"-state connections for the time being.
       [[ "${state}" == "ESTABLISHED" ]] || continue
 
+      subject="${to}"
+
+      (( "${INCOMING:-0}" )) && subject="${from}"
+
       if (( "${REMOTE_ONLY:-0}" )) || (( "${LAN_ONLY:-0}" )); then
         # Need to confirm if this is a LAN or remote connection.
         lan=0
-        subject="${to}"
         (( "${INCOMING:-0}" )) && subject="${from}"
         for range in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/24; do
            if is_in_cidr "${subject}" "${range}"; then
@@ -524,21 +531,18 @@ while (( 1 )); do
       item=0
       if (( "${ITEM_COUNT:-0}" )); then
         display=0
-        while [ "${item}" -le "${ITEM_COUNT}" ]; do
+        while [ "${item}" -lt "${ITEM_COUNT}" ]; do
           item="$((${item}+1))"
           if (( "${IS_ADDRESS[${item}]}" )); then
             # Filter option is an IPv4 address.
-            if [[ "${ITEMS[${item}]}" == "$(cut -d' ' -f "${TARGET}" <<< "${connection}")" ]]; then
-              display=1
-              break
-            fi
+            [[ "${ITEMS[${item}]}" == "${subject}" ]] && display=1
           elif (( "${IS_CIDR[${item}]}" )); then
             # Filter option is an IPv4 CIDR address.
-            subject="$(cut -d' ' -f "${TARGET:-2}" <<< "${connection}")"
-            is_in_cidr "${subject}" "${ITEMS[${item}]}" || continue
-            display=1
-            break
+            is_in_cidr "${subject}" "${ITEMS[${item}]}" && display=1
+          elif (( "${IS_PORT[${item}]}" )); then
+            [ "${to_p}" -eq "${ITEMS[${item}]}" ] && display=1
           fi
+          (( "${display:-0}" )) && break
         done
       fi
 

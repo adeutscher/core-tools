@@ -102,21 +102,18 @@ function update-git-repo(){
   # We have already checked to make sure that the directory exists and is readable
   #  (would have been caught in __is_git_repo).
   if [ ! -w "${repoDir}" ]; then
-    error "$(printf "Repository directory cannot be written to: ${GREEN}%s${NC}" "${repoDirDisplay}")"
+    error "$(printf "Repository directory unwritable: ${GREEN}%s${NC}" "${repoDirDisplay}")"
     return 4
   fi
 
   local __num=1
 
-  local repoUrl="$(git remote -v | grep "(fetch)$" | awk 'BEGIN { count=0; remote="-" } { count=count+1; remote=$2 } END { if(count <= 1 && remote != "-" ){ print remote } else if(count > 1){ print "multiple" } }')"
-  local remote="$(git remote | head -n1)"
-  local branch="$(git branch | grep "^*" | head -n1 | cut -d' ' -f2)"
+  local remote="$(git branch -vv | grep -m1 "^*" | cut -d '[' -f2 | cut -d'/' -f1)"
+  local repoUrl="$(git remote -v | grep -w "^${remote}" | grep -m1 "(fetch)$" | awk -F' ' '{ print $2}')"
+  local branch="$(git branch | grep -m1 "^*" | cut -d' ' -f2)"
 
-  if [ -z "${repoUrl}" ]; then
-    error "$(printf "Was unable to determine our upstream URL from our workspace: ${GREEN}%s${NC}" "${repoDirDisplay}")"
-    return 5
-  elif [[ "${repoUrl}" =~ ^multiple$ ]]; then
-    error "$(printf "More than one origin defined within repositority. Unable to know the authoritative one at the moment.: ${GREEN}%s${NC}" "${repoDirDisplay}")"
+  if [ -z "${remote}" ] || [ -z "${repoUrl}" ]; then
+    error "$(printf "Was unable to determine upstream information: ${GREEN}%s${NC}" "${repoDirDisplay}")"
     return 5
   fi
 
@@ -125,11 +122,14 @@ function update-git-repo(){
 
   # Print our updating notice.
   if [ -n "${label}" ]; then
-    notice "$(printf "Updating ${BOLD}%s${NC} repository (${GREEN}%s${NC}<-${GREEN}%s/${NC})" "${label}" "${repoDirDisplay}" "${repoUrlDisplay}")"
+    notice "$(printf "Updating ${BOLD}%s${NC} repository." "${label}")"
+    notice "$(printf "  Local: ${GREEN}%s/${NC}" "${repoDirDisplay}")"
   else
     # No label was given.
-    notice "$(printf "Updating repository (${GREEN}%s${NC}<-${GREEN}%s/${NC})" "${repoDirDisplay}" "${repoUrlDisplay}")"
+    notice "$(printf "  Updating repository at ${GREEN}%s/${NC}" "${repoDirDisplay}")"
   fi
+  notice "$(printf "  Remote (${BOLD}%s${NC}): ${GREEN}%s${NC}" "${remote}" "${repoUrlDisplay}")"
+  notice "$(printf "  Branch: ${BOLD}%s${NC}" "${branch}")"
 
   # Get our test domain name to try and resolve it.
   # If the domain name can be resolved, then it is assumed to be reachable.
@@ -169,7 +169,7 @@ function update-git-repo(){
   fi
   if [ -z "${repoDomain}" ]; then
     # If we can't tell the repository domain, then we have nothing to go on.
-    error "$(printf "Was unable to determine our repository domain from our workspace: ${GREEN}%s${NC}" "${repoDirDisplay}")"
+    error "$(printf "Unable to determine repository domain from workspace: ${GREEN}%s${NC}" "${repoDirDisplay}")"
     return 6
   fi
 
@@ -221,13 +221,13 @@ function update-git-repo(){
     local newCommitCount="$(git log | grep "^commit" | wc -l)"
 
     if [[ "${oldCommit}" != "${newCommit}" ]]; then
-      success "$(printf "Repository directory updated (${BOLD}%s${NC} to ${BOLD}r%s${NC}, ${BOLD}%d${NC} new commit(s))." "${oldCommit}" "${newCommit}" "$((${newCommitCount} - ${oldCommitCount}))")"
+      success "$(printf "Repository updated (${BOLD}%s${NC} to ${BOLD}r%s${NC}). New commits: ${BOLD}%d${NC}" "${oldCommit}" "${newCommit}" "$((${newCommitCount} - ${oldCommitCount}))")"
     else
-      success "$(printf "Current branch is already up to date, or was checked out to a specific revision. At ${BOLD}%s${NC}." "${oldCommit}")"
+      success "$(printf "Branch \"${BOLD}%s${NC}\" already up to date (or checked out to a specific revision). Revision: ${BOLD}%s${NC}." "${branch}" "${oldCommit}")"
     fi
 
   else
-    error "$(printf "Update of repository at ${GREEN}%s${NC} from ${GREEN}%s${NC} failed!" "${repoDirDisplay}"  "${repoUrlDisplay}")"
+    error "$(printf "Repository update of ${GREEN}%s${NC} from ${GREEN}%s${NC} failed!" "${repoDirDisplay}"  "${repoUrlDisplay}")"
     return 8
   fi
 }
@@ -283,13 +283,13 @@ function update-svn-repo(){
   # We have already checked to make sure that the directory exists and is readable
   #  (would have been caught in __is_svn_repo).
   if [ ! -w "${repoDir}" ]; then
-    error "$(printf "Repository directory cannot be written to: ${GREEN}%s${NC}" "${repoDirDisplay}")"
+    error "$(printf "Repository directory unwritable: ${GREEN}%s${NC}" "${repoDirDisplay}")"
     return 4
   fi
 
   local repoUrl="$(svn info "${repoDir}" | grep "^URL" | cut -d' ' -f 2-)"
   if [ -z "${repoUrl}" ]; then
-    error "$(printf "Was unable to determine our repository URL from our workspace: ${GREEN}%s${NC}" "${repoDirDisplay}")"
+    error "$(printf "Was unable to determine repository URL: ${GREEN}%s${NC}" "${repoDirDisplay}")"
     # If we can't tell the repository URL with `svn info`, then the svn command won't be able to tell either.
     return 5
   fi
@@ -366,13 +366,13 @@ function update-svn-repo(){
   if svn up "${repoDir}"; then
     local newRev="$(svn info "${repoDir}" 2> /dev/null | grep '^Revision' | cut -d' ' -f2)"
     if [ "${oldRev}" -lt "${newRev}" ]; then
-      success "$(printf "Repository directory updated (${BOLD}r%d${NC} to ${BOLD}r%d${NC})." "${oldRev}" "${newRev}")"
+      success "$(printf "SVN repository updated (${BOLD}r%d${NC} to ${BOLD}r%d${NC})." "${oldRev}" "${newRev}")"
     else
-      success "$(printf "Repository is already up to date (at ${BOLD}r%d${NC})." "${oldRev}")"
+      success "$(printf "SVN repository already up to date (at ${BOLD}r%d${NC})." "${oldRev}")"
     fi
 
   else
-    error "$(printf "Update of repository at ${GREEN}%s${NC} from ${GREEN}%s${NC} failed!" "${repoDirDisplay}"  "${repoUrlDisplay}")"
+    error "$(printf "Update of SVN repository at ${GREEN}%s${NC} from ${GREEN}%s${NC} failed!" "${repoDirDisplay}"  "${repoUrlDisplay}")"
     return 8
   fi
 }

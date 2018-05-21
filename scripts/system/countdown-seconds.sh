@@ -1,3 +1,7 @@
+#!/bin/bash
+
+# Count down to the specified number of seconds.
+# Note: Still has a bit of wobble to it. Actual runtime will be within one second of target time.
 
 # Time-related Functions
 ####
@@ -96,3 +100,36 @@ __translate_seconds(){
     local __i=$(($__i-1))
   done
 }
+
+countdown_seconds(){
+
+  # If not a positive integer integer, return
+  egrep -q "^[0-9]{1,}$" <<< "${1}" || return 1
+  (( "${1:-0}" )) || return 1
+
+  duration="${1}"
+  target="$(date -d "${duration} seconds" +%s)"
+
+  while (( 1 )); do
+    current="$(date +%s)"
+    remaining="$((${target}-${current}))"
+
+    if [ "${remaining}" -ge 0 ] && [ "${remaining}" -ne "${old_remaining:-0}" ]; then
+      # Print new output if remaining time has changed.
+      printf "\33[2K\r%s remaining" " " "$(__translate_seconds "${remaining}" 1)"
+    fi
+    old_remaining="${remaining}"
+
+    # Sleep briefly.
+    # Making this a smaller number improves the accuracy of display and timing, but uses more CPU resources.
+    # Then again, if CPU optimization was the main concern, then a plain sleep should have been used instead of this script...
+    sleep 0.2
+
+    [ "${remaining}" -lt 1 ] && break
+  done
+  printf "\33[2K\r%s\n" "$(__translate_seconds "${duration}" 1) elapsed"
+}
+
+arg_duration="${1}"
+
+countdown_seconds "${arg_duration}"

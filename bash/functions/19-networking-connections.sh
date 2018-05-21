@@ -15,57 +15,18 @@ if __is_unix; then
   # IPv4 Listing
 
   # Incoming connections.
-  connections-in(){
-    # Display incoming connections (not including localhost)
-    connections
-  }
+  alias connections-in=connections
+  alias connections-in-all="connections -a"
+  alias connections-in-local="connections -l"
+  alias connections-in-lan="connections -L"
+  alias connections-in-remote="connections -R"
 
-  connections-in-all(){
-    connections -a
-  }
-
-  connections-in-lan(){
-    # Display incoming connections from LAN addresses.
-    connections -L
-  }
-
-  connections-in-local(){
-    # Display incoming connections that involve localhost.
-    connections -l
-  }
-
-  connections-in-remote(){
-    # Display incoming connections from non-LAN addresses.
-    connections -L
-  }
-
-  # Outgoing connections
-  connections-out(){
-    # Display outgoing connections (not including localhost)
-    connections -o
-  }
-
-  connections-out-all(){
-    connections -o -a
-  }
-
-  connections-out-lan(){
-    # Display outgoing connections that go to local area network addresses.
-    connections -o -L
-  }
-
-  # Alias for connections-out-lan
-  alias connections-lan='connections-out-lan'
-
-  connections-out-local(){
-    # Display outgoing connections that involve localhost.
-    connections -o
-  }
-
-  connections-out-remote(){
-    # Display outgoing connections, excluding localhost and LAN connections.
-    connections -o -R
-  }
+  # Incoming connections.
+  alias connections-out="connections -o"
+  alias connections-out-all="connections -oa"
+  alias connections-out-local="connections -ol"
+  alias connections-out-lan="connections -oL"
+  alias connections-out-remote="connections -oR"
 
   # IPv6 Listing
   ##

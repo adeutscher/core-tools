@@ -81,7 +81,7 @@ __build_prompt() {
   #   - There woulc also be problems if the .git version on the remote server (if present) is also
   #         not the version on the current system.
   # Alternately, do not print if PROMPT_IGNORE_VC is set to a non-zero value.
-  if ! (( "${PROMPT_IGNORE_VC:-0}" )) && __is_unix && ! [[ "$__fs" =~ ^(cifs$|nfs) ]] <<< "$__fs"; then
+  if ! (( "${PROMPT_IGNORE_VC:-0}" )) && __is_unix && ! [[ "$__fs" =~ ^(smb|cifs$|nfs) ]] <<< "$__fs"; then
     local svn_output="$(__svn_stat)"
     if [ -n "$svn_output" ]; then
       local svn_remote_status=$(cut -d',' -f 1 <<< "$svn_output")
@@ -252,7 +252,7 @@ __prompt_file_system_colour(){
       # Ext_ file systems are most likely a local drive.
       printf "$Colour_BIGreen"
       ;;
-    cifs|nfs*)
+    smb*|cifs|nfs*)
       # Blue text
       # CIFS is a remote network file system.
       # NFS is also a remote network file system.

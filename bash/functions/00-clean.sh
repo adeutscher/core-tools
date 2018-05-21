@@ -15,3 +15,8 @@ unset -f ifconfig service 2> /dev/null
 # 2018-04-30
 # Converted wait-for-pid to a script, mostly to allow it to itself be waited for.
 unset -f wait-for-pid 2> /dev/null
+
+# 2018-05-19
+# Converted connection aliases.
+unset -f connections-in connections-in-all connections-in-remote connections-in-lan connections-in-local
+unset -f connections-out connections-out-all connections-out-remote connections-out-lan connections-out-local

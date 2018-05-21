@@ -33,16 +33,25 @@ My `conky` display was made to support multiple systems with little to no reconf
 
 ### Network Connection Listing
 
-You can use the `connections-in` and `connections-out` functions to list all incoming and outgoing network connections not to localhost.
+You can use the `connections` command to list incoming and outgoing network connections.
 
-This function have a number of variations (there is also an outgoing version for each incoming version listed. Consider, for example, `connections-in-local` and `connections-out-local`):
+This function has a number of switches for controlling output. Use `connections -h` for a full options listing.
 
-* `connections-in-local`: The inverse of `connections-in`, list all connections involving localhost.
-* `connections-in-lan`: List incoming connections coming from IP addresses beginning in `10.`, `172.16.` to `172.32.`, or `192.`.
-* `connections-in-remote`: The inverse of `connections-in-lan`, lists IPs not beginning in `10.`, `172.16.` to `172.32.`, or `192.168`.
-* `connections-in-all`: List all incoming connections. All functions for incoming connections filter the output of this function.
+The script also has a number of aliases for convenience:
+
+* `connections-in-local`/`connections-out-local`: The inverse of `connections-in`, list all connections involving localhost.
+* `connections-in-lan`: List incoming connections coming from IP addresses that are within `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`.
+* `connections-in-remote`: The inverse of `connections-in-lan`, lists IPs not within `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`.
+* `connections-in-all`: List all incoming connections.
+* `connections-out-lan`: List outgoing connections coming from IP addresses that are within `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`.
+* `connections-lan`: A lazy alias of `connections-out-lan`.
+* `connections-out-remote`: The inverse of `connections-out-lan`, lists IPs not within `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`.
+* `connections-out-all`: List all outgoing connections.
+
+Other similar functions/aliases:
+
 * `connections-in-ipv6`: List incoming IPv6 connections.
-* `connections-lan`: An alias of `connections-out-lan`.
+* `connections-out-ipv6`: List outgoing IPv6 connections.
 
 ### SSH Configuration Compilation
 

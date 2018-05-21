@@ -131,10 +131,11 @@ __translate_seconds(){
 }
 
 timer(){
+  local _s="$(date +%s)"
   while (( 1 )); do
-    printf "\r%s elapsed" " " "$(__translate_seconds "${_c:-0}" 1)"
+    printf "\33[2K\r%s elapsed" "$(__translate_seconds "$(($(date +%s)-${_s}))" 1)"
     local _c=$((${_c:-0}+1))
-    sleep 1
+    sleep 0.5
   done
 }
 
@@ -246,28 +247,6 @@ alias mkpasswd='mkpasswd -m sha-512'
 ########
 # Super-duper-lazy sleep functions
 ########
-
-countdown-seconds(){
-
-  # Count down to the specified number of seconds.
-  # Note that the CPU time spent calculating and outputting a printout adds some drift.
-  # Example, "countdown-seconds 300" (5 minutes) took 5 minutes and 5 seconds on one test machine (1.6% drift).
-  # I could add calculations to estimate for this, but it would probably cause too much confusion for myself and others.
-  # Therefore, if you need EXACT times you should be using sleep or wrappers like sleep-minutes.
-
-  # If not a positive integer integer, return
-  egrep -q "^[0-9]{1,}$" <<< "${1}" || return 1
-  (( "${1:-0}" )) || return 1
-
-  local _c="${1}"
-
-  until (( ! "${_c:-0}" )); do
-    local _c="$((${_c}-1))"
-    printf "\33[2K\r%s remaining" " " "$(__translate_seconds "${_c}" 1)"
-    sleep 1
-  done
-  printf "\33[2K\r%s\n" "$(__translate_seconds "${1}" 1) elapsed"
-}
 
 countdown-minutes(){
   # Count down minutes remaining.
