@@ -248,6 +248,28 @@ alias mkpasswd='mkpasswd -m sha-512'
 # Super-duper-lazy sleep functions
 ########
 
+countdown-to(){
+  local _t="${1}"
+  if [ -z "${_t}" ]; then
+    error "No time specified."
+    return 1
+  fi
+  local _ds="$(date +%s)"
+  local _ts="$(date -d "${_t}" +%s)"
+
+  # If output is empty, then date raised a stink in stderr to provide context.
+  [ -n "${_ts}" ] || return 1
+
+  local _th="$(date -d "${_t}")"
+
+  if [ "${_ds}" -gt "${_ts}" ]; then
+    error "$(printf "Requested date is ${Colour_Bold}%s${Colour_Off} in the past: ${Colour_Bold}%s${Colour_Off}" "$(__translate_seconds "$((${_ds}-${_ts}))")" "$(date -d "${_t}")")"
+    return 1
+  fi
+  notice "$(printf "Counting down to time: ${Colour_Bold}%s${Colour_Off}" "${_th}")"
+  countdown-seconds "$((${_ts}-${_ds}))"
+}
+
 countdown-minutes(){
   # Count down minutes remaining.
   countdown-seconds $((60*${1:-0}))

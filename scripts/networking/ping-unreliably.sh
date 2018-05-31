@@ -1,3 +1,4 @@
+#!/bin/bash
 
 # ping-unreliably.sh
 # A lazy network check script.

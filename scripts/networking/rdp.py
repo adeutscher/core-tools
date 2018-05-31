@@ -9,22 +9,33 @@ DEFAULT_WIDTH = 1600
 
 # Colours
 
-if sys.stdout.isatty():
-    # Colours for standard output.
-    COLOUR_RED= '\033[1;91m'
-    COLOUR_GREEN = '\033[1;92m'
-    COLOUR_YELLOW = '\033[1;93m'
-    COLOUR_BLUE = '\033[1;94m'
-    COLOUR_BOLD = '\033[1m'
-    COLOUR_OFF = '\033[0m'
-else:
-    # Set to blank values if not to standard output.
-    COLOUR_RED= ''
-    COLOUR_GREEN = ''
-    COLOUR_YELLOW = ''
-    COLOUR_BLUE = ''
-    COLOUR_BOLD = ''
-    COLOUR_OFF = ''
+def enable_colours(force = False):
+    global COLOUR_PURPLE
+    global COLOUR_RED
+    global COLOUR_GREEN
+    global COLOUR_YELLOW
+    global COLOUR_BLUE
+    global COLOUR_BOLD
+    global COLOUR_OFF
+    if force or sys.stdout.isatty():
+        # Colours for standard output.
+        COLOUR_PURPLE = '\033[1;35m'
+        COLOUR_RED = '\033[1;91m'
+        COLOUR_GREEN = '\033[1;92m'
+        COLOUR_YELLOW = '\033[1;93m'
+        COLOUR_BLUE = '\033[1;94m'
+        COLOUR_BOLD = '\033[1m'
+        COLOUR_OFF = '\033[0m'
+    else:
+        # Set to blank values if not to standard output.
+        COLOUR_PURPLE = ''
+        COLOUR_RED = ''
+        COLOUR_GREEN = ''
+        COLOUR_YELLOW = ''
+        COLOUR_BLUE = ''
+        COLOUR_BOLD = ''
+        COLOUR_OFF = ''
+enable_colours()
 
 # Store argument titles as variables
 TITLE_SERVER = "server"

@@ -16,6 +16,8 @@ wireless_interfaces=$(find -L /sys/class/net/ -maxdepth 2 -name wireless 2> /dev
 bridges=$(find -L /sys/class/net/ -maxdepth 2 -name bridge 2> /dev/null | cut -d'/' -f5 | tr '\\\n' ' ')
 # Bridge Members (to do this for a specific bridge, just add an argument to brctl. copy as needed)
 bridge_members=$(brctl show 2> /dev/null | sed -e '/bridge name/d' -e 's/\t/\ /g' | awk '{ if(NF > 1){ $1="";$2="";$3="" } print $0 }' | tr '\n' ' ')
+# List (default) gateways (any gateway with a destination of "0.0.0.0").
+gateways="$(route -n | awk '{ if($1 == "0.0.0.0"){ print $2 } }' | sort -n | uniq)"
 
 # List of interfaces to exclude from listing.
 exclude_list="lo ${CONKY_IGNORE_INTERFACES}"
@@ -39,10 +41,11 @@ exclude_list="lo ${CONKY_IGNORE_INTERFACES}"
 
 gateway_count=0
 gateway_spacing=10 # For " Gateway: "
-for ip in $(route -n | awk '{ if($1 == "0.0.0.0"){ print $2 } }' | sort -n | uniq); do
+gateway_display_limit=3
+for ip in ${gateways}; do
     gateway_count=$((gateway_count+1))
 
-    if [ "${gateway_count}" -ge 3 ]; then
+    if [ "${gateway_count}" -ge "${gateway_display_limit}" ]; then
         # Conky is set to only print "multiple" if there are 3 or more gateways present.
         # Break out and don't bother doing more processing that will not be displayed past 3.
         break
@@ -62,10 +65,11 @@ for ip in $(route -n | awk '{ if($1 == "0.0.0.0"){ print $2 } }' | sort -n | uni
 done
 
 if [ "${gateway_count}" -gt "0" ]; then
+    # Remove leading comma
     tentative_gateway="$(sed 's/^,\ //' <<< "${tentative_gateway}")"
     
-    if [ "${gateway_count}" -ge 3 ]; then
-        # Too many gateways to fit on a line.
+    if [ "${gateway_count}" -ge "${gateway_display_limit}" ]; then
+        # Too many gateways to be worth displaying
         # Fall back to conky's default output of just saying "multiple".
         gateway="Gateways: multiple"
     elif [ "${gateway_count}" -eq 1 ]; then
@@ -92,7 +96,9 @@ printf "\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Networki
 # List interfaces with details
 for iface in ${interfaces}; do
 
-    address=$(ip a s ${iface} 2> /dev/null | grep -om1 inet\ [^\/]*\/[0-9]* | cut -d' ' -f2)
+    address="$(ip a s ${iface} 2> /dev/null | grep -om1 inet\ [^\/]*\/[0-9]* | cut -d' ' -f2)"
+    if_aliases="$(ip a s ${iface} | grep -oP "inet .*${iface}:\d*$" | awk '{ print $2","$NF }')"
+    [[ "${iface}" =~ ^(tun|tap)[0-9]+ ]] && is_vpn=1
 
     if [[ "${exclude_list}" =~ (^|\ )"${iface}"($|\ ) ]]; then
         # Ignore interfaces that we've been asked to exclude.
@@ -146,9 +152,9 @@ for iface in ${interfaces}; do
         fi
     fi
 
-    if [[ "${iface}" =~ ^(tun|tap)[0-9]+ ]]; then
+    if (( "${is_vpn:-0}" )); then
         printf " (%d routes)" "$(route -n | grep -w "${iface}" | wc -l)"
-        if route -n | grep -w "${iface}" | grep -q "^0\.0"; then
+        if route -n | grep -w "${iface}" | grep -qm1 "^0\.0"; then
             if [ ${gateway_count} -gt 1 ]; then
                 printf "\n  \${color #${colour_network}}Default Gateway \#%d (VPN Redirected)\${color}" "$(route -n | grep "^0\.0" | grep -wn "${iface}" | cut -d':' -f1)"
             else
@@ -250,14 +256,15 @@ for iface in ${interfaces}; do
         else
             printf "  No Members\n"
         fi
-        # Clear member_list for next loop.
+        # Clear/reset variables for next loop.
         unset member_list
+        is_vpn=0
     else
       printf "\n"
     fi
 
     # Print out any aliases that we've assigned to this interface.
-    for alias_if in $(ip a s ${iface} | grep -oP "inet .*${iface}:\d*$" | awk '{ print $2","$NF }'); do
+    for alias_if in ${if_aliases}; do
       printf "  $(colour_interface $(cut -d',' -f 2 <<< "${alias_if}")): \${color #${colour_network_address}}%s\${color}\n" "$(cut -d',' -f 1 <<< "${alias_if}")"
     done
 
@@ -350,15 +357,45 @@ ephemeral_file="/proc/sys/net/ipv4/ip_local_port_range"
 ephemeral_lower=$(awk '{print $1 }' < "${ephemeral_file}")
 
 # Collect connections from netstat, then format with awk
-connections_in=$(netstat -Wtun | grep ESTABLISHED  | awk -F' ' '{ match($4,/[1-90]*$/,a); l[2]=a[0]; sub(/:[1-90]*$/,"",$4); l[1]=$4; match($5,/[1-90]*$/,a); r[2]=a[0]; sub(/:[1-90]*$/,"",$5); r[1]=$5; if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 ~ /^tcp/) && ! (r[2] == 2049 && $1 ~ /^tcp/)){ print r[1] "." l[1] "." l[2] "." $1 " " $1 " " r[1] " " l[1] " " l[2] }; }' \
-	| sort -t. -k1,1n -k2,2n -k3,3n -k4,4n -k 5,5n -k 6,6n -k 7,7n -k 8,8n -k 9,9n -k 10,10 | cut -d' ' -f2- | uniq -c | grep --colour=never -Pvw '(127\.0\.0\.1|::1)' \
-    | awk '{ if($2 ~ /6$/){ if(length($3) > 25 && $1 > 1){ pad = "\n    (" $2 "/" $5 ", Count: " $1 ")" } else if(length($3) > 25){ pad = "\n    (" $2 "/" $5 ")" } else { pad=" (" $2 "/" $5 ")" }; print " ${color #'${colour_network_address}'}" $3 "${color}" pad; } else { print " ${color #'${colour_network_address}'}" $3 "${color}->${color #'${colour_network_address}'}" $4 "${color} ("$2"/"$5")"; }; if(length($3) <= 25 && $1 > 1){ print "    Count: " $1 }}')
+connections_in="$(netstat -Wtun | grep ESTABLISHED \
+    | awk -F' ' '{
+          match($4,/[1-90]*$/,a);
+          l[2]=a[0];
+          sub(/:[1-90]*$/,"",$4);
+          l[1]=$4;
+          match($5,/[1-90]*$/,a);
+          r[2]=a[0];
+          sub(/:[1-90]*$/,"",$5);
+          r[1]=$5;
+          if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 ~ /^tcp/) && ! (r[2] == 2049 && $1 ~ /^tcp/)){
+              print r[1] "." l[1] "." l[2] "." $1 " " $1 " " r[1] " " l[1] " " l[2]
+          }
+      }' \
+	| sort -t. -k1,1n -k2,2n -k3,3n -k4,4n -k 5,5n -k 6,6n -k 7,7n -k 8,8n -k 9,9n -k 10,10 \
+    | cut -d' ' -f2- | uniq -c | grep --colour=never -Pvw '(127\.0\.0\.1|::1)' \
+    | awk '{
+        if($2 ~ /6$/){
+            if(length($3) > 25 && $1 > 1){
+                pad = "\n    (" $2 "/" $5 ", Count: " $1 ")"
+            } else if(length($3) > 25){
+                pad = "\n    (" $2 "/" $5 ")"
+            } else {
+                pad=" (" $2 "/" $5 ")"
+            }
+            print " ${color #'${colour_network_address}'}" $3 "${color}" pad
+        } else {
+            print " ${color #'${colour_network_address}'}" $3 "${color}->${color #'${colour_network_address}'}" $4 "${color} ("$2"/"$5")"
+        }
+        if(length($3) <= 25 && $1 > 1){
+            print "    Count: " $1
+        }
+    }')"
 # A connection is considered incoming if the local port is below the lowest ephemeral port number AND the remote port is above the lowest ephemeral port number.
 # TCP connections are somewhat excused and do not require the remote port to always be within the range.
 # Excluding localhost connections, since it could get a bit rediculous.
 # The special case with TCP/2049 is due to NFS mounting using a rediculously low local port (e.g. client's TCP/696 to server's TCP/2049).
 # I *could* also filter out connections where the source address is the same as the destination address, but I choose not to at this time. Maybe some different colouring in the future?
-# Confirming that UDP "connections" can actually show up and get printed out correctly, though I had to make a situation with nc to have an example to double-check.
+# Confirming that UDP "connections" (extended open sockets) can actually show up and get printed out correctly, though I had to make a situation with nc to have an example to double-check.
 # Reminder for re-testing (binds to udp/1234):
 ## Server (conky machine): nc -u -l 1234 > /dev/null
 ## Client: cat /dev/zero | nc -u any-address-but-localhost 1234 

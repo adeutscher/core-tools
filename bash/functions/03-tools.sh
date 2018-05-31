@@ -83,5 +83,5 @@ if type -ftptP git 2> /dev/null >&2 || type -ftptP svn 2> /dev/null >&2; then
     }
 
 else
-    alias update-tools="error 'The no version control commands found. Install SVN and/or Git, then run \"reload\"'"
+    alias update-tools="error 'No version control commands found. Install SVN and/or Git, then run \"reload\"'"
 fi

@@ -76,10 +76,13 @@ for extension in ${extensions}; do
     .hpp)
       ;&
     .js)
+      ;&
+    .php)
       switches="--style=linux -xj -cnN --lineend=linux"
       ;;
     *)
       error "$(printf "Unhandled extension: $GREEN%s$NC" "${extension}")"
+      continue
       ;;
   esac
 

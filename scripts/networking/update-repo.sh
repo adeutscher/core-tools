@@ -157,11 +157,11 @@ function update-git-repo(){
         local aliasHost="$(sed -n "${startPoint},${endPoint}p" "${HOME}/.ssh/config" | grep -iwP "hostname\s+[^\s]+" | tail -n1 | awk '{print $2}')"
         if [ -n "${aliasHost}" ]; then
           if [[ "${aliasHost}" != "${repoDomain}" ]]; then
-            # Only announce and update if there's an actual difference between the detected alias and the URL that we already have.
-            notice "$(printf "Discovered SSH alias, attempting to verify ${GREEN}%s${NC} instead of ${GREEN}%s${NC}." "${aliasHost}" "${repoDomain}")"
+            # There's an actual difference between the detected alias and the hostname that we already have.
+            notice "$(printf "Verifying host name of SSH alias \"${GREEN}%s${NC}\": ${GREEN}%s${NC}" "${repoDomain}" "${aliasHost}")"
             local repoDomain="${aliasHost}"
           else
-            notice "$(printf "Discovered SSH alias for ${GREEN}%s${NC}, but hostname value ${GREEN}%s${NC} matches already." "${repoDomain}" "${aliasHost}")"
+            notice "$(printf "SSH alias matches hostname: ${GREEN}%s${NC}" "${aliasHost}")"
           fi
         fi
       fi
@@ -216,7 +216,9 @@ function update-git-repo(){
   fi
 
   # Update directory.
-  if git pull ${oldGitSwitch} ${remote} ${branch}; then
+  unset cbranch
+  [ "$(git --version | grep -Pom1  "\d" | head -n1)" -ge 2 ] && cbranch="${branch}"
+  if git pull ${oldGitSwitch} ${remote} ${cbranch}; then
     local newCommit="$(git branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
     local newCommitCount="$(git log | grep "^commit" | wc -l)"
 

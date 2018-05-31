@@ -22,9 +22,17 @@ notice(){
   printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
 }
 
-success(){
-  printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+record(){
+  printf "$GREEN"'Record'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
   __success_count=$((${__success_count:-0}+1))
+}
+
+self(){
+  printf "$BLUE"'Self'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+}
+
+unknown(){
+  printf "$RED"'Unknown'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
 }
 
 warning(){
@@ -117,6 +125,29 @@ cidr-high-dec(){
   fi
 
   printf $(($(ip2dec "$network")+(2 ** (32-netmask))-$subtract))
+}
+
+cidr2mask(){
+  # Convert short-form CIDR notation to a full-form subnet mask.
+  local _mmask="$((32-${1}))"
+  while [ "${_mmask}" -lt 32 ]; do
+    local _t="$((${_t:-0}+2**${_mmask}))"
+    local _mmask="$(("${_mmask}" + 1))"
+  done
+  echo "$(dec2ip "${_t}")"
+}
+
+mask2cidr(){
+  # Convert a full-form subnet mask to short-form CIDR notation.
+  local _cmask=$(ip2dec "${1}")
+  local _mmask="$(ip2dec 255.255.255.255)"
+  local _rmask=0
+
+  while [ "${_cmask}" -lt "${_mmask}" ]; do
+    _cmask=$((${_cmask}+2**${_rmask}))
+    _rmask="$((${_rmask}+1))"
+  done
+  echo "$((32 - ${_rmask}))"
 }
 
 # Environment Checking
@@ -313,18 +344,18 @@ getlabel(){
 
     if ! (( "${lazy:-0}" )) && type nmap 2> /dev/null >&2; then
       # Run nmap for entries, then also check arp to see if there were any hosts that did not respond to nmap's ping scan.
-      notice "$(printf "Scanning ${GREEN}%s${NC} (${BOLD}%d${NC} addresses to try from ${GREEN}%s${NC} to ${GREEN}%s${NC}) for ARP entries..." "$location" "$(($high-$low+1))" "$(cidr-low "$location")" "$(cidr-high "$location")")"
 
       local network_id="$(cut -d'/' -f1 <<< "$location")"
       local network_mask="$(cut -d'/' -f2 <<< "$location")"
 
-      if ! grep -qP "^\d{1,}$" <<< "$network_mask"; then
-        # The network size was not specified in CIDR form.
+      if ! grep -qP "^\d+$" <<< "${network_mask}"; then
+        # The network size was not specified in CIDR short-form.
         # e.g. 192.168.0.0/255.255.255.0
-        local network_mask=$(printf %.$2f $(bc -l <<< "32-l(4294967295-$(ip2dec "$network_mask"))/l(2)"))
+        local network_mask=$(mask2cidr "${network_mask}")
       fi
+      notice "$(printf "Scanning ${GREEN}%s${NC} (${BOLD}%d${NC} addresses to try from ${GREEN}%s${NC} to ${GREEN}%s${NC}) for ARP entries..." "${network_id}/${network_mask}" "$(($high-$low+1))" "$(cidr-low "$location")" "$(cidr-high "$location")")"
 
-      local nmap_address_list="$(nmap -n -T5 -sn $network_id/$network_mask | grep 'Nmap scan report' | cut -d' ' -f 5)"
+      local nmap_address_list="$(nmap -n -T5 -sn "${network_id}/${network_mask}" | grep 'Nmap scan report' | cut -d' ' -f 5)"
     elif ! (( "${lazy:-0}" )); then
       notice "$(printf "Looking for ARP entries in ${GREEN}%s${NC} (${BOLD}%d${NC} addresses to try from ${GREEN}%s${NC} to ${GREEN}%s${NC})" "$location" "$(($high-$low+1))" "$(cidr-low "$location")" "$(cidr-high "$location")")"
     fi
@@ -353,8 +384,9 @@ getlabel(){
 
     return
 
-  elif grep -iPq '^([a-f0-9]{2}[:|-]){5}[a-f0-9]{2}$' <<< "$location"; then
-    # Provided location was already a MAC address.
+  elif grep -iPq '^[a-f0-9]{2}([:|-][a-f0-9]{2}){2,5}$' <<< "$location"; then
+    # Provided location was a MAC address or similar.
+    # Treating any MAC address-like sequence with at least three digit groups as a MAC address.
 
     # Format dashes out in case someone pasted in a Windows-style formatting
     local mac="$(sed 's/-/:/g' <<< "$location" | sed -e 's/\(.*\)/\L\1/')"
@@ -381,15 +413,15 @@ getlabel(){
 
     else # IP address format else
       # Provided address already is an IP address.
-      local address=$location
+      local address="${location}"
     fi # end IP address format check
 
     if [ -z "$WINDIR" ]; then
-      if ip a s | grep -q "inet\ $(sed 's/\./\\\./g' <<< "$address")\/"; then
+      if ip a s | grep -Pq "inet\s${address//./\\.}\/"; then
         # Unix machine
 
         # The calls are coming from inside the house!
-        notice "$(printf "${GREEN}%s${NC} looks like it is held by the machine running this script." "$address")"
+        self "$(printf "${GREEN}%s${NC} looks like it is held by the machine running this script." "$address")"
         # Not considering this an error at this time, so return code is for all clear.
         return 0
       fi
@@ -406,9 +438,9 @@ getlabel(){
       fi
     else
       # Adapted for MobaXterm
-      if ipconfig | grep IPv4 | cut -d':' -f2 | sed 's/\ *//g' | grep -q "^$(sed 's/\./\\\./g' <<< "$address")[^0-9]"; then
+      if ipconfig | grep IPv4 | cut -d':' -f2 | sed 's/\ *//g' | grep -qw "^${address//./\\.}"; then
         # The calls are coming from inside the house!
-        notice "$(printf "${GREEN}%s${NC} looks like it is held by the machine running this script." "$address")"
+        self "$(printf "${GREEN}%s${NC} looks like it is held by the machine running this script." "$address")"
         # Not considering this an error at this time, so return code is for all clear.
         return 0
       fi
@@ -472,16 +504,18 @@ getlabel(){
 
       fi # end check for $mac being empty
 
-    fi # end MAC address format check
+    fi # end else of MAC address format check (IP Address Handling)
 
     # Finished resolving our MAC address (if necessary, start searching records.
     if [ -n "$mac" ]; then
       local label="$(__get_mac_label "$mac")"
       if [ -n "$label" ]; then
         if [ -n "$address" ]; then
-          success "$(printf "Label record for ${GREEN}%s${NC} (${BOLD}%s${NC}): ${BOLD}%s${NC}" "$address" "$mac" "$label")"
+          # User provided an IP address
+          record "$(printf "Record for ${GREEN}%s${NC} (${BOLD}%s${NC}): ${BOLD}%s${NC}" "$address" "$mac" "$label")"
         else
-          success "$(printf "Label record for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "$mac" "$label")"
+          # User only provided a MAC address
+          record "$(printf "Record for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "$mac" "$label")"
         fi
 
         # look for other fields to print if we are in verbose mode.
@@ -565,18 +599,23 @@ getlabel(){
       if [ -n "$vendor" ]; then
         if [ -n "$address" ]; then
           # User provided resolveable domain name or IP address
-          error "$(printf "No record for ${GREEN}%s${NC} (MAC: ${BOLD}%s${NC}, Vendor: ${BOLD}%s${NC})..." "$address" "$mac" "$vendor")"
+          unknown "$(printf "No record for ${GREEN}%s${NC} (MAC: ${BOLD}%s${NC}, Vendor: ${BOLD}%s${NC})..." "$address" "$mac" "$vendor")"
+        elif ! grep -iPq '^[a-f0-9]{2}([:|-][a-f0-9]{2}){5}$' <<< "${mac}"; then
+          # User provided an incomplete MAC address.
+          # Assuming that the user did this intentionally in order
+          #   to specifically check a vendor.
+          record "$(printf "Vendor for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "${mac}" "${vendor}")"
         else
-          # User only provided a MAC address
-          error "$(printf "No record for ${BOLD}%s${NC} (Vendor: ${BOLD}%s${NC})..." "$mac" "$vendor")"
+          # User only provided a full-fledged MAC address
+          unknown "$(printf "No record for ${BOLD}%s${NC} (Vendor: ${BOLD}%s${NC})..." "$mac" "$vendor")"
         fi
       else
         if [ -n "$address" ]; then
           # User provided resolveable domain name or IP address
-          error "$(printf "No record for ${GREEN}%s${NC} (${BOLD}%s${NC})..." "$address" "$mac")"
+          unknown "$(printf "No records for ${GREEN}%s${NC} (${BOLD}%s${NC})..." "$address" "$mac")"
         else
           # User only provided a MAC address
-          error "$(printf "No record for ${BOLD}%s${NC}..." "$mac")"
+          unknown "$(printf "No record sfor ${BOLD}%s${NC}..." "$mac")"
         fi
       fi
 
@@ -659,7 +698,7 @@ getlabel_if(){
   if [ "$network_count" -gt 0 ]; then
     notice "$(printf "Looking for devices on the same network as our ${BOLD}%s${NC} interface (%d subnets)." "${interface}" "$network_count")"
     for network in $networks; do
-      getlabel "$network"
+      getlabel "$(cut -d'/' -f 1 <<< "${network}")/$(mask2cidr "$(cut -d'/' -f2 <<< "${network}")")"
     done
     unset network # Axe loop variable
   else

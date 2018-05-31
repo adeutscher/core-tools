@@ -36,6 +36,12 @@
       shell: ./configure --enable-libmp3lame --enable-gpl --enable-nonfree --enable-libx264
       args:
         chdir: "{{ git.dest }}"
+      notify: clean libav
+
+    - name: clean libav
+      shell: make clean
+      args:
+        chdir: "{{ git.dest }}"
       notify: build libav
 
     - name: build libav

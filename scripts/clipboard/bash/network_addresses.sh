@@ -86,3 +86,26 @@ is_in_cidr(){
   local addr_dec="$(ip2dec "${addr}")"
   [ "${addr_dec}" -ge "$(cidr_low_dec "${cidr}")" ] && [ "${addr_dec}" -le "$(cidr_high_dec "${cidr}")" ]
 }
+
+cidr2mask(){
+  # Convert short-form CIDR notation to a full-form subnet mask.
+  local _mmask="$((32-${1}))"
+  while [ "${_mmask}" -lt 32 ]; do
+    local _t="$((${_t:-0}+2**${_mmask}))"
+    local _mmask="$(("${_mmask}" + 1))"
+  done
+  echo "$(dec2ip "${_t}")"
+}
+
+mask2cidr(){
+  # Convert a full-form subnet mask to short-form CIDR notation.
+  local _cmask=$(ip2dec "${1}")
+  local _mmask="$(ip2dec 255.255.255.255)"
+  local _rmask=0
+
+  while [ "${_cmask}" -lt "${_mmask}" ]; do
+    _cmask=$((${_cmask}+2**${_rmask}))
+    _rmask="$((${_rmask}+1))"
+  done
+  echo "$((32 - ${_rmask}))"
+}

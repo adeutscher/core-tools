@@ -22,24 +22,39 @@ INDEX_DIR = "scudder"
 
 image_extensions = ('.png','.jpg', '.jpeg', '.gif')
 
-if sys.stdout.isatty():
-    # Colours for standard output.
-    COLOUR_RED= '\033[1;91m'
-    COLOUR_GREEN = '\033[1;92m'
-    COLOUR_YELLOW = '\033[1;93m'
-    COLOUR_BLUE = '\033[1;94m'
-    COLOUR_PURPLE = '\033[1;95m'
-    COLOUR_BOLD = '\033[1m'
-    COLOUR_OFF = '\033[0m'
-else:
-    # Set to blank values if not to standard output.
-    COLOUR_RED= ''
-    COLOUR_GREEN = ''
-    COLOUR_YELLOW = ''
-    COLOUR_BLUE = ''
-    COLOUR_PURPLE = ''
-    COLOUR_BOLD = ''
-    COLOUR_OFF = ''
+def enable_colours(force = False):
+    global COLOUR_PURPLE
+    global COLOUR_RED
+    global COLOUR_GREEN
+    global COLOUR_YELLOW
+    global COLOUR_BLUE
+    global COLOUR_BOLD
+    global COLOUR_OFF
+    if force or sys.stdout.isatty():
+        # Colours for standard output.
+        COLOUR_PURPLE = '\033[1;35m'
+        COLOUR_RED = '\033[1;91m'
+        COLOUR_GREEN = '\033[1;92m'
+        COLOUR_YELLOW = '\033[1;93m'
+        COLOUR_BLUE = '\033[1;94m'
+        COLOUR_BOLD = '\033[1m'
+        COLOUR_OFF = '\033[0m'
+    else:
+        # Set to blank values if not to standard output.
+        COLOUR_PURPLE = ''
+        COLOUR_RED = ''
+        COLOUR_GREEN = ''
+        COLOUR_YELLOW = ''
+        COLOUR_BLUE = ''
+        COLOUR_BOLD = ''
+        COLOUR_OFF = ''
+enable_colours()
+
+def print_error(message):
+    print "%s%s%s[%s%s%s]: %s" % (COLOUR_RED, "Error", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
+
+def print_notice(message):
+    print "%s%s%s[%s%s%s]: %s" % (COLOUR_BLUE, "Notice", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
 
 DEFAULT_AUTH_PROMPT = "Authorization Required"
 
@@ -449,12 +464,25 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     """
 
     server_version = "ImageMirror"
+    alive = True
+
+    def __init__(self, request, client_address, server):
+        self.request = request
+        self.client_address = client_address
+        self.server = server
+        self.setup()
+        # Note: Later run steps are in run() method
 
     def do_GET(self):
         """Serve a GET request."""
         f = self.send_head()
         if f:
-            shutil.copyfileobj(f, self.wfile)
+            while self.alive:
+                buf = f.read(16*1024)
+                if not (buf and self.alive):
+                    break
+                self.wfile.write(buf)
+            self.alive = False
             f.close()
 
     def do_HEAD(self):
@@ -610,7 +638,7 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             return None
 
         contents = "<p class='title'>%s (%d direct images)</p>" % (relativePath, imageCount)
-        contents += "<ul>\n%s\n          </ul>" % "\n".join(["            <li><a href='/browse/%s'>%s</a> (<a href='/view?path=%s'>View</a>)" % (entry[1], entry[2], entry[1]) for entry in sub_directories])
+        contents += "<ul>\n%s\n          </ul>" % "\n".join(["            <li><a href='/browse/%s/'>%s</a> (<a href='/view?path=%s/'>View</a>)" % (entry[1], entry[2], entry[1]) for entry in sub_directories])
         title = relativePath
         if not title:
             title = "."
@@ -719,12 +747,17 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         http_code_colour = COLOUR_RED
         extra_info = ''
-        if args[1] == "200":
+        try:
+            response_code = int(args[1])
+        except ValueError:
+            response_code = "???"
+
+        if response_code == 200:
             http_code_colour = COLOUR_GREEN
-        elif args[1] == "301":
+        elif response_code in (301, 307):
             http_code_colour = COLOUR_PURPLE
             extra_info = '[%s%s%s]' % (COLOUR_PURPLE, "Redirect", COLOUR_OFF)
-        elif args[1] == "404":
+        elif response_code == 404:
             extra_info = '[%s%s%s]' % (COLOUR_RED, "File Not Found", COLOUR_OFF)
 
         # Does address string match the client address? If not, print both.
@@ -733,13 +766,13 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         # A 400 (bad request) error is more likely to contain corrupted information.
         # A likely cause of a bad request is a non-HTTP protocol being used (e.g. HTTPS, SSH).
         # We do not want to print this information, so we will be overwriting our args tuple.
-        if args[1] == "400":
-            args = ("%s%s%s" % (COLOUR_RED, "BAD REQUEST", COLOUR_OFF), args[1], args[2])
+        if response_code == 400:
+            args = ("%s%s%s" % (COLOUR_RED, "BAD REQUEST", COLOUR_OFF), response_code, args[2])
 
         if s == self.client_address[0]:
-            sys.stdout.write("%s%s%s [%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
+            sys.stdout.write("%s%s%s [%s%s%s][%s%s%s]%s: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, extra_info, args[0]))
         else:
-            sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, s, COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
+            sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]%s: %s\n" % (COLOUR_GREEN, s, COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, extra_info, args[0]))
 
     def parse_request(self):
         """Parse a request (internal).
@@ -891,6 +924,15 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
   </body>
 </html>""" % (title, extra_headers, breadcrumb_content, entry_content)
 
+    def run(self):
+        """
+        Separation of tasks in standard __init__
+        """
+        try:
+            self.handle()
+        finally:
+            self.finish()
+
     def send_content(self, content, code=200):
 
         f = StringIO()
@@ -1031,6 +1073,28 @@ class ImageMirrorRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
 
+    requests = {}
+    alive = True
+
+    def finish_request(self, request, client_address):
+        """Finish one request by instantiating RequestHandlerClass."""
+
+        if not self.alive:
+            return
+
+        try:
+            req = self.RequestHandlerClass(request, client_address, self)
+            self.requests[client_address] = req
+            req.run()
+        except Exception as e:
+            print_error("%s%s%s: %s" % (COLOUR_GREEN, client_address[0], COLOUR_OFF, e))
+        del self.requests[client_address]
+
+    def kill_requests(self):
+        self.alive = False
+        for client_address in self.requests.keys():
+            self.requests[client_address].alive = False
+
 if __name__ == '__main__':
     error, args = process_arguments()
     if error:
@@ -1040,21 +1104,22 @@ if __name__ == '__main__':
     GALLERY_PATH = args.get("dir", os.getcwd())
 
     if not os.path.isdir(GALLERY_PATH):
-        print "Gallery path does not seem to exist: %s%s%s" % (COLOUR_GREEN, os.path.realpath(GALLERY_PATH), COLOUR_OFF)
+        print_error("Gallery path does not seem to exist: %s%s%s" % (COLOUR_GREEN, os.path.realpath(GALLERY_PATH), COLOUR_OFF))
         exit(1)
 
-    print "Sharing images in %s%s%s on %s%s:%d%s" % (COLOUR_GREEN, os.path.realpath(GALLERY_PATH), COLOUR_OFF, COLOUR_GREEN, bind_address, bind_port, COLOUR_OFF)
+    print_notice("Sharing images in %s%s%s on %s%s:%d%s" % (COLOUR_GREEN, os.path.realpath(GALLERY_PATH), COLOUR_OFF, COLOUR_GREEN, bind_address, bind_port, COLOUR_OFF))
 
     if args.get("user"):
         print "Basic authentication enabled (User: %s%s%s)" % (COLOUR_BOLD, args.get("user", "<EMPTY>"), COLOUR_OFF)
 
     try:
         server = ThreadedHTTPServer((bind_address, bind_port), ImageMirrorRequestHandler)
-        print "Starting server, use <Ctrl-C> to stop"
+        print_notice("Starting server, use <Ctrl-C> to stop")
         server.serve_forever()
     except socket.error as e:
-        print "SocketError: %s" % e
+        print_error("SocketError: %s" % e)
         exit(1)
     except KeyboardInterrupt:
         # Ctrl-C
+        server.kill_requests()
         exit(130)

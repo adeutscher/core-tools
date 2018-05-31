@@ -20,5 +20,6 @@ while [ -n "${1}" ]; do
     grep -q "^\-" <<< "${1}" && break
 
     # Do script-specific operand stuff here.
+    shift
   done # Operand ${1} loop.
 done # Outer ${1} loop.

@@ -28,8 +28,9 @@ notice(){
 
 add_pid(){
   [ -z "${1}" ] && return 0
+  COUNT="$((${COUNT:-0}+1))"
+  PIDS[${COUNT}]="${1}"
   notice "$(printf "Waiting for PID: ${BOLD}%s${NC}" "${1}")"
-  PIDS="${PIDS} ${1}"
 }
 
 pid_exists(){
@@ -37,19 +38,55 @@ pid_exists(){
   return 1
 }
 
-validate_pids(){
+wait_for_pids(){
+  complete=0
+  while (( 1 )); do
+    current=0
+    while [ "${current}" -le "${COUNT}" ]; do
+      current="$((${current}+1))"
+      (( "${COMPLETED[${current}]:-0}" )) && continue
+      if ! pid_exists "${PIDS[${current}]}"; then
+        notice "$(printf "PID Complete: ${BOLD}%s${NC}" "${PIDS[${current}]}")"
+        complete="$((${complete}+1))"
+        COMPLETED[${current}]=1
+      fi
+    done
+    [ "${complete}" -eq "${COUNT}" ] && break
+    sleep "${INTERVAL:-0.5}"
+  done
+}
 
-  # Confirm that valid PIDs were given and that they existed at the start of the script's running.
+# Confirm that valid PIDs were given and that they existed at the start of the script's running.
 
-  if [ -z "${1}" ]; then
-    error "No PIDs provided."
-    return 1
-  fi
+if [ -z "${1}" ]; then
+  error "No PIDs provided."
+  exit 1
+fi
 
-  for pid in ${@}; do
-    if ! grep -Pq "^\d+$" <<< "${pid}"; then
+while [ -n "${1}" ]; do
+  while getopts "s:" OPT $@; do
+    # Handle switches up until we encounter a non-switch option.
+    case "$OPT" in
+      s)
+        if grep -Pq "^\d+$" <<< "${OPTARG}"; then
+          CUSTOM_INTERVAL=1
+          INTERVAL="${OPTARG}"
+        else
+          error "$(printf "Invalid check interval: ${BOLD}%s${NC}" "${OPTARG}")"
+        fi
+        ;;
+    esac
+  done # getopts loop
+
+  # Set ${1} to first operand, ${2} to second operands, etc.
+  shift $((OPTIND - 1))
+  while [ -n "${1}" ]; do
+    # Break if the option began with a '-', going back to getopts phase.
+    grep -q "^\-" <<< "${1}" && break
+
+    if ! grep -Pq "^\d+$" <<< "${1}"; then
       # If the argument is not a number, then assume that we want to pgrep for matcing entries.
-      notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${pid}")"
+      notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${1}")"
 
       # Get results, sanitizing options beginning in '-'.
       # Strip out PID of script and the subshell that collects input to respectively
@@ -62,43 +99,29 @@ validate_pids(){
       #  A: Store BASHPID in a separate variable before piping. I went with this option.
       #  B: Use mktemp to avoid subshells altogether. Seems like a bit of a waste.
 
-      results="$(bpid="${BASHPID}"; pgrep "$(sed "s/-/\\\\-/g" <<< "${pid}")" | sed -e "/^${$}$/d" -e "/^${bpid}$/d")"
+      results="$(bpid="${BASHPID}"; pgrep "$(sed "s/-/\\\\-/g" <<< "${1}")" | sed -e "/^${$}$/d" -e "/^${bpid}$/d")"
 
       if [ -z "${results}" ]; then
-        error "$(printf "No matching processes: ${BOLD}%s${NC}" "${pid}")"
-        continue
+        error "$(printf "No matching processes: ${BOLD}%s${NC}" "${1}")"
+      else
+        for result in ${results}; do
+          add_pid "${result}"
+        done
       fi
-      for result in ${results}; do
-        add_pid "${result}"
-      done
-    elif ! pid_exists "${pid}"; then
+    elif ! pid_exists "${1}"; then
       # PID must exist at start.
-      error "$(printf "PID does not exist: ${BOLD}%s${NC}" "${pid}")"
+      error "$(printf "PID does not exist: ${BOLD}%s${NC}" "${1}")"
     else
-      add_pid "${pid}"
+      add_pid "${1}"
     fi
-  done
+    shift
+  done # Operand ${1} loop.
+done # Outer ${1} loop.
 
-  (( "${__error_count:-0}" )) && return 1
-  return 0
-}
+(( "${__error_count:-0}" )) && exit 1
 
-wait_for_pids(){
+# Announce Options
+(( "${CUSTOM_INTERVAL}" )) && notice "$(printf "Check interval: ${BOLD}%s${NC}" "${INTERVAL}")"
 
-  count="$(wc -w <<< "${PIDS}")"
-  complete=0
-
-  while [ "${complete}" -lt "${count}" ]; do
-    for pid in ${PIDS}; do
-      if ! pid_exists "${pid}"; then
-        notice "$(printf "PID Complete: ${BOLD}%s${NC}" "${pid}")"
-        complete="$((${complete}+1))"
-        PIDS="$(sed -r "s/\b${pid}\b//g" <<< "${PIDS}")"
-      fi
-    done
-    sleep 1
-  done
-}
-
-validate_pids $@ || exit 1
+# Wait for PIDs
 wait_for_pids

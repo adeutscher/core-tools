@@ -16,24 +16,39 @@ try:
 except ImportError:
     from StringIO import StringIO
 
-if sys.stdout.isatty():
-    # Colours for standard output.
-    COLOUR_RED= '\033[1;91m'
-    COLOUR_GREEN = '\033[1;92m'
-    COLOUR_YELLOW = '\033[1;93m'
-    COLOUR_BLUE = '\033[1;94m'
-    COLOUR_PURPLE = '\033[1;95m'
-    COLOUR_BOLD = '\033[1m'
-    COLOUR_OFF = '\033[0m'
-else:
-    # Set to blank values if not to standard output.
-    COLOUR_RED= ''
-    COLOUR_GREEN = ''
-    COLOUR_YELLOW = ''
-    COLOUR_BLUE = ''
-    COLOUR_PURPLE = ''
-    COLOUR_BOLD = ''
-    COLOUR_OFF = ''
+def enable_colours(force = False):
+    global COLOUR_PURPLE
+    global COLOUR_RED
+    global COLOUR_GREEN
+    global COLOUR_YELLOW
+    global COLOUR_BLUE
+    global COLOUR_BOLD
+    global COLOUR_OFF
+    if force or sys.stdout.isatty():
+        # Colours for standard output.
+        COLOUR_PURPLE = '\033[1;35m'
+        COLOUR_RED = '\033[1;91m'
+        COLOUR_GREEN = '\033[1;92m'
+        COLOUR_YELLOW = '\033[1;93m'
+        COLOUR_BLUE = '\033[1;94m'
+        COLOUR_BOLD = '\033[1m'
+        COLOUR_OFF = '\033[0m'
+    else:
+        # Set to blank values if not to standard output.
+        COLOUR_PURPLE = ''
+        COLOUR_RED = ''
+        COLOUR_GREEN = ''
+        COLOUR_YELLOW = ''
+        COLOUR_BLUE = ''
+        COLOUR_BOLD = ''
+        COLOUR_OFF = ''
+enable_colours()
+
+def print_error(message):
+    print "%s%s%s[%s%s%s]: %s" % (COLOUR_RED, "Error", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
+
+def print_notice(message):
+    print "%s%s%s[%s%s%s]: %s" % (COLOUR_BLUE, "Notice", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
 
 DEFAULT_AUTH_PROMPT = "Authorization Required"
 
@@ -230,6 +245,26 @@ class NetAccess:
 class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
 
     suffixes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    alive = True
+
+    def __init__(self, request, client_address, server):
+        self.request = request
+        self.client_address = client_address
+        self.server = server
+        self.setup()
+        # Note: Later run steps are in run() method
+
+    def do_GET(self):
+        """Serve a GET request."""
+        f = self.send_head()
+        if f:
+            while self.alive:
+                buf = f.read(16*1024)
+                if not (buf and self.alive):
+                    break
+                self.wfile.write(buf)
+            self.alive = False
+            f.close()
 
     def handle_one_request(self):
         """Handle a single HTTP request.
@@ -408,12 +443,17 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
 
         http_code_colour = COLOUR_RED
         extra_info = ''
-        if args[1] == "200":
+        try:
+            response_code = int(args[1])
+        except ValueError:
+            response_code = "???"
+
+        if response_code == 200:
             http_code_colour = COLOUR_GREEN
-        elif args[1] == "301":
+        elif response_code in (301, 307):
             http_code_colour = COLOUR_PURPLE
             extra_info = '[%s%s%s]' % (COLOUR_PURPLE, "Redirect", COLOUR_OFF)
-        elif args[1] == "404":
+        elif response_code == 404:
             extra_info = '[%s%s%s]' % (COLOUR_RED, "File Not Found", COLOUR_OFF)
 
         # Does address string match the client address? If not, print both.
@@ -422,13 +462,13 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         # A 400 (bad request) error is more likely to contain corrupted information.
         # A likely cause of a bad request is a non-HTTP protocol being used (e.g. HTTPS, SSH).
         # We do not want to print this information, so we will be overwriting our args tuple.
-        if args[1] == "400":
-            args = ("%s%s%s" % (COLOUR_RED, "BAD REQUEST", COLOUR_OFF), args[1], args[2])
+        if response_code == 400:
+            args = ("%s%s%s" % (COLOUR_RED, "BAD REQUEST", COLOUR_OFF), response_code, args[2])
 
         if s == self.client_address[0]:
-            sys.stdout.write("%s%s%s [%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
+            sys.stdout.write("%s%s%s [%s%s%s][%s%s%s]%s: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, extra_info, args[0]))
         else:
-            sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]: %s\n" % (COLOUR_GREEN, s, COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, args[0]))
+            sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]%s: %s\n" % (COLOUR_GREEN, s, COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, extra_info, args[0]))
 
     def parse_request(self):
         """Parse a request (internal).
@@ -520,6 +560,15 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
                 content += " / <a href='%s'>%s</a>" % (item[0], item[1])
         return content
 
+    def run(self):
+        """
+        Separation of tasks in standard __init__
+        """
+        try:
+            self.handle()
+        finally:
+            self.finish()
+
     def send_error(self, code, message=None):
         """Send and log an error reply.
         Arguments are the error code, and a detailed message.
@@ -548,8 +597,74 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         if self.command != 'HEAD' and code >= 200 and code not in (204, 304):
             self.wfile.write(content)
 
+    def send_head(self):
+        """Common code for GET and HEAD commands.
+        This sends the response code and MIME headers.
+        Return value is either a file object (which has to be copied
+        to the outputfile by the caller unless the command was HEAD,
+        and must be closed by the caller under all circumstances), or
+        None, in which case the caller has nothing further to do.
+        """
+        path = self.translate_path(self.path)
+        f = None
+        if os.path.isdir(path):
+            if not self.path.endswith('/'):
+                return self.send_redirect(self.path + "/")
+            for index in "index.html", "index.htm":
+                index = os.path.join(path, index)
+                if os.path.exists(index):
+                    path = index
+                    break
+            else:
+                return self.list_directory(path)
+        ctype = self.guess_type(path)
+        try:
+            # Always read in binary mode. Opening files in text mode may cause
+            # newline translations, making the actual size of the content
+            # transmitted *less* than the content-length!
+            f = open(path, 'rb')
+        except IOError:
+            self.send_error(404, "File not found")
+            return None
+        self.send_response(200)
+        self.send_header("Content-type", ctype)
+        fs = os.fstat(f.fileno())
+        self.send_header("Content-Length", str(fs[6]))
+        self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
+        self.end_headers()
+        return f
+
+    def send_redirect(self, target):
+        # redirect browser - doing basically what apache does
+        self.send_response(307)
+        self.send_header("Location", target)
+        self.end_headers()
+        return None
+
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
+
+    requests = {}
+    alive = True
+
+    def finish_request(self, request, client_address):
+        """Finish one request by instantiating RequestHandlerClass."""
+
+        if not self.alive:
+            return
+
+        try:
+            req = self.RequestHandlerClass(request, client_address, self)
+            self.requests[client_address] = req
+            req.run()
+        except Exception as e:
+            print_error("%s%s%s: %s" % (COLOUR_GREEN, client_address[0], COLOUR_OFF, e))
+        del self.requests[client_address]
+
+    def kill_requests(self):
+        self.alive = False
+        for client_address in self.requests.keys():
+            self.requests[client_address].alive = False
 
 if __name__ == '__main__':
     error, args = process_arguments()
@@ -559,23 +674,26 @@ if __name__ == '__main__':
     bind_port = args.get("port", 8080)
     directory = args.get("dir", os.getcwd())
     if not os.path.isdir(directory):
-        print "Path %s%s%s does not seem to exist." % (COLOUR_GREEN, os.path.realpath(directory), COLOUR_OFF)
+        print_error("Path %s%s%s does not seem to exist." % (COLOUR_GREEN, os.path.realpath(directory), COLOUR_OFF))
         exit(1)
 
-    print "Sharing %s%s%s on %s%s:%d%s" % (COLOUR_GREEN, os.path.realpath(directory), COLOUR_OFF, COLOUR_GREEN, bind_address, bind_port, COLOUR_OFF)
+    print_notice("Sharing %s%s%s on %s%s:%d%s" % (COLOUR_GREEN, os.path.realpath(directory), COLOUR_OFF, COLOUR_GREEN, bind_address, bind_port, COLOUR_OFF))
+
     if args.get("post", False):
-        print "Accepting %s%s%s messages. Will not process, but will not throw a %s%s%s code either." % (COLOUR_BOLD, "POST", COLOUR_OFF, COLOUR_RED, "501", COLOUR_OFF)
+        print_notice("Accepting %s%s%s messages. Will not process, but will not throw a %s%s%s code either." % (COLOUR_BOLD, "POST", COLOUR_OFF, COLOUR_RED, "501", COLOUR_OFF))
 
     if args.get("user"):
-        print "Basic authentication enabled (User: %s%s%s)" % (COLOUR_BOLD, args.get("user", "<EMPTY>"), COLOUR_OFF)
+        print("Basic authentication enabled (User: %s%s%s)" % (COLOUR_BOLD, args.get("user", "<EMPTY>"), COLOUR_OFF))
 
     try:
         os.chdir(directory)
         server = ThreadedHTTPServer((bind_address, bind_port), SimpleHTTPVerboseReqeustHandler)
-        print "Starting server, use <Ctrl-C> to stop"
+        print_notice("Starting server, use <Ctrl-C> to stop")
         server.serve_forever()
     except socket.error as e:
-        print "SocketError: %s" % e
+        print_error("SocketError: %s" % e)
         exit(1)
     except KeyboardInterrupt:
+        # Ctrl-C
+        server.kill_requests()
         exit(130)
