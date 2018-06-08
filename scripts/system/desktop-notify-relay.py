@@ -13,26 +13,47 @@
 import getopt, os, re, socket, struct, subprocess, sys, thread, time
 
 DEFAULT_RELAY_PORT = 1234
-SOUNDS = [{},{}]
 
-if sys.stdout.isatty():
-    # Colours for standard output.
-    COLOUR_RED= '\033[1;91m'
-    COLOUR_GREEN = '\033[1;92m'
-    COLOUR_YELLOW = '\033[1;93m'
-    COLOUR_BLUE = '\033[1;94m'
-    COLOUR_PURPLE = '\033[1;95m'
-    COLOUR_BOLD = '\033[1m'
-    COLOUR_OFF = '\033[0m'
-else:
-    # Set to blank values if not to standard output.
-    COLOUR_RED= ''
-    COLOUR_GREEN = ''
-    COLOUR_YELLOW = ''
-    COLOUR_BLUE = ''
-    COLOUR_PURPLE = ''
-    COLOUR_BOLD = ''
-    COLOUR_OFF = ''
+def enable_colours(force = False):
+    global COLOUR_PURPLE
+    global COLOUR_RED
+    global COLOUR_GREEN
+    global COLOUR_YELLOW
+    global COLOUR_BLUE
+    global COLOUR_BOLD
+    global COLOUR_OFF
+    if force or sys.stdout.isatty():
+        # Colours for standard output.
+        COLOUR_PURPLE = '\033[1;35m'
+        COLOUR_RED = '\033[1;91m'
+        COLOUR_GREEN = '\033[1;92m'
+        COLOUR_YELLOW = '\033[1;93m'
+        COLOUR_BLUE = '\033[1;94m'
+        COLOUR_BOLD = '\033[1m'
+        COLOUR_OFF = '\033[0m'
+    else:
+        # Set to blank values if not to standard output.
+        COLOUR_PURPLE = ''
+        COLOUR_RED = ''
+        COLOUR_GREEN = ''
+        COLOUR_YELLOW = ''
+        COLOUR_BLUE = ''
+        COLOUR_BOLD = ''
+        COLOUR_OFF = ''
+enable_colours()
+
+#
+# Common Message Functions
+###
+
+def print_denied(message):
+    print "%s%s%s[%s%s%s]: %s" % (COLOUR_RED, "Denied", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
+
+def print_error(message):
+    print "%s%s%s[%s%s%s]: %s" % (COLOUR_RED, "Error", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
+
+def print_notice(message):
+    print "%s%s%s[%s%s%s]: %s" % (COLOUR_BLUE, "Notice", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
 
 class NetAccess:
     # Basic IPv4 CIDR syntax check
@@ -76,9 +97,9 @@ class NetAccess:
 
             for title, ip, address in l:
                 if ip == address:
-                    print "%s %s: %s%s%s" % (action, title, COLOUR_GREEN, address, COLOUR_OFF)
+                    print_notice("%s %s: %s%s%s" % (action, title, COLOUR_GREEN, address, COLOUR_OFF))
                 else:
-                    print "%s %s: %s%s%s (%s%s%s)" % (action, title, COLOUR_GREEN, address, COLOUR_OFF, COLOUR_GREEN, ip, COLOUR_OFF)
+                    print_notice("%s %s: %s%s%s (%s%s%s)" % (action, title, COLOUR_GREEN, address, COLOUR_OFF, COLOUR_GREEN, ip, COLOUR_OFF))
 
     def load_access_file(self, fn, path, header):
         if not os.path.isfile(path):
@@ -194,15 +215,15 @@ def do_message(header, addr, data):
     elif re.match(r"(firewall|security)", message, re.IGNORECASE):
         icon = "security-medium" # I like the MATE medium security icon more than the high security icon.
 
-    print "%s: %s" % (header, message)
+    print_notice("%s: %s" % (header, message))
     try:
         p = subprocess.Popen(["notify-send", "--icon", icon, "Message from %s" % addr[0], message])
         p.communicate()
     except OSError as e:
-        print >> sys.stderr, "OSError: %s" % str(e)
+        print_error(sys.stderr, "OSError: %s" % str(e))
 
 def hexit(exit_code):
-    print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-A deny-list-file] [-h] [-p port] [-u]" % os.path.basename(sys.argv[0])
+    print_notice("%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-A deny-list-file] [-h] [-p port] [-u]" % os.path.basename(sys.argv[0]))
     exit(exit_code)
 
 def main():
@@ -211,8 +232,6 @@ def main():
     if err:
         exit(1)
 
-    directory = os.path.realpath(args.get("dir", os.environ.get("audioToolsDir") + "/files"))
-
     udpMode = args.get("udp", False)
 
     # Print a summary of directory/bind options.
@@ -220,7 +239,7 @@ def main():
         phrasing = "datagrams"
     else:
         phrasing = "connections"
-    print "Relaying messages in %s received on %s%s:%d%s" % (phrasing, COLOUR_GREEN, args.get("bind", "0.0.0.0"), args.get("port", DEFAULT_RELAY_PORT), COLOUR_OFF)
+    print_notice("Relaying messages in %s received on %s%s:%d%s" % (phrasing, COLOUR_GREEN, args.get("bind", "0.0.0.0"), args.get("port", DEFAULT_RELAY_PORT), COLOUR_OFF))
 
     if udpMode:
         sockobj = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -234,7 +253,7 @@ def main():
         if not udpMode:
             sockobj.listen(10)
     except socket.error as msg:
-        print 'Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
+        print_error('Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1])
         exit(1)
 
     # Keep accepting new messages
@@ -252,7 +271,7 @@ def main():
         header = "%s%s%s[%s%s%s]" % (COLOUR_GREEN, addr[0], COLOUR_OFF, COLOUR_BOLD, time.strftime("%Y-%m-%d %k:%M:%S"), COLOUR_OFF)
         if not allowed:
             # Not allowed
-            print "%s (%s%s%s)" % (header, COLOUR_RED, "Ignored", COLOUR_OFF)
+            print_denied("%s (%s%s%s)" % (header, COLOUR_RED, "Ignored", COLOUR_OFF))
             if not udpMode:
                 conn.close()
             continue
@@ -262,6 +281,8 @@ def main():
             do_message(header, addr, data)
         else:
             # Spawn new thread and pass it the new socket object
+            # Multi-threading is so that an established connection
+            #   with no data doesn't hold up the line.
             thread.start_new_thread(tcpclientthread, (header, conn,addr))
 
 def process_arguments():
@@ -274,7 +295,7 @@ def process_arguments():
     try:
         opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hp:u")
     except getopt.GetoptError as e:
-        print "GetoptError: %s" % e
+        print_error("GetoptError: %s" % e)
         hexit(1)
     for opt, arg in opts:
         if opt in ("-a"):
@@ -302,7 +323,7 @@ def process_arguments():
         access.announce_filter_actions()
     else:
         for e in errors:
-            print "Error: %s" % e
+            print_error(e)
 
     return error, args
 

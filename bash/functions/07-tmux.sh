@@ -67,13 +67,17 @@ if qtype tmux; then
         mkdir -p "/tmp/${USER}/tmux"
         chmod 700 "/tmp/${USER}"
 
-        # For the moment, the only variables that we care about exporting to a new session
-        #   are our display username/hostname, our prompt flags, and conky variables.
+        # For the moment, the only variables that we care about exporting to a new session are:
+        #   * Display username/hostname
+        #   * Prompt flags
+        #   * Conky variables
+        #   * KDE variables
+        #   * XDG variables
         # A reminder in case you are thinking about expanding on this:
         #   When I was developing this feature, I originally dumped all of my exported variables
         #   without a grep filter. This caused me grief because some bits were not parsing properly.
         # Quotes should help with values including spaces, but you may still run into problems with more exotic data.
-        env | grep -P "^(AUDIO|CONKY|DISPLAY|PROMPT)_" | sed -r -e 's/(^[^=]+=)/\1"/' -e 's/$/"/g' > "/tmp/${USER}/tmux/env.${1}"
+        env | grep -P "^(AUDIO|CONKY|DISPLAY|KDE|PROMPT|XDG)_" | sed -r -e 's/(^[^=]+=)/\1"/' -e 's/$/"/g' -e 's/^/export /g' > "/tmp/${USER}/tmux/env.${1}"
         tmux new -s "$1"
     fi
   }

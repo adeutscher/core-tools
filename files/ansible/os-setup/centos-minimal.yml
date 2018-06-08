@@ -1,0 +1,55 @@
+---
+
+# Basic setup of a CentOS Minimal installation with some preferences.
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  vars:
+
+    # Backend-ish packages
+    system_packages:
+      - epel-release
+      - deltarpm
+      - bash-completion
+      - bash
+
+    # User convenience packages
+    preferred_packages:
+      - tmux
+      - net-tools
+      - svn
+      - git
+      - wget
+      - python
+      - vim
+      - curl
+      - nmap-ncat
+
+  environment:
+    ANSIBLE: 1
+
+  tasks:
+
+  - name: packages
+    become: yes
+    when: (ansible_distribution == "CentOS")
+    block:
+
+      - name: "install system packages"
+        yum: name="{{ item }}" state="latest"
+        become: yes
+        with_items: "{{ system_packages }}"
+
+      - name: "install preferred packages"
+        yum: name="{{ item }}" state="latest"
+        become: yes
+        with_items: "{{ preferred_packages }}"
+
+  - name: Other CentOS Items
+    when: (ansible_distribution == "CentOS")
+    become: yes
+    block:
+
+      - name: openssh service enabled
+        service: name="sshd" state="started" enabled="yes"

@@ -1,0 +1,80 @@
+---
+
+# Basic setup of a Debian-based workstation.
+# I ususally prefer RedHat-based distributions,
+#   but this playbook should come in handy if I find
+#   myself absolutely needing to use a Debian-based system.
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  vars:
+
+    # System Packages
+    system_packages:
+      - openssh-server
+      - bash-completion
+      - bash
+
+    # Preferred user packages from terminal
+    terminal_packages:
+      - tmux
+      - net-tools
+      - subversion
+      - git
+      - wget
+      - python
+      - python3
+      - vim
+      - curl
+      - nmap # Debian packages nmap-ncat with nmap.
+
+    desktop_packages:
+      - conky
+      - conky-all
+      - firefox
+      - libreoffice-calc
+      - libreoffice-writer
+      - geany
+
+  environment:
+    ANSIBLE: 1
+
+  # With thanks to jbroadway of GitHub
+  gather_facts: False
+  pre_tasks:
+    - name: confirm python for ansible facts
+      raw: test -e /usr/bin/python || (apt -y update && apt install -y python-minimal)
+      changed_when: False
+    - name: gather facts
+      setup: # aka gather_facts
+
+  tasks:
+
+  - name: packages
+    become: yes
+    when: (ansible_os_family == "Debian")
+    block:
+
+      - name: "install system packages"
+        apt: name="{{ item }}" state="latest" cache_valid_time=3600
+        become: yes
+        with_items: "{{ system_packages }}"
+
+      - name: "install terminal packages"
+        apt: name="{{ item }}" state="latest" cache_valid_time=3600
+        become: yes
+        with_items: "{{ terminal_packages }}"
+
+      - name: "install desktop packages"
+        apt: name="{{ item }}" state="latest" cache_valid_time=3600
+        become: yes
+        with_items: "{{ desktop_packages }}"
+
+  - name: Other System Items
+    when: (ansible_os_family == "Debian")
+    become: yes
+    block:
+
+      - name: enable sshd2
+        service: name="sshd" state="started" enabled="yes"

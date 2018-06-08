@@ -185,7 +185,7 @@ get_data(){
     print sourcenums " " $0 " " swap
 
   }' <<< "${BASIC}" \
-    | sort -t' ' -k1,1n -k2,2n -k3,3n -k4,4n -k5,5n -k6,6n -k7,7n -k8,8n -k12,12n -k13,13n \
+    | sort -t' ' -k1,1n -k2,2n -k3,3n -k4,4n -k5,5n -k6,6n -k7,7n -k8,8n -k13,13n -k12,12n \
     | cut -d' ' -f9- | uniq
   )"
 }
@@ -419,6 +419,11 @@ if ! (( "${NETSTAT:-0}" )); then
   (( ${EUID} )) && error "$(printf "Must be ${RED}%s${NC} to track connections via ${BLUE}%s${NC}." "root" "conntrack")"
 
   (( "${LOCALHOST:-0}" )) && error "$(printf "Localhost mode (-l) is incompatible with ${BLUE}%s${NC} mode." "${METHOD}")"
+else
+  # Netstat checking
+
+  # That I have seen, netstat will only be unavailable by default on minimal CentOS-7 installations.
+  type netstat 2> /dev/null >&2 || error "$(printf "${BLUE}%s${NC} command is not installed (${BOLD}%s${NC} package)." "netstat" "net-tools")"
 fi
 
 if (( "${VERBOSE:-0}" )); then
@@ -468,8 +473,7 @@ while (( 1 )); do
   # Reminder: If monitor mode is not set, then we will manually break out of the loop at the bottom.
 
   # Unset key loop variables
-  unset count
-  unset last_id
+  unset count last_id CONTENT last_from
 
   (( "${MONITOR:-0}" )) && CONTENT="$(printf "%s\n" "$(notice "${HEADER}")")"
 
@@ -562,24 +566,24 @@ while (( 1 )); do
       last_from_p="${from_p}"
 
     done <<<  "${CONNECTIONS}"
-    (( ${SUMMARIZE:-0} )) && ! (( "${QUIET:-0}" )) && CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line)")"
-
-    # Clear after we have built our output in monitor mode to reduce flicker.
-    (( "${MONITOR:-0}" )) && clear
-
-    # Print content, skipping empty lines (assumed to be headerspace in one-off listing).
-    printf "${CONTENT}" | sed '/^$/d'
-    [ -n "${CONTENT}" ] && HAD_CONTENT=1
-    unset CONTENT
   elif ! (( ${QUIET:-0} )) && ! (( "${NETSTAT:-0}" )); then
     # In non-quiet mode, empty netstat output is not note-worthy.
-    notice "$(printf "No connections noted. Are you sure that there is a state-tracking rule in ${BLUE}%s${NC}?" "iptables")"
+    CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(notice "$(printf "No connections noted. Are you sure that there is a state-tracking rule in ${BLUE}%s${NC}?" "iptables")")")"
   fi
+
+#echo "B---${CONTENT}" >&2
+  (( ${SUMMARIZE:-0} )) && ! (( "${QUIET:-0}" )) && CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line)")"
+
+  # Clear after we have built our output in monitor mode to reduce flicker.
+  (( "${MONITOR:-0}" )) && clear
+
+  # Print content, skipping empty lines (assumed to be headerspace in one-off listing).
+  printf "${CONTENT}" | sed '/^$/d'
 
   if (( "${MONITOR:-0}" )); then
     sleep 1
   else
-    if ! (( "${QUIET:-0}" )) && (( "${HAD_CONTENT:-0}" )); then
+    if ! (( "${QUIET:-0}" )) && [ -n "${CONTENT}" ]; then
       # Print trailing newline.
       printf "\n"
     fi

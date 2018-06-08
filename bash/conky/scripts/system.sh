@@ -60,8 +60,12 @@ printf "\${color grey}Swap Usage:\${color} \${swap}/ \${swapmax} - \${swapperc}%
 
 # Some systems have a segfault if it is asked for a CPU bar too early after starting or reloading the configuration. No idea why.
 cpu_bar_threshold="30"
-if [ "$(ps -p ${PPID} -o etime= | awk -F ':' '{if (NF == 2) { print $1*60 + $2 } else if (NF == 3) { split($1, a, "-"); if (a[2] > 0) { print ((a[1]*24+a[2])*60 + $2) * 60 + $3; } else { print ($1*60 + $2) * 60 + $3; } } }'  )" -gt "${cpu_bar_threshold}" ]; then
+cpu_bar_time="$(ps -p ${PPID} -o etime= | awk -F ':' '{if (NF == 2) { print $1*60 + $2 } else if (NF == 3) { split($1, a, "-"); if (a[2] > 0) { print ((a[1]*24+a[2])*60 + $2) * 60 + $3; } else { print ($1*60 + $2) * 60 + $3; } } }')"
+
+if [ "${cpu_bar_time:-0}" -gt "${cpu_bar_threshold}" ]; then
+  # Older process, larger CPU display (w/ bar)
   printf "\${color grey}Processes:\${color} \${processes}  \${color grey}Running:\${color} \${running_processes}\n\${color grey}CPU Usage:\${color} \${cpu}%% \${cpubar}\n"
 else
+  # Newer process, smaller CPU display.
   printf "\${color grey}Processes:\${color} \${processes}  \${color grey}Running:\${color} \${running_processes} \${color grey}CPU:\${color} \${cpu}%%"
 fi

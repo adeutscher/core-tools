@@ -54,8 +54,14 @@ do_dynamic_setup(){
 
     # TODO: Get a better idea about why these problems occur.
 
-    # If using Cinnamon, set to dock unless we explicitly override it.
-    [[ "${GDMSESSION}" == "cinnamon" ]] && local default_window_type=dock
+    if [[ "${GDMSESSION}" =~ ^(cinnamon|ubuntu)$ ]]; then
+      # If using Cinnamon or Ubuntu Unity,
+      #  set to dock unless we explicitly override it.
+      local default_window_type=dock
+    elif [[ "${XDG_CURRENT_DESKTOP}" =~ ^KDE$ ]]; then
+      # KDE observed on Kubuntu 18.04
+      local default_window_type=dock
+    fi
 
     # Default
     local window_type="${CONKY_WINDOW_TYPE:-${default_window_type:-override}}"
@@ -154,23 +160,21 @@ get_coords(){
         TARGET_X="$((- ( $__primary_monitor_bl_x - $MONITOR_CORNER_BL_X ) + $__add_x ))"
     else
         # Bottom-right
-        TARGET_X="$((- ( $__total_x - $MONITOR_CORNER_BR_X ) + $__add_x))"
-        if [ "$__primary_monitor_br_x" -lt "$MONITOR_CORNER_BR_X" ]; then
-            # If primary monitor is to the left of target monitor (primary br_x < monitor br_x),
-            #   then subtract (target monitor BR corner - primary_monitor_br_corner)
-            TARGET_X="$(($TARGET_X - ($MONITOR_CORNER_BR_X - $__primary_monitor_br_x)))"
-        elif [ "$__primary_monitor_br_x" -gt "$MONITOR_CORNER_BR_X" ]; then
-            # If primary monitor is to the left of target monitor (primary br_x > monitor br_x),
-            #   then subtract (primary_monitor_br_corner - target monitor BR corner)
-            TARGET_X="$(($TARGET_X - ($__primary_monitor_br_x - $MONITOR_CORNER_BR_X)))"
-        else
-            # Monitor is the primary monitor, or is otherwise in alignment with the primary monitor.
+
+        # I could swear that the position that conky uses to mark '0' keeps jumping around on me...
+        # Some testing swears that it is off of the primary monitor, and a year later it will be
+        #   off of the right-hand side of the display.
+
+        if [ "${__total_x}" -eq "${MONITOR_CORNER_BR_X}" ]; then
+            # Monitor is the primary monitor, or is otherwise in alignment with the primary monitor's X value.
             # As offsets are calculated relative to the primary monitor, use plain offset without any further calculations.
             TARGET_X="${__add_x}"
+        else
+            TARGET_X="$((${__total_x} - ${MONITOR_CORNER_BR_X} + ${__add_x}))"
         fi
     fi
 
-    # TODO: Do similar calculations to X co-ordinates in 
+    # TODO: Do similar calculations to X co-ordinates once it becomes a problem.
     TARGET_Y="$(( $MONITOR_CORNER_BR_Y - $__primary_monitor_br_y + $__add_y ))"
 }
 
@@ -293,8 +297,9 @@ setup_failure(){
 }
 
 setup_global_values(){
-    __total_x="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f1)"
-    __total_y="$(xdpyinfo 2> /dev/null | grep dimensions | awk '{ print $2 }' | cut -d'x' -f2)"
+    __total_dimensions="$(xrandr --current | head -n1 | grep -oP "current \d+ x \d+" | sed -e 's/current//' -e 's/\s//g')"
+    __total_x="$(cut -d'x' -f1 <<< "${__total_dimensions}")"
+    __total_y="$(cut -d'x' -f2 <<< "${__total_dimensions}")"
 
     [ -z "$__total_y" ] && return 1
 

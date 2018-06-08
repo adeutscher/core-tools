@@ -223,4 +223,5 @@
         when: (dnf_check.stdout and dnf_check.stdout is version_compare('2.0.1', '>='))
 
   - name: openssh service enabled
+    become: yes
     service: name="sshd" state="started" enabled="yes"

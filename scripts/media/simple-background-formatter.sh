@@ -48,7 +48,6 @@ get_corner_colours(){
   local __target="${1}"
   local __cx="$(get_image_width "${__target}")"
   local __cy="$(get_image_height "${__target}")"
-
   if [ -z "${__cx}" ] || [ -z "${__cy}" ]; then
     error "$(printf "Unable to get corner information from ${GREEN}%s${NC}" ${__target})"
     return
@@ -60,12 +59,16 @@ get_corner_colours(){
   local __corner_c="$(get_pixel_hex "${__target}" "${__cx}" 0)"
   local __corner_d="$(get_pixel_hex "${__target}" "${__cx}" "${__cy}")"
 
+  if [ -z "${__corner_a}" ] || [ -z "${__corner_b}" ] || [ -z "${__corner_c}" ] || [ -z "${__corner_d}" ]; then
+    error "Problem with detecting corner colours."
+  fi
+
   # Average out RBG values
   local __red="$(((0x${__corner_a:0:2}+0x${__corner_b:0:2}+0x${__corner_c:0:2}+0x${__corner_d:0:2})/4))"
   local __blue="$(((0x${__corner_a:2:2}+0x${__corner_b:2:2}+0x${__corner_c:2:2}+0x${__corner_d:2:2})/4))"
   local __green="$(((0x${__corner_a:4:2}+0x${__corner_b:4:2}+0x${__corner_c:4:2}+0x${__corner_d:4:2})/4))"
   # Put back in hex code format.
-  CANVAS="$(printf "%x%x%x" "${__red}" "${__blue}" "${__green}")"
+  CANVAS="$(printf "%02x%02x%02x" "${__red}" "${__blue}" "${__green}")"
 }
 
 get_image_height(){
@@ -79,14 +82,15 @@ get_image_width(){
 }
 
 get_pixel_hex(){
-    local _f="${1}"
-    local _x="${2}"
-    local _y="${3}"
-    convert "${_f}"[1x1+${_x}+${_y}] txt: | grep -ioPm1 "#[a-f]{6}" | cut -d'#' -f2
+  local _f="${1}"
+  local _x="${2}"
+  local _y="${3}"
+
+  convert "${_f}"[1x1+${_x}+${_y}] txt: | grep -ioPm1 "#[\da-f]{6}" | cut -d'#' -f2
 }
 
 hexit(){
-  printf "${GREEN}./%s${NC} -i in-file -o out-file -c canvas/colour [-C|-L|-R] [-D|-U] [-H] [-h canvas-height] [-w canvas-width] [-x pos-x] [-y pos-y]\n" "$(basename "$(readlink -f "$0")")"
+  printf "${GREEN}./%s${NC} -i in-file -o out-file [-c canvas/colour] [-C|-L|-R] [-D|-U] [-H] [-h canvas-height] [-w canvas-width] [-x pos-x] [-y pos-y]\n" "$(basename "$(readlink -f "$0")")"
   exit ${1:-1}
 }
 
@@ -181,7 +185,6 @@ handle_arguments(){
     else
       # No canvas information was given.
       # Using the average of the four corners of our input file.
-
       MAKE_CANVAS=1
       get_corner_colours "${FILE_INPUT}"
     fi
@@ -248,6 +251,16 @@ run_script(){
     rm "${CANVAS_FILE}"
   fi
 }
+
+# Check commands before parsing arguments.
+# Some arguments immediately call ImageMagick commands,
+#   so this check can't happen at the same time as other handling.
+# It's in a bit of a different league of error, anyways.
+for _c in convert identify; do
+  type "${_c}" 2> /dev/null >&2 || error "$(printf "${BLUE}%s${NC} command not found." "${_c}")"
+done
+
+(( "${__error_count:-0}" )) && exit 1
 
 handle_arguments $@
 run_script

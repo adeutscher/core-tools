@@ -149,7 +149,7 @@ function update-git-repo(){
         local endInterval="$(tail -n +$((${startPoint}+1)) "${HOME}/.ssh/config" | grep -winm1 Host | cut -d':' -f1)"
         if [ -z "${endInterval}" ]; then
           # No end, set end to file line count.
-          local endPoint="$(wc -l "${HOME}/.ssh/config")"
+          local endPoint="$(wc -l < "${HOME}/.ssh/config")"
         else
           # Found next host entry, only search for 'hostname' directive in these bounds.
           local endPoint="$((startPoint + ${endInterval} - 1))"

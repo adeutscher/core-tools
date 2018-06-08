@@ -187,15 +187,6 @@ if __is_unix; then
     alias xargs-n="xargs -d '\n'"
     alias xargs-i="xargs -I{}"
 
-    # Burn an ISO to a device in the CD drive
-    alias burn='time wodim -v dev=/dev/cdrom speed=8 -eject'
-
-    # For wine. Only make winetricks available in the prompt if wine is actually installed and the script exists.
-    # I would also be very confused if wine were available on a Windows system, so placing this with in an __is_unix check.
-    if qtype wine && [ -x "$toolsDir/scripts/utils/winetricks" ]; then
-        alias winetricks="$toolsDir/scripts/utils/winetricks"
-    fi
-
     # Download music from YouTube via youtube-dl
     if qtype youtube-dl; then
 

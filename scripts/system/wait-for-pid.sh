@@ -30,7 +30,6 @@ add_pid(){
   [ -z "${1}" ] && return 0
   COUNT="$((${COUNT:-0}+1))"
   PIDS[${COUNT}]="${1}"
-  notice "$(printf "Waiting for PID: ${BOLD}%s${NC}" "${1}")"
 }
 
 pid_exists(){
@@ -42,7 +41,7 @@ wait_for_pids(){
   complete=0
   while (( 1 )); do
     current=0
-    while [ "${current}" -le "${COUNT}" ]; do
+    while [ "${current}" -lt "${COUNT}" ]; do
       current="$((${current}+1))"
       (( "${COMPLETED[${current}]:-0}" )) && continue
       if ! pid_exists "${PIDS[${current}]}"; then
@@ -58,15 +57,14 @@ wait_for_pids(){
 
 # Confirm that valid PIDs were given and that they existed at the start of the script's running.
 
-if [ -z "${1}" ]; then
-  error "No PIDs provided."
-  exit 1
-fi
-
 while [ -n "${1}" ]; do
-  while getopts "s:" OPT $@; do
+  while getopts ":hs:" OPT $@; do
     # Handle switches up until we encounter a non-switch option.
     case "$OPT" in
+      h)
+         notice "Usage: ./wait-for-pid.sh [-s interval] [-h] pattern|pid ..."
+         exit 0
+         ;;
       s)
         if grep -Pq "^\d+$" <<< "${OPTARG}"; then
           CUSTOM_INTERVAL=1
@@ -74,6 +72,9 @@ while [ -n "${1}" ]; do
         else
           error "$(printf "Invalid check interval: ${BOLD}%s${NC}" "${OPTARG}")"
         fi
+        ;;
+      *)
+        error "$(printf "Invalid switch: ${BOLD}-%s${NC}" "${OPTARG}")"
         ;;
     esac
   done # getopts loop
@@ -83,6 +84,10 @@ while [ -n "${1}" ]; do
   while [ -n "${1}" ]; do
     # Break if the option began with a '-', going back to getopts phase.
     grep -q "^\-" <<< "${1}" && break
+
+    # Mark that there was an attempt to give a PID.
+    # If the attempt failed, then there will be a more specific error message down the chain.
+    ATTEMPT=1
 
     if ! grep -Pq "^\d+$" <<< "${1}"; then
       # If the argument is not a number, then assume that we want to pgrep for matcing entries.
@@ -118,7 +123,17 @@ while [ -n "${1}" ]; do
   done # Operand ${1} loop.
 done # Outer ${1} loop.
 
+if ! (( "${ATTEMPT:-0}" )); then
+  error "No PIDs provided."
+fi
+
 (( "${__error_count:-0}" )) && exit 1
+
+current=0
+while [ "${current}" -lt "${COUNT}" ]; do
+  current="$((${current}+1))"
+  notice "$(printf "Waiting for PID: ${BOLD}%s${NC}" "${PIDS[${current}]}")"
+done
 
 # Announce Options
 (( "${CUSTOM_INTERVAL}" )) && notice "$(printf "Check interval: ${BOLD}%s${NC}" "${INTERVAL}")"

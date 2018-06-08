@@ -8,6 +8,7 @@ colours_on(){
   GREEN='\033[1;32m'
   RED='\033[1;31m'
   YELLOW='\033[1;93m'
+  PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
 }
@@ -24,15 +25,20 @@ notice(){
 
 record(){
   printf "$GREEN"'Record'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
-  __success_count=$((${__success_count:-0}+1))
+  __record_count=$((${__record_count:-0}+1))
 }
 
 self(){
   printf "$BLUE"'Self'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
 }
 
+summary(){
+  printf "$PURPLE"'Summary'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+}
+
 unknown(){
   printf "$RED"'Unknown'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  __unknown_count=$((${__unknown_count:-0}+1))
 }
 
 warning(){
@@ -378,9 +384,10 @@ getlabel(){
       notice "$(printf "Scan complete (%d record, and it's probably our own device). Searching record..." "$count")"
     fi
 
-    for address in $total_address_list; do
-      getlabel "$address"
+    for current_address in ${total_address_list}; do
+      getlabel "${current_address}"
     done
+    unset current_address
 
     return
 
@@ -596,30 +603,30 @@ getlabel(){
         # Unable to find a specific label in our network index.
         # As a fallback, attempt to determine the vendor of the unknown device.
         local vendor="$(__get_mac_vendor "$mac")"
-      if [ -n "$vendor" ]; then
-        if [ -n "$address" ]; then
-          # User provided resolveable domain name or IP address
-          unknown "$(printf "No record for ${GREEN}%s${NC} (MAC: ${BOLD}%s${NC}, Vendor: ${BOLD}%s${NC})..." "$address" "$mac" "$vendor")"
-        elif ! grep -iPq '^[a-f0-9]{2}([:|-][a-f0-9]{2}){5}$' <<< "${mac}"; then
-          # User provided an incomplete MAC address.
-          # Assuming that the user did this intentionally in order
-          #   to specifically check a vendor.
-          record "$(printf "Vendor for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "${mac}" "${vendor}")"
+        if [ -n "$vendor" ]; then
+          if [ -n "$address" ]; then
+            # User provided resolveable domain name or IP address
+            unknown "$(printf "No record for ${GREEN}%s${NC} (${BOLD}%s${NC}) Vendor: ${BOLD}%s${NC}" "$address" "$mac" "$vendor")"
+          elif ! grep -iPq '^[a-f0-9]{2}([:|-][a-f0-9]{2}){5}$' <<< "${mac}"; then
+            # User provided an incomplete MAC address.
+            # Assuming that the user did this intentionally in order
+            #   to specifically check a vendor.
+            record "$(printf "Vendor for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "${mac}" "${vendor}")"
+          else
+            # User only provided a full-fledged MAC address
+            unknown "$(printf "No record for ${BOLD}%s${NC} (Vendor: ${BOLD}%s${NC})..." "$mac" "$vendor")"
+          fi
         else
-          # User only provided a full-fledged MAC address
-          unknown "$(printf "No record for ${BOLD}%s${NC} (Vendor: ${BOLD}%s${NC})..." "$mac" "$vendor")"
+          if [ -n "$address" ]; then
+            # User provided resolveable domain name or IP address
+            unknown "$(printf "No records for ${GREEN}%s${NC} (${BOLD}%s${NC})..." "$address" "$mac")"
+          else
+            # User only provided a MAC address
+            unknown "$(printf "No record sfor ${BOLD}%s${NC}..." "$mac")"
+          fi
         fi
-      else
-        if [ -n "$address" ]; then
-          # User provided resolveable domain name or IP address
-          unknown "$(printf "No records for ${GREEN}%s${NC} (${BOLD}%s${NC})..." "$address" "$mac")"
-        else
-          # User only provided a MAC address
-          unknown "$(printf "No record sfor ${BOLD}%s${NC}..." "$mac")"
-        fi
-      fi
 
-      return 5
+        return 5
     fi
   else
     error "$(printf "Unable to find a MAC address for ${GREEN}%s${NC}" "$address")"
@@ -824,3 +831,6 @@ for _a in ${targets}; do
     getlabel "$_a"
   fi
 done
+
+(( "${__record_count:-0}" )) && summary "$(printf "Records retrieved: ${BOLD}%s${NC}" "${__record_count}")"
+(( "${__unknown_count:-0}" )) && summary "$(printf "Unknown entries: ${BOLD}%s${NC}" "${__unknown_count}")"

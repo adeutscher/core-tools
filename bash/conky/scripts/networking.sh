@@ -96,6 +96,10 @@ printf "\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Networki
 # List interfaces with details
 for iface in ${interfaces}; do
 
+    # Clear/reset variables for upcoming loop.
+    unset member_list
+    is_vpn=0
+
     address="$(ip a s ${iface} 2> /dev/null | grep -om1 inet\ [^\/]*\/[0-9]* | cut -d' ' -f2)"
     if_aliases="$(ip a s ${iface} | grep -oP "inet .*${iface}:\d*$" | awk '{ print $2","$NF }')"
     [[ "${iface}" =~ ^(tun|tap)[0-9]+ ]] && is_vpn=1
@@ -256,9 +260,6 @@ for iface in ${interfaces}; do
         else
             printf "  No Members\n"
         fi
-        # Clear/reset variables for next loop.
-        unset member_list
-        is_vpn=0
     else
       printf "\n"
     fi
@@ -359,19 +360,24 @@ ephemeral_lower=$(awk '{print $1 }' < "${ephemeral_file}")
 # Collect connections from netstat, then format with awk
 connections_in="$(netstat -Wtun | grep ESTABLISHED \
     | awk -F' ' '{
-          match($4,/[1-90]*$/,a);
-          l[2]=a[0];
-          sub(/:[1-90]*$/,"",$4);
-          l[1]=$4;
-          match($5,/[1-90]*$/,a);
-          r[2]=a[0];
-          sub(/:[1-90]*$/,"",$5);
-          r[1]=$5;
+          len = split($4, a, ":");
+          l[1]=a[1];
+          for(i = 2; i < len; i++)
+            l[1] = l[1] ":" a[i]
+          l[2]=a[len];
+          len = split($5, a, ":");
+          r[1]=a[1];
+          for(i = 2; i < len; i++)
+            r[1] = r[1] ":" a[i]
+          r[2]=a[len];
           if(l[2] < '${ephemeral_lower}' && (r[2] > '${ephemeral_lower}' || $1 ~ /^tcp/) && ! (r[2] == 2049 && $1 ~ /^tcp/)){
+            if(len == 4)
+              print "_6_ " $1 " " r[1] " " l[1] " " l[2]
+            else
               print r[1] "." l[1] "." l[2] "." $1 " " $1 " " r[1] " " l[1] " " l[2]
           }
       }' \
-	| sort -t. -k1,1n -k2,2n -k3,3n -k4,4n -k 5,5n -k 6,6n -k 7,7n -k 8,8n -k 9,9n -k 10,10 \
+    | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n -k 5,5n -k 6,6n -k 7,7n -k 8,8n -k 9,9n -k 10,10 \
     | cut -d' ' -f2- | uniq -c | grep --colour=never -Pvw '(127\.0\.0\.1|::1)' \
     | awk '{
         if($2 ~ /6$/){
