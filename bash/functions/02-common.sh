@@ -118,17 +118,22 @@ qtype(){
 # Assume that the directory exists and is valid.
 # The purpose of this function is to cut down on redundant clutter to the PATH variable,
 #     but there is still no penalty for having a a non-existant directory.
+# Add anything to second argument to make the function for
 __add_to_path(){
-    if !  grep -qP -m1 "(^|:)$1($|:)" <<< "$PATH"; then
-        PATH=$1:$PATH
-        return 0
-    fi
-    return 1
+  [ -z "${1}" ] && return
+  if grep -qP -m1 "(^|:)$1($|:)" <<< "$PATH"; then
+    [ -z "${2}" ] && return 0
+    # If a second argument was given, strip before prepending.
+    # Not done by default because it significantly adds to reload time
+    #   (.+0.1s on a machine with a fair number of modules).
+    export PATH="$(sed -r -e "s|^${1}:||g" -e "s|:${1}$||g" -e "s|:${1}:|:|g" <<< "${PATH}")"
+  fi
+  export PATH=$1:${PATH}
 }
 
 __add_to_path_if_dir(){
     if [ -n "$1" ] && [ -d "$1" ]; then
-        __add_to_path "$1"
+        __add_to_path "$1" "${2}"
         return 0
     fi
     return 1

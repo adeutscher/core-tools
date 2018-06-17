@@ -1,0 +1,45 @@
+---
+
+# Install the public export of my core tools.
+# Note: As with other Ansible playbooks (so far as I know),
+#   the user's home directory will need to at least exist before the playbook is run.
+
+- hosts: all
+
+  vars:
+
+    git:
+      src: https://github.com/adeutscher/core-tools.git
+      dest: "{{ ansible_user_dir }}/tools/core-tools"
+
+  tasks:
+
+    # Install packages. Only bother with this if we are signing in as root already.
+    # If we are trying to set up the tools as non-root without git, then this whole playboko will just crash and burn.
+    - name: install package (apt)
+      become: yes
+      when: ansible_user_id == "root" and ansible_pkg_mgr == "apt"
+      apt: name="git" state="latest"
+
+    - name: install package (dnf)
+      become: yes
+      when: ansible_user_id == "root" and ansible_pkg_mgr == "dnf"
+      dnf: name="git" state="latest"
+
+    - name: install package (yum)
+      become: yes
+      when: ansible_user_id == "root" and ansible_pkg_mgr == "yum"
+      yum: name="git" state="latest"
+
+    - name: get core-tools (public)
+      git:
+        repo: "{{ git.src }}"
+        dest: "{{ git.dest }}"
+      notify: run setup script
+
+  handlers:
+
+    - name: run setup script
+      shell: ./scripts/setup/all.sh
+      args:
+        chdir: "{{ git.dest }}"

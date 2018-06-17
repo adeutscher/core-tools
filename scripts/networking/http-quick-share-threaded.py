@@ -50,10 +50,23 @@ def print_error(message):
 def print_notice(message):
     print "%s%s%s[%s%s%s]: %s" % (COLOUR_BLUE, "Notice", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
 
+TITLE_USER = "user"
+TITLE_BIND = "bind"
+TITLE_PORT = "port"
+TITLE_DIR = "dir"
+TITLE_POST = "post"
+TITLE_USER = "user"
+TITLE_AUTH_PROMPT = "auth-prompt"
+TITLE_PASSWORD = "password"
+TITLE_REVERSE = "reverse"
+TITLE_TIMESORT = "timesort"
+TITLE_NO_LINKS = "nolinks"
+TITLE_LOCAL_LINKS = "locallinks"
+
 DEFAULT_AUTH_PROMPT = "Authorization Required"
 
 def hexit(exit_code):
-    print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-D deny-list-file] [-h] [-p port] [-P] [-r] [-t]" % os.path.basename(sys.argv[0])
+    print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-D deny-list-file] [-h] [-l] [-n] [-p port] [-P] [-r] [-t]" % os.path.basename(sys.argv[0])
     exit(exit_code)
 
 def process_arguments():
@@ -64,7 +77,7 @@ def process_arguments():
     access = NetAccess()
 
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hp:Prt", ["password=", "prompt=", "user="])
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hlnp:Prt", ["local-links", "no-links", "password=", "prompt=", "user="])
     except getopt.GetoptError as e:
         print "GetoptError: %s" % e
         hexit(1)
@@ -74,31 +87,35 @@ def process_arguments():
         elif opt in ("-A"):
             error = access.load_whitelist_file(arg) or error
         elif opt in ("-b"):
-            args["bind"] = arg
+            args[TITLE_BIND] = arg
         elif opt in ("-d"):
             error = access.add_blacklist(arg) or error
         elif opt in ("-D"):
             error = access.load_blacklist_file(arg) or error
         elif opt in ("-h"):
             hexit(0)
+        elif opt in ("-l", "--local-links"):
+            args[TITLE_LOCAL_LINKS] = True
+        elif opt in ("-n", "--no-links"):
+            args[TITLE_NO_LINKS] = True
         elif opt in ("-p"):
-            args["port"] = int(arg)
+            args[TITLE_PORT] = int(arg)
         elif opt in ("-P"):
-            args["post"] = True
+            args[TITLE_POST] = True
         elif opt in ("-r"):
-            args["reverse"] = True
+            args[TITLE_REVERSE] = True
         elif opt in ("-t"):
-            args["timesort"] = True
+            args[TITLE_TIMESORT] = True
         elif opt in ("--password"):
-            args["password"] = arg
+            args[TITLE_PASSWORD] = arg
         elif opt in ("--prompt"):
-            args["auth-prompt"] = arg
+            args[TITLE_AUTH_PROMPT] = arg
         elif opt in ("--user"):
-            args["user"] = arg
+            args[TITLE_USER] = arg
 
     switch_arg = False
     if len(flat_args):
-        args["dir"] = flat_args[len(flat_args)-1]
+        args[ARGS_DIR] = flat_args[len(flat_args)-1]
 
     if len(access.errors):
         error = True
@@ -108,7 +125,7 @@ def process_arguments():
         access.announce_filter_actions()
     else:
         for e in errors:
-            print "Error: %s" % e
+            print_error(e)
 
     return error, args
 
@@ -298,24 +315,24 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
                 # An error code has been sent, just exit
                 return
 
-            wanted_user = args.get("user", "")
-            wanted_password = args.get("password", "")
+            wanted_user = args.get(TITLE_USER, "")
+            wanted_password = args.get(TITLE_PASSWORD, "")
             if wanted_user or wanted_password:
                 raw_creds = self.headers_dict.get("Authorization", "").split()
                 if not raw_creds or len(raw_creds) < 2:
                     # No creds message
-                    return self.send_error(401, args.get("auth-prompt", DEFAULT_AUTH_PROMPT))
+                    return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
                 creds_list = base64.b64decode(raw_creds[1]).split(":")
                 if len(creds_list) < 2:
                     # Creds message invalid, too few fields within.
-                    return self.send_error(401, args.get("auth-prompt", DEFAULT_AUTH_PROMPT))
+                    return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
                 user = creds_list[0]
                 password = ":".join(creds_list[1:])
                 if user != wanted_user or password != wanted_password:
                     # Bad Credentials
-                    return self.send_error(401, args.get("auth-prompt", DEFAULT_AUTH_PROMPT))
+                    return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
 
-            if self.command == "POST" and args.get("post", False):
+            if self.command == "POST" and args.get(TITLE_POST, False):
                 self.command = "GET"
 
             mname = 'do_' + self.command
@@ -352,10 +369,10 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
             self.send_error(404, "No permission to list directory")
             return None
 
-        if args.get("timesort", False):
-            itemlist.sort(key=lambda a: os.path.getmtime(os.path.join(path, a)), reverse=args.get("reverse", False))
+        if args.get(TITLE_TIMESORT, False):
+            itemlist.sort(key=lambda a: os.path.getmtime(os.path.join(path, a)), reverse=args.get(TITLE_REVERSE, False))
         else:
-            itemlist.sort(key=lambda a: a.lower(), reverse=args.get("reverse", False))
+            itemlist.sort(key=lambda a: a.lower(), reverse=args.get(TITLE_REVERSE, False))
 
         f = StringIO()
         displaypath = cgi.escape(urllib.unquote(self.path))
@@ -372,14 +389,23 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
             fullname = os.path.join(path, name)
             displayname = linkname = name
             extrainfo = ""
+            reachable = True
 
-            # Note: a link to a directory displays with @ and links with /
             if os.path.islink(fullname):
+                # Note: a link to a directory displays with @ and links with /
                 displayname = name + "@"
+                reachable = not (args.get(TITLE_NO_LINKS, False) or (args.get(TITLE_LOCAL_LINKS, False) and not os.path.realpath(fullname).startswith(os.getcwd() + "/")))
 
-                # Append / for directories or @ for symbolic links
-                if os.path.isdir(os.path.realpath(fullname)):
+                if not reachable:
+                    # Symbolic link is inaccessible. Override extra info to plainly say 'symlink'.
+                    if args.get(TITLE_NO_LINKS, False):
+                        extrainfo = "(Symlink)"
+                    else:
+                        # Implies local links only, meaning an unreachable link is external.
+                        extrainfo = "(External Symlink)"
+                elif os.path.isdir(os.path.realpath(fullname)):
                     # Directory via Symlink
+                    # Append / for directories or @ for symbolic links
                     displayname = name + "/@"
                     linkname = name + "/"
 
@@ -391,6 +417,7 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
                     # Dead symlink
                     linkname = None
                     extrainfo = "(Dead symlink to <strong>%s</strong>)" % os.readlink(fullname)
+
             elif os.path.isdir(fullname):
                 # Directory
                 displayname = name + "/"
@@ -400,7 +427,7 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
                 # File
                 extrainfo = "(%s File)" % self.humansize(os.stat(fullname).st_size)
 
-            if linkname:
+            if linkname and reachable:
                 f.write('        <li><a href="%s">%s</a> %s</li>\n'
                         % (urllib.quote(linkname), cgi.escape(displayname), extrainfo))
             else:
@@ -606,6 +633,22 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         None, in which case the caller has nothing further to do.
         """
         path = self.translate_path(self.path)
+        if os.path.exists(path):
+            # Symbolic link judgement.
+            # Paths with denied symbolic links will pretend to be 404 errors.
+            if args.get(TITLE_LOCAL_LINKS, False) and not os.path.realpath(path).startswith(os.getcwd() + "/"):
+                return self.send_error(404, "File not found")
+            elif args.get(TITLE_NO_LINKS, False):
+                # If all symbolic links are banned, then we must trace our
+                #   way down an existing path to make sure that no symbolic link exists
+                curr = path
+                while True:
+                    if os.path.islink(curr):
+                        return self.send_error(404, "File not found")
+                    if curr == path:
+                        break
+                    curr = os.path.dirname(path);
+
         f = None
         if os.path.isdir(path):
             if not self.path.endswith('/'):
@@ -670,20 +713,27 @@ if __name__ == '__main__':
     error, args = process_arguments()
     if error:
         exit(1)
-    bind_address = args.get("bind", "0.0.0.0")
-    bind_port = args.get("port", 8080)
-    directory = args.get("dir", os.getcwd())
+
+    bind_address = args.get(TITLE_BIND, "0.0.0.0")
+    bind_port = args.get(TITLE_PORT, 8080)
+    directory = args.get(TITLE_DIR, os.getcwd())
+
     if not os.path.isdir(directory):
         print_error("Path %s%s%s does not seem to exist." % (COLOUR_GREEN, os.path.realpath(directory), COLOUR_OFF))
         exit(1)
 
     print_notice("Sharing %s%s%s on %s%s:%d%s" % (COLOUR_GREEN, os.path.realpath(directory), COLOUR_OFF, COLOUR_GREEN, bind_address, bind_port, COLOUR_OFF))
 
-    if args.get("post", False):
+    if args.get(TITLE_NO_LINKS, False):
+        print_notice("Ignoring all symbolic links.")
+    elif args.get(TITLE_LOCAL_LINKS, False):
+        print_notice("Serving only local symbolic links.")
+
+    if args.get(TITLE_POST, False):
         print_notice("Accepting %s%s%s messages. Will not process, but will not throw a %s%s%s code either." % (COLOUR_BOLD, "POST", COLOUR_OFF, COLOUR_RED, "501", COLOUR_OFF))
 
-    if args.get("user"):
-        print("Basic authentication enabled (User: %s%s%s)" % (COLOUR_BOLD, args.get("user", "<EMPTY>"), COLOUR_OFF))
+    if args.get(TITLE_USER):
+        print("Basic authentication enabled (User: %s%s%s)" % (COLOUR_BOLD, args.get(TITLE_USER, "<EMPTY>"), COLOUR_OFF))
 
     try:
         os.chdir(directory)

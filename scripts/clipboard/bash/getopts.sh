@@ -17,7 +17,7 @@ while [ -n "${1}" ]; do
   shift $((OPTIND - 1))
   while [ -n "${1}" ]; do
     # Break if the option began with a '-', going back to getopts phase.
-    grep -q "^\-" <<< "${1}" && break
+    grep -q "^\-[^$]" <<< "${1}" && break
 
     # Do script-specific operand stuff here.
     shift

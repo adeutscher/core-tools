@@ -1,7 +1,7 @@
 
 # This file covers PATH management and obselete ~/.local/bin a bit.
 
-__add_to_path "$toolsDir/bin"
+__add_to_path "$toolsDir/bin" 1
 __add_to_path "$toolsDir/bin/hosts/$HOSTNAME"
 __add_to_path "$HOME/.local/bin" # TODO: This may be redundant. Double-check on more distributions.
 

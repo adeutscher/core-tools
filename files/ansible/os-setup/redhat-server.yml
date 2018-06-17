@@ -1,0 +1,77 @@
+---
+
+# Basic setup of a RedHat-based server with some preferences.
+# Made for and tested on CentOS 7 Minimal and Fedora Server 28.
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  vars:
+
+    # Backend-ish packages
+    # Requirements for CentOS are slightly different than Fedora.
+    system_packages_centos:
+      - epel-release
+      - deltarpm
+      - bash-completion
+      - bash
+
+    # Backend-ish packages
+    # Requirements for Fedora are slightly different than CentOS.
+    system_packages_fedora:
+      - deltarpm
+      - bash-completion
+      - bash
+
+    # User convenience packages
+    # Many of these will already be present, but I also want to make sure that they're up to date.
+    # Naming is consistent between CentOS and Fedora
+    preferred_packages:
+      - tmux
+      - net-tools
+      - svn
+      - git
+      - wget
+      - python
+      - vim
+      - curl
+      - nmap-ncat
+
+  environment:
+    ANSIBLE: 1
+
+  tasks:
+
+  - name: CentOS packages
+    become: yes
+    when: (ansible_distribution == "CentOS")
+    block:
+
+      - name: "install system packages (CentOS)"
+        yum: name="{{ item }}" state="latest"
+        with_items: "{{ system_packages_centos }}"
+
+      - name: "install preferred packages (CentOS)"
+        yum: name="{{ item }}" state="latest"
+        with_items: "{{ preferred_packages }}"
+
+  - name: Fedora packages
+    become: yes
+    when: (ansible_distribution == "Fedora")
+    block:
+
+      - name: "install system packages (Fedora)"
+        dnf: name="{{ item }}" state="latest"
+        with_items: "{{ system_packages_fedora }}"
+
+      - name: "install preferred packages (Fedora)"
+        dnf: name="{{ item }}" state="latest"
+        with_items: "{{ preferred_packages }}"
+
+  - name: Other RedHat Items
+    when: (ansible_os_family == "RedHat")
+    become: yes
+    block:
+
+      - name: openssh service enabled
+        service: name="sshd" state="started" enabled="yes"

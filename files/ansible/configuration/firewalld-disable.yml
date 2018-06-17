@@ -1,0 +1,62 @@
+---
+
+# Disable firewalld on a RHEL-based system
+# Made for and tested on CentOS 7 Minimal and Fedora Server 28.
+# Note: This playbook wipes all currently present firewall rules.
+#       DO NOT do this on a server that you consider to be remotely at risk,
+#       unless you plan to IMMEDIATELY install custom rules on it.
+# This playbook was created because I often prefer to apply my own firewall configurations instead of firewalld.
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  environment:
+    ANSIBLE: 1
+
+  tasks:
+
+    - name: manage packages (dnf)
+      become: yes
+      when: (ansible_pkg_mgr == "dnf")
+      block:
+
+        - name: "install iptables service (dnf)"
+          dnf: name="iptables-services" state="latest"
+
+    - name: manage packages (yum)
+      become: yes
+      when: (ansible_pkg_mgr == "yum")
+      block:
+
+        - name: "install iptables service (yum)"
+          yum: name="iptables-services" state="latest"
+
+    - name: manage services
+      become: yes
+      block:
+
+       - name: firewalld service disabled
+         service: name="firewalld" state="stopped" enabled="no"
+
+       - name: iptables service enabled
+         service: name="iptables" state="started" enabled="yes"
+         notify: set iptables acceptance
+
+  handlers:
+    - name: set iptables acceptance
+      become: yes
+      shell: iptables -P {{ item }} ACCEPT
+      with_items:
+        - INPUT
+        - OUTPUT
+        - FORWARD
+      notify: wipe iptables rules
+
+    - name: wipe iptables rules
+      become: yes
+      shell: iptables -F
+      notify: save reminder
+
+    - name: save reminder
+      debug:
+        msg: "iptables rules cleared, but saved rules still exist in /etc/sysconfig/iptables. Manually run 'service iptables save' to make current settings persist after a reboot."

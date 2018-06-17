@@ -122,10 +122,22 @@ get_data(){
   # Example content of a BASIC line: 'tcp 192.168.0.1 192.168.0.2 12345 22 ESTABLISHED'
   if (( "${NETSTAT:-0}" )); then
     # Netstat
-    BASIC="$(netstat -tn 2> /dev/null | grep -P "^tcp\s" | sed 's/:/ /g' | awk '{print $1" "$4" "$6" "$5" "$7" "$8 }')"
+
+    BASIC="$(
+    if (( "${STDIN:-0}" )); then
+      cat -
+    else
+      netstat -tn 2> /dev/null
+    fi | grep -P "^tcp\s" | sed 's/:/ /g' | awk '{print $1" "$4" "$6" "$5" "$7" "$8 }'
+    )"
   else
     # Conntrack
-    BASIC="$(conntrack -L 2> /dev/null | grep -P "^tcp\s" | awk -F ' ' '{ print $1" "$5" "$6" "$7" "$8" "$4}' | sed -r -e 's/\s[^=]+=/ /g')"
+    BASIC="$(
+    if (( "${STDIN:-0}" )); then
+      cat -
+    else
+      conntrack -L 2> /dev/null
+    fi | grep -P "^tcp\s" | awk -F ' ' '{ print $1" "$5" "$6" "$7" "$8" "$4}' | sed -r -e 's/\s+[^=]+=/ /g')"
     LOCAL_ADDRESSES="$(ip a s | grep -Pwo "inet [^\/]+" | cut -d' ' -f2 | tr '\n' ' ' | sed -e 's/ $//')"
   fi
 
@@ -276,7 +288,9 @@ Switches:
   -r: Range mode. When specifying interfaces as a filter, use local CIDR ranges instead of just IPv4 addresses.
   -R: Remote-only mode: Only show incoming connections from non-LAN addresses (or to non-LAN addresses for outgoing mode).
   -s: Separate mode. Do not summarize connections, displaying individual ports.
+  -S: Standard input. Collect input from stdin, assumed to be valid netstat or conntrack output
   -v: Verbose mode. Reach out to getlabel script to attempt to resolve MAC addresses.
+        '-vv' will call getlabel with -v for additional information.
 EOF
 
   exit "${1:-0}"
@@ -290,8 +304,19 @@ is_in_cidr(){
   [ "${addr_dec}" -ge "$(cidr_low_dec "${cidr}")" ] && [ "${addr_dec}" -le "$(cidr_high_dec "${cidr}")" ]
 }
 
+needs_label(){
+  # Determines if a label has been printed for the given address.
+  local _addr="${1//./_}"
+  if [ -n "${_addr}" ] && ! grep -qw "${_addr}" <<< "${got_labeled}"; then
+    got_labeled="${got_labeled} ${_addr}"
+    return 0
+  fi
+  return 1
+}
+
 print_line(){
   # This is intended for normal output.
+  # Note from development: This cannot be placed in a sub-shell.
   [ -n "${last_from}${QUIET}" ] || return 0
 
   if (( "${SUMMARIZE:-0}" )); then
@@ -304,7 +329,10 @@ print_line(){
     notice "${message}"
   fi
 
-  (( "${VERBOSE:-0}" )) && getlabel -${label_switches}l "${last_from}"
+  if (( "${1:-0}" )) && (( "${VERBOSE:-0}" )); then
+    getlabel -${label_switches}l "${last_from}"
+  fi
+
 }
 
 # Script Operations
@@ -322,9 +350,10 @@ REGEX_IP4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})/((([0-9]){1,3}\.){3}([0-9]{1,3}
 SUMMARIZE=1
 NETSTAT=1
 INCOMING=1
+STDIN=0
 
 while [ -n "${1}" ]; do
-  while getopts ":acChlLmoqrRsv" OPT $@; do
+  while getopts ":acChlLmoqrRsSv" OPT $@; do
     case "${OPT}" in
       a)
         SHOW_ALL=1
@@ -361,6 +390,9 @@ while [ -n "${1}" ]; do
         ;;
       s)
         SUMMARIZE=0
+        ;;
+      S)
+        STDIN=1
         ;;
       v)
         VERBOSE="$((${VERBOSE:-0}+1))"
@@ -412,19 +444,23 @@ METHOD="netstat"
 
 # Handling other argument errors.
 
-if ! (( "${NETSTAT:-0}" )); then
-  # Conntrack checking
-  type conntrack 2> /dev/null >&2 || error "$(printf "${BLUE}%s${NC} command is not installed (${BOLD}%s${NC} package)." "conntrack" "conntrack-tools")"
-
-  (( ${EUID} )) && error "$(printf "Must be ${RED}%s${NC} to track connections via ${BLUE}%s${NC}." "root" "conntrack")"
-
-  (( "${LOCALHOST:-0}" )) && error "$(printf "Localhost mode (-l) is incompatible with ${BLUE}%s${NC} mode." "${METHOD}")"
+if (( "${STDIN:-0}" )); then
+  (( "${MONITOR:-0}" )) && error "Monitor mode is incompatible with standard input mode."
 else
-  # Netstat checking
+  # stdin input is not enabled.
+  if ! (( "${NETSTAT:-0}" )); then
+    # Conntrack checking
+    type conntrack 2> /dev/null >&2 || error "$(printf "${BLUE}%s${NC} command is not installed (${BOLD}%s${NC} package)." "conntrack" "conntrack-tools")"
 
-  # That I have seen, netstat will only be unavailable by default on minimal CentOS-7 installations.
-  type netstat 2> /dev/null >&2 || error "$(printf "${BLUE}%s${NC} command is not installed (${BOLD}%s${NC} package)." "netstat" "net-tools")"
-fi
+    (( ${EUID} )) && error "$(printf "Must be ${RED}%s${NC} to track connections via ${BLUE}%s${NC}." "root" "conntrack")"
+
+  else
+    # Netstat checking
+
+    # That I have seen, netstat will only be unavailable by default on minimal CentOS-7 installations.
+    type netstat 2> /dev/null >&2 || error "$(printf "${BLUE}%s${NC} command is not installed (${BOLD}%s${NC} package)." "netstat" "net-tools")"
+  fi
+fi # End STDIN check
 
 if (( "${VERBOSE:-0}" )); then
   type getlabel 2> /dev/null >&2 || error "$(printf "${BLUE}%s${NC} command not found in PATH" "getlabel")"
@@ -473,7 +509,7 @@ while (( 1 )); do
   # Reminder: If monitor mode is not set, then we will manually break out of the loop at the bottom.
 
   # Unset key loop variables
-  unset count last_id CONTENT last_from
+  unset count last_id CONTENT last_from illegal_format
 
   (( "${MONITOR:-0}" )) && CONTENT="$(printf "%s\n" "$(notice "${HEADER}")")"
 
@@ -483,6 +519,16 @@ while (( 1 )); do
   if [ -n "${CONNECTIONS}" ]; then
     while read connection; do
       [ -n "${connection}" ] || continue
+
+      # Connection lines generated by get_data are of a standard format.
+      # This makes it possible to easily search for illegal data.
+      # Expected format of a connection line: proto src dst sport dport state
+      # Content example of a connection line: tcp 10.20.30.40 20.30.40.50 43149 443 ESTABLISHED
+      # Credit for advanced IPv4 Regex: https://www.regular-expressions.info/ip.html
+      if ! grep -qP "tcp( (25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){2}( \d+){2} [A-Z_]+$" <<< "${connection}"; then
+        illegal_format="$((${illegal_format:-0}+1))"
+        continue
+      fi
 
       proto="$(cut -d' ' -f 1 <<< "${connection}")"
       from="$(cut -d' ' -f 2 <<< "${connection}")"
@@ -553,7 +599,10 @@ while (( 1 )); do
       (( "${display:-0}" )) || continue
 
       if ! (( ${SUMMARIZE:-0} )) || ( [ -n "${last_id}" ] && [[ "${id}" != "${last_id}" ]] ); then
-        CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line)")"
+        print_verbose=0
+        needs_label "${last_from}" && print_verbose=1
+        CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line "${print_verbose}")")"
+        destinations="${destinations} ${last_to}"
         unset count
       fi
 
@@ -571,8 +620,39 @@ while (( 1 )); do
     CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(notice "$(printf "No connections noted. Are you sure that there is a state-tracking rule in ${BLUE}%s${NC}?" "iptables")")")"
   fi
 
-#echo "B---${CONTENT}" >&2
-  (( ${SUMMARIZE:-0} )) && ! (( "${QUIET:-0}" )) && CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line)")"
+  if (( "${SUMMARIZE:-0}" )) && ! (( "${QUIET:-0}" )); then
+    # Tailing line
+    print_verbose=0
+    needs_label "${last_from}" && print_verbose=1
+    CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line "${print_verbose}")")"
+    destinations="${destinations} ${last_to}"
+  fi
+
+  if (( "${VERBOSE:-0}" )); then
+    # In verbose mode, track remaining unlabeled destinations to see if they can be labeled.
+    for dst in ${destinations}; do
+      if [ -n "${dst}" ] && needs_label "${dst}"; then
+        LABEL_CONTENT="$(getlabel -${label_switches}l "${dst}")"
+        if [ -n "${LABEL_CONTENT}" ]; then
+          trailers="${trailers} ${dst}"
+          TRAILER_CONTENT="$(printf "%s\n%s" "${TRAILER_CONTENT}" "${LABEL_CONTENT}")"
+        fi
+      fi
+    done
+    trailer_count="$(wc -w <<< "${trailers}")"
+    if (( "${trailer_count}" )); then
+      CONTENT="$(printf "%s\n%s\n%s" "${CONTENT}" "$(notice "$(printf "Additional labels for destinations: ${BOLD}%d${NC}" "${trailer_count}")")" "${TRAILER_CONTENT}")"
+    fi
+  fi
+
+  if (( "${illegal_format:-0}" )); then
+    CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(error "$(printf "Lines of malformed ${BLUE}%s${NC} data: ${BOLD}%d${NC}" "${METHOD}" "${illegal_format}")")")"
+    if (( "${STDIN:-0}" )); then
+      # Standard input with bad data is the most likely suspect for bad formatting.
+      # If we are using standard input, then give a more specific reminder.
+      CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(error "$(printf "Are you certain that the data from standard input is ${BLUE}%s${NC} output?" "${METHOD}")")")"
+    fi
+  fi
 
   # Clear after we have built our output in monitor mode to reduce flicker.
   (( "${MONITOR:-0}" )) && clear
@@ -583,11 +663,14 @@ while (( 1 )); do
   if (( "${MONITOR:-0}" )); then
     sleep 1
   else
+    # Non-monitor mode.
     if ! (( "${QUIET:-0}" )) && [ -n "${CONTENT}" ]; then
       # Print trailing newline.
       printf "\n"
     fi
-    break
+    break # Break out of infinity monitor loop.
   fi
-done
+done # End infinite monitor loop.
 
+# Exit with non-zero error message if illegally-formatted connections were read (implying bad input).
+! (( "${illegal_format:-0}" )) || exit 1

@@ -50,11 +50,28 @@ fi
 
 (( "${__error_count}" )) && exit 1
 
-PIDS="$(ps axo user:20,pid,cmd | grep -w sshd | grep -w "^${USER}" | grep -P "\s${USER}@pts" | awk '{print $2}' | grep -P '^\d+$')"
+PIDS="$(ps axo user:20,pid,ppid,cmd | grep -w sshd | grep -w "^${user}" | grep -P "\s${user}@pts" | awk '{print $2","$3}' | grep -P '^\d+,\d+$')"
 
 COUNT=0
-for pid in ${PIDS}; do
-  notice "$(printf "Killing SSH PID: ${BOLD}%s${NC}" "${pid}")"
+for entry in ${PIDS}; do
+  pid="$(cut -d',' -f1 <<< "${entry}")"
+  parent="$(cut -d',' -f2 <<< "${entry}")"
+
+  # Attempt to extract a remote address.
+  # Since the process with the open connection is held by root,
+  #   I am 99% sure that this will only work when the script is run by root.
+  # Leaving this check running for all users to try to confirm/disprove that last 1%.
+  remote_addr="$(netstat -tpn 2> /dev/null | grep -wm1 "${parent}/sshd:" | awk '{ print $5 }' | cut -d':' -f1)"
+
+  if [ -n "${remote_addr}" ]; then
+    # Announce PID and remote address.
+    # Likely that the script is being run as root.
+    notice "$(printf "Killing SSH PID: ${BOLD}%s${NC} from ${GREEN}%s${NC}" "${pid}" "${remote_addr}")"
+  else
+    # Announce just PID.
+    # Likely that the script is being run as a non-root user.
+    notice "$(printf "Killing SSH PID: ${BOLD}%s${NC}" "${pid}")"
+  fi
   kill "${pid}" && COUNT="$((${COUNT}+1))"
 done
 

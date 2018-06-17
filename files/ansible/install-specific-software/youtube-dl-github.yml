@@ -9,6 +9,11 @@
 
   tasks:
 
+  - name: install package (apt)
+    become: yes
+    when: ansible_pkg_mgr == "apt"
+    apt: name="{{ pkg }}" state="latest"
+
   - name: install package (dnf)
     become: yes
     when: ansible_pkg_mgr == "dnf"

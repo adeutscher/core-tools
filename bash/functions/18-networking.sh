@@ -104,6 +104,114 @@ if qtype geoiplookup && [ -f "$HOME/.local/GeoLiteCity.dat" ]; then
     alias geoip-city='geoiplookup-city'
 fi
 
+#######
+# WoL #
+#######
+
+wol-create-aliases(){
+  # Lazy function to create WoL aliases off of a CSV file
+  #
+  # CSV Format Example:
+  #   the-server,aa:bb:cc:dd:ee:ff,10.20.30.40,My Server
+  #
+  # The above example creates an alias named 'wol-the-server' that will try to wake up the machine with the MAC of aa:bb:cc:dd:ee:ff.
+  # The other fields are optional, and provide reminders of where the target device will (hopefully) be reachable after it powers up.
+  #
+  #   * Field 1: MAC of server
+  #   * Field 2: Short name of server, used to create alias.
+  #   * Field 3: Expected address for the server. Only used for display.
+  #   * Field 4: Label for server. Only used for display.
+  #
+  # I originally made this function because I did not want to keep redefining aliases with a bunch of redundant information.
+  #
+  # With this change to a function, I will no longer set my WoL aliases automatically on shell loading.
+  # Reasoning:
+  #
+  #   * Alias creation can pile up and slow shell loading time (see also: audio-tools history).
+  #   * I do not frequently use my WoL aliases. One extra command to load them will not be the end of the world.
+  #
+  #  I've also capitalized on the lack of automatic loading to go a bit nuts with output in my function and the resulting aliases.
+  #
+  #  If the above reasons do not apply to the user of these functions
+  #    and you want to load them automatically, then
+  #    feel free to invoke these in your .bashrc.
+
+  local data_file="${1:-${WOL_DATA_FILE}}"
+  if [ -z "${data_file}" ]; then
+    error "$(printf "No WoL data file specified. Please set as first argument or set a value to ${Colour_BIPurple}%s${Colour_Off}." "WOL_DATA_FILE")"
+    return 1
+  elif ! [ -f "${data_file}" ]; then
+    error "$(printf "WoL data file not found: ${Colour_BIGreen}%s${Colour_Off}" "${data_file}")"
+    return 1
+  fi
+
+  if grep -q "^\-$" <<< "${data_file}"; then
+    notice "$(printf "Loading WoL aliases from ${Colour_Bold}%s${Colour_Off}." "standard input")"
+  else
+    notice "$(printf "Loading WoL aliases from data file: ${Colour_BIGreen}%s${Colour_Off}" "${data_file}")"
+  fi
+
+  local __count=0
+  local __line=0
+  while read __data; do
+    local __line="$((${__line}+1))"
+
+    [ -z "${__data}" ] && continue # Skip empty lines. Not worth noting an error.
+
+    local _short_name="$(awk -F',' '{ print $1 }' <<< "${__data}")"
+    local _mac="$(awk -F',' '{ print $2 }' <<< "${__data}")"
+    local _address="$(awk -F',' '{ print $3 }' <<< "${__data}")"
+    local _label="$(awk -F',' '{ $1=$2=$3=""; print $0 }' <<< "${__data}" | sed -r -e 's/^\s+//g' -e 's/\s+$//g')"
+
+    if [ -z "${_short_name}" ] && [ -z "${_mac}" ]; then
+      error "$(printf "Data line ${Colour_Bold}#%d${Colour_Off} lacks both a short name and a MAC address." "${__line}")"
+      continue
+    elif [ -z "${_short_name}" ]; then
+      error "$(printf "Data line ${Colour_Bold}#%d${Colour_Off} lacks a short name." "${__line}")"
+      continue
+    elif [ -z "${_mac}" ]; then
+      error "$(printf "Data line ${Colour_Bold}#%d${Colour_Off} lacks a MAC address." "${__line}")"
+      continue
+    fi
+
+    local __count="$((${__count}+1))"
+
+    if ! grep -iPq "^[a-f0-9]{2}(:[a-f0-9]{2}){5}$" <<< "${_mac}"; then
+      error  "$(printf "Illegal MAC address in entry ${Colour_Bold}#%d${Colour_Off}: ${Colour_Bold}%s${Colour_Off}" "${__count}" "${_mac}")"
+      continue
+    fi
+
+    # Alias creation (finally)
+    local __created="$((${__created}+1))"
+
+    # Note: We could get away with less escaping of colour variables, but it makes things more legible when viewing established aliases.
+    # Note: Not bothering to print out the MAC address. The WoL command should have done this for us at some stage.
+    if [ -n "${_address}" ] && [[ "${_address}" != "${_label}" ]]; then
+      # Given label that does not match the expected address.
+      notice "$(printf "Created WoL alias \"${Colour_BIBlue}wol-%s${Colour_Off}\" for ${Colour_Bold}%s${Colour_Off} (${Colour_Bold}%s${Colour_Off}, expected at ${Colour_BIGreen}%s${Colour_Off})." "${_short_name}" "${_label:-${_short_name}}" "${_mac}" "${_address}")"
+      eval "alias wol-${_short_name}=\"wol ${_mac} && notice \\\"\\\$(printf \\\"Sent WoL packet for \\\${Colour_Bold}%s\\\${Colour_Off}. If available, will be reachable at \\\${Colour_BIGreen}%s\\\${Colour_Off}.\\\" \\\"${_label:-${_short_name}}\\\" \\\"${_address}\\\")\\\"\""
+    else
+      # Given no expected address or matches with label.
+      notice "$(printf "Created WoL alias \"${Colour_BIBlue}wol-%s${Colour_Off}\" for ${Colour_Bold}%s${Colour_Off} (${Colour_Bold}%s${Colour_Off})." "${_short_name}" "${_label:-${_short_name}}" "${_mac}")"
+      eval "alias wol-${_short_name}=\"wol ${_mac} && notice \\\"\\\$(printf \\\"Sent WoL packet for \\\${Colour_Bold}%s\\\${Colour_Off}.\\\" \\\"${_label:-${_short_name}}\\\")\\\"\""
+    fi
+  done <<< "$(cat "${data_file}" | sort)"
+  unset __data # Axe loop variable.
+
+  if [ "${__count}" -gt "${__created}" ]; then
+    warning "$(printf "WoL alias creation only processed ${Colour_BIGreen}%s${Colour_Off}/${Colour_BIRed}%s${Colour_Off} records successfully." "${__created}" "${__count}")"
+  elif (( "${__count}" )); then
+    success "$(printf "WoL aliases created: ${Colour_Bold}%s${Colour_Off}" "${__created}")"
+  else
+    error "$(printf "WoL aliases created: ${Colour_BIRed}%s${Colour_Off}" "${__created}")"
+  fi
+
+  if (( "${__count}" )); then
+    notice "Reminder: A WoL packet from these aliases will not travel over a gateway, and will only affect the collision domain of your main interface."
+    notice "$(printf "Invoke ${Colour_BIBlue}%s${Colour_Off} directly if you have a special requirement." "wol")"
+  fi
+}
+
 #####################################
 # NetworkManager Wireless Functions #
 #####################################
