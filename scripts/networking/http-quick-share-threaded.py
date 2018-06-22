@@ -114,8 +114,8 @@ def process_arguments():
             args[TITLE_USER] = arg
 
     switch_arg = False
-    if len(flat_args):
-        args[ARGS_DIR] = flat_args[len(flat_args)-1]
+    if flat_args:
+        args[TITLE_DIR] = flat_args[len(flat_args)-1]
 
     if len(access.errors):
         error = True

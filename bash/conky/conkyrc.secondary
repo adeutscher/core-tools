@@ -62,6 +62,7 @@ stippled_borders 0
 #     that stages things instead of writing them directly to the final tasks.csv
 update_interval 3.14
 uppercase no
+short_units yes
 use_spacer none
 show_graph_scale no
 show_graph_range no

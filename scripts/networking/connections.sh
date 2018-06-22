@@ -276,14 +276,14 @@ Valid matches:
   * Destination port number (e.g. 22).
 
 Switches:
-  -a: All-mode. When using conntrack, do not restrict to just our device's addresses.
+  -a: All-mode. When using conntrack, do not restrict to just our device's addresses. Address checks will look at both ends of connection for a match.
   -c: Conntrack-mode. Use conntrack instead of netstat to detect connections. Must be root to use.
   -C: Force colours, even if output is not a terminal.
   -h: Help. Print this help menu and exit.
   -l: Show loopback connections, which are ignored by default. Will only work with netstat.
   -L: LAN-only mode. Only show incoming connections from LAN addresses (or to LAN addresses for outgoing mode).
   -m: Monitor mode. Constantly re-poll and print out connection information.
-  -o: Outgoing mode. Display outgoing connections instead of incoming connections.
+  -o: Outgoing mode. Display outgoing connections instead of incoming connections. Address checks will look at destination for a match.
   -q: "Quiet"-ish mode: Print information in barebones format (probably for future parsing).
   -r: Range mode. When specifying interfaces as a filter, use local CIDR ranges instead of just IPv4 addresses.
   -R: Remote-only mode: Only show incoming connections from non-LAN addresses (or to non-LAN addresses for outgoing mode).
@@ -470,6 +470,10 @@ fi
 
 (( "${LAN_ONLY:-0}" )) && (( "${REMOTE_ONLY:-0}" )) && error "LAN-only and Remote-only modes cannot be used at the same time."
 
+# Strictly speaking, All-Mode CAN be used with outgoing mode,
+#   but All-Mode will take priority and maybe cause confusion.
+(( "${SHOW_ALL:-0}" )) && ! (( "${INCOMING:-0}" )) && error "All-mode cannot be used with outgoing mode."
+
 # Quit if any errors were output.
 (( "${__error_count:-0}" )) && exit 1
 
@@ -540,23 +544,33 @@ while (( 1 )); do
       # Restrict to "ESTABLISHED"-state connections for the time being.
       [[ "${state}" == "ESTABLISHED" ]] || continue
 
-      subject="${to}"
-
-      (( "${INCOMING:-0}" )) && subject="${from}"
+      if (( "${SHOW_ALL:-0}" )); then
+        subjects="${to} ${from}"
+      elif (( "${INCOMING:-0}" )); then
+        subject="${from}"
+      else
+        subjects="${to}"
+      fi
 
       if (( "${REMOTE_ONLY:-0}" )) || (( "${LAN_ONLY:-0}" )); then
         # Need to confirm if this is a LAN or remote connection.
         lan=0
-        (( "${INCOMING:-0}" )) && subject="${from}"
-        for range in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/24; do
-           if is_in_cidr "${subject}" "${range}"; then
-             lan=1
-             break
-           fi
+        for subject in ${subjects}; do
+          for range in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/24; do
+            if is_in_cidr "${subject}" "${range}"; then
+              lan="$((${lan:-0}+1))"
+              break
+            fi
+          done
         done
-        if ( (( "${REMOTE_ONLY:-0}" )) && (( "${lan}" )) ) \
-        || ( (( "${LAN_ONLY:-0}" )) && ! (( "${lan}" )) ); then
+        if ( (( "${REMOTE_ONLY:-0}" )) && ( ( (( "${SHOW_ALL:-0}" )) && [ "${lan}" -eq "2" ] ) || ( ! (( "${SHOW_ALL:-0}" )) && (( "${lan:-0}" )) ) ) ) \
+        || ( (( "${LAN_ONLY:-0}" )) && [ "${lan}" -ne "$(wc -w <<< "${subjects}")" ] ); then
           # Non-reserved-range address in LAN-only or reserved-range address in remote-only.
+          # In All-Mode, remote mode must include at least one observed address be a remote address
+          #  (this script was made under the assumption that the user is managing some private-range hardware).
+          # Outside of All-Mode, only one address is being inspected, and it must not be a remote address.
+          # For LAN mode (whether in All-Mode or not), assuming a number of LAN addresses equal to the number of subjects.
+          #  (i.e. incoming to a LAN address, outgoing to a LAN address, or LAN-LAN)
           # Skip
           continue
         fi
@@ -578,22 +592,28 @@ while (( 1 )); do
       id="${proto}.${from}>${to}:${to_p}"
 
       display=1
-      item=0
       if (( "${ITEM_COUNT:-0}" )); then
+        # Process filters
         display=0
-        while [ "${item}" -lt "${ITEM_COUNT}" ]; do
-          item="$((${item}+1))"
-          if (( "${IS_ADDRESS[${item}]}" )); then
-            # Filter option is an IPv4 address.
-            [[ "${ITEMS[${item}]}" == "${subject}" ]] && display=1
-          elif (( "${IS_CIDR[${item}]}" )); then
-            # Filter option is an IPv4 CIDR address.
-            is_in_cidr "${subject}" "${ITEMS[${item}]}" && display=1
-          elif (( "${IS_PORT[${item}]}" )); then
-            [ "${to_p}" -eq "${ITEMS[${item}]}" ] && display=1
-          fi
+        for subject in ${subjects}; do
+          item=0
+          while [ "${item}" -lt "${ITEM_COUNT}" ]; do
+            item="$((${item}+1))"
+            if (( "${IS_ADDRESS[${item}]}" )); then
+              # Filter option is an IPv4 address.
+              [[ "${ITEMS[${item}]}" == "${subject}" ]] && display=1
+            elif (( "${IS_CIDR[${item}]}" )); then
+              # Filter option is an IPv4 CIDR address.
+              is_in_cidr "${subject}" "${ITEMS[${item}]}" && display=1
+            elif (( "${IS_PORT[${item}]}" )); then
+              [ "${to_p}" -eq "${ITEMS[${item}]}" ] && display=1
+            fi
+            # Finish looping if we have already decided to display.
+            (( "${display:-0}" )) && break
+          done # End inner item cycle for subject
+          # Finish looping if we have already decided to display.
           (( "${display:-0}" )) && break
-        done
+        done # end Subject loop.
       fi
 
       (( "${display:-0}" )) || continue

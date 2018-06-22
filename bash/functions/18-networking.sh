@@ -217,21 +217,44 @@ wol-create-aliases(){
 #####################################
 
 if __is_laptop && qtype nmcli; then
-    # Locking these functions to only laptops until I find
-    #     a situation where that is not the case.
+  # Locking these functions to only laptops until I find
+  #     a situation where that is not the case.
 
-    # If we have a lapotp, then assume that we have a WiFi interface.
-    # If there is no WiFi, then we are dealing with really broken/odd/old hardware.
-    # WiFi Toggle
-    alias wifi-on='nmcli radio wifi on'
-    alias wifi-off='nmcli radio wifi off'
-    alias wifi-list='nmcli -p dev wifi list'
-    alias wifi-list-open="nmcli -p dev wifi list | egrep --color=none '(==|\)|SECURITY|\-\-)[ ]*$' | sed 's/)/, open networks only)/g'"
-    alias wifi-join='nmcli con up id'
-    alias wifi-connections='nmcli con'
-    alias wifi-disconnect="nmcli dev disconnect"
-    alias wifi-switch="wifi-disconnect && wifi-join"
-    alias wifi-list-raw="${toolsDir}/scripts/networking/wifi-list-raw.sh"
+  # If we have a lapotp, then assume that we have a WiFi interface.
+  # If there is no WiFi, then we are dealing with really broken/odd/old hardware.
+  # WiFi Toggle
+  alias wifi-on='nmcli radio wifi on'
+  alias wifi-off='nmcli radio wifi off'
+  alias wifi-list='nmcli -p dev wifi list'
+  alias wifi-list-open="nmcli -p dev wifi list | egrep --color=none '(==|\)|SECURITY|\-\-)[ ]*$' | sed 's/)/, open networks only)/g'"
+  alias wifi-join='nmcli con up id'
+  alias wifi-connections='nmcli con'
+  alias wifi-disconnect="nmcli dev disconnect"
+  alias wifi-switch="wifi-disconnect && wifi-join"
+  alias wifi-list-raw="${toolsDir}/scripts/networking/wifi-list-raw.sh"
+  wifi-list-raw-continuous(){
+
+    local __interface="${1}"
+    if [ -z "${__interface}" ]; then
+      error "No interface provided."
+      local __err=1
+    fi
+
+    local __interval="${2:-2}"
+    if ! grep -Pq "^\d+$" <<< "${__interval}"; then
+      error "$(printf "Invalid interval: ${BOLD}%s${NC}" "${__interval}")"
+      local __err=1
+    fi
+
+    # Abort if there was an error.
+    (( "${__err:-0}" )) && return 1
+
+    while sleep 2; do
+      local __output="$(wifi-list-raw "${__interface}")"
+      clear
+      printf "%s\n" "${__output}"
+    done
+  }
 fi
 
 ############################

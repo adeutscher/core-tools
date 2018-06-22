@@ -174,9 +174,9 @@ urldecode() {
 #   Meant to filter out matches in version-control system directories
 alias vsed="perl -ne 'print unless /(^|\/)((\.svn|\.hg|\.git)\/)/'"
 # Strip out BASH colours
-alias csed='sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g"'
+alias csed='sed -r -e "s/\x1B\[(([0-9]{1,2})?(;)?([0-9]{1,2})?)??[mKHfJ]//"'
 # Snip trailing spaces
-alias ssed='sed -r "s/\s+$//g"'
+alias ssed='sed -r -e "s/\s+$//g"'
 
 # Xargs Aliases
 alias xargs-0="xargs -0"
