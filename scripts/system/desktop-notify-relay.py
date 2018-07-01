@@ -12,7 +12,15 @@
 
 import getopt, os, re, socket, struct, subprocess, sys, thread, time
 
+DEFAULT_UDP = False
 DEFAULT_RELAY_PORT = 1234
+DEFAULT_NOTIFY = True
+DEFAULT_BIND = "0.0.0.0"
+
+TITLE_UDP = "udp"
+TITLE_NOTIFY = "notify"
+TITLE_PORT = "port"
+TITLE_BIND = "bind"
 
 def enable_colours(force = False):
     global COLOUR_PURPLE
@@ -49,7 +57,10 @@ enable_colours()
 def print_denied(message):
     print "%s%s%s[%s%s%s]: %s" % (COLOUR_RED, "Denied", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
 
+error_count = 0
 def print_error(message):
+    global error_count
+    error_count += 1
     print "%s%s%s[%s%s%s]: %s" % (COLOUR_RED, "Error", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
 
 def print_notice(message):
@@ -60,28 +71,23 @@ class NetAccess:
     REGEX_INET4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 
     def __init__(self):
-        self.errors = []
         self.allowed_addresses = []
         self.allowed_networks = []
         self.denied_addresses = []
         self.denied_networks = []
 
     def add_access(self, addr_list, net_list, candidate):
-        error = False
         candidate = candidate.strip()
         if re.match(self.REGEX_INET4_CIDR, candidate):
             e, n = self.ip_validate_cidr(candidate)
-            error = e
             if not e:
                 # No error
                 net_list.append((n, candidate))
         else:
             e, a, astr = self.ip_validate_address(candidate)
-            error = e
             if not e:
                 # No error
                 addr_list.append((a, candidate, astr))
-        return error
 
     def add_blacklist(self, candidate):
         return self.add_access(self.denied_addresses, self.denied_networks, candidate)
@@ -103,7 +109,7 @@ class NetAccess:
 
     def load_access_file(self, fn, path, header):
         if not os.path.isfile(path):
-            self.errors.append("Path to %s file does not exist: %s%s%s" % (header, COLOUR_GREEN, path, COLOUR_OFF))
+            print_error("Path to %s file does not exist: %s%s%s" % (header, COLOUR_GREEN, path, COLOUR_OFF))
             return False
         with open(path) as f:
             for l in f.readlines():
@@ -138,7 +144,7 @@ class NetAccess:
             ip = socket.gethostbyname(candidate)
             return (False, self.ip_strton(ip), ip)
         except socket.gaierror:
-            self.errors.append("Unable to resolve: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF))
+            print_error("Unable to resolve: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF))
             return (True, None, None)
 
     def ip_validate_cidr(self, candidate):
@@ -149,7 +155,7 @@ class NetAccess:
                 return (False, self.ip_network_mask(a, m))
         except socket.gaierror:
             pass
-        self.errors.append("Invalid CIDR address: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF))
+        print_error("Invalid CIDR address: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF))
         return (True, None)
 
     def is_allowed(self, address):
@@ -187,7 +193,7 @@ class NetAccess:
 
     def load_access_file(self, fn, path, header):
         if not os.path.isfile(path):
-            self.errors.append("Path to %s file does not exist: %s%s%s" % (header, COLOUR_GREEN, path, COLOUR_OFF))
+            print_error("Path to %s file does not exist: %s%s%s" % (header, COLOUR_GREEN, path, COLOUR_OFF))
             return False
         with open(path) as f:
             for l in f.readlines():
@@ -202,6 +208,12 @@ class NetAccess:
 
 def do_message(header, addr, data):
     message = re.sub(r"\n.*", "", data)
+
+    print_notice("%s: %s" % (header, message))
+
+    if not args.get(TITLE_NOTIFY, DEFAULT_NOTIFY):
+        return
+
     icon = "network-receive" # Default icon
     # Regex search message to make some attempt at context-specific icons.
     if re.match(r"important", message, re.IGNORECASE):
@@ -215,7 +227,6 @@ def do_message(header, addr, data):
     elif re.match(r"(firewall|security)", message, re.IGNORECASE):
         icon = "security-medium" # I like the MATE medium security icon more than the high security icon.
 
-    print_notice("%s: %s" % (header, message))
     try:
         p = subprocess.Popen(["notify-send", "--icon", icon, "Message from %s" % addr[0], message])
         p.communicate()
@@ -223,23 +234,30 @@ def do_message(header, addr, data):
         print_error(sys.stderr, "OSError: %s" % str(e))
 
 def hexit(exit_code):
-    print_notice("%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-A deny-list-file] [-h] [-p port] [-u]" % os.path.basename(sys.argv[0]))
+    print_notice("%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-A deny-list-file] [-h] [-p port] [-u] [-n]" % os.path.basename(sys.argv[0]))
     exit(exit_code)
 
 def main():
 
-    err, args = process_arguments()
-    if err:
+    process_arguments()
+    if error_count:
         exit(1)
 
-    udpMode = args.get("udp", False)
+    access.announce_filter_actions()
+
+    udpMode = args.get(TITLE_UDP, DEFAULT_UDP)
 
     # Print a summary of directory/bind options.
-    if udpMode:
-        phrasing = "datagrams"
+    if args.get(TITLE_NOTIFY, DEFAULT_NOTIFY):
+        verb = "Relaying"
     else:
-        phrasing = "connections"
-    print_notice("Relaying messages in %s received on %s%s:%d%s" % (phrasing, COLOUR_GREEN, args.get("bind", "0.0.0.0"), args.get("port", DEFAULT_RELAY_PORT), COLOUR_OFF))
+        verb = "Printing"
+    if udpMode:
+        noun = "datagrams"
+    else:
+        noun = "connections"
+
+    print_notice("%s messages in %s received on %s%s:%d%s" % (verb, noun, COLOUR_GREEN, args.get(TITLE_BIND, DEFAULT_BIND), args.get(TITLE_PORT, DEFAULT_RELAY_PORT), COLOUR_OFF))
 
     if udpMode:
         sockobj = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -249,7 +267,7 @@ def main():
     # Bind socket to local host and port
     try:
         sockobj.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sockobj.bind((args.get("bind", "0.0.0.0"), args.get("port", DEFAULT_RELAY_PORT)))
+        sockobj.bind((args.get(TITLE_BIND, DEFAULT_BIND), args.get(TITLE_PORT, DEFAULT_RELAY_PORT)))
         if not udpMode:
             sockobj.listen(10)
     except socket.error as msg:
@@ -286,46 +304,44 @@ def main():
             thread.start_new_thread(tcpclientthread, (header, conn,addr))
 
 def process_arguments():
+    global args
     args = {}
-    error = False
     errors = []
     global access
     access = NetAccess()
 
+    raw_ints = {}
+
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hp:u")
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hnp:u")
     except getopt.GetoptError as e:
         print_error("GetoptError: %s" % e)
         hexit(1)
     for opt, arg in opts:
         if opt in ("-a"):
-            error = access.add_whitelist(arg) or error
+            access.add_whitelist(arg)
         elif opt in ("-A"):
-            error = access.load_whitelist_file(arg) or error
+            error = access.load_whitelist_file(arg)
         elif opt in ("-b"):
-            args["bind"] = arg
+            args[TITLE_BIND] = arg
         elif opt in ("-d"):
-            error = access.add_blacklist(arg) or error
+            access.add_blacklist(arg)
         elif opt in ("-D"):
-            error = access.load_blacklist_file(arg) or error
+            access.load_blacklist_file(arg)
         elif opt in ("-h"):
             hexit(0)
+        elif opt in ("-n"):
+            args[TITLE_NOTIFY] = False
         elif opt in ("-p"):
-            args["port"] = int(arg)
+            raw_ints[TITLE_PORT] = arg
         elif opt in ("-u"):
-            args["udp"] = True
+            args[TITLE_UDP] = True
 
-    if len(access.errors):
-        error = True
-        errors.extend(access.errors)
-
-    if not error:
-        access.announce_filter_actions()
-    else:
-        for e in errors:
-            print_error(e)
-
-    return error, args
+    for key in raw_ints:
+        try:
+            args[key] = int(raw_ints[key])
+        except ValueError:
+            print_error("Invalid %s%s%s: %s%s%s" % (COLOUR_BOLD, key, COLOUR_OFF, COLOUR_BOLD, raw_ints[key], COLOUR_OFF))
 
 def tcpclientthread(header, conn, addr):
     conn.settimeout(5)

@@ -1,7 +1,17 @@
 
-# Colours
+import os, sys
 
-import sys
+#
+# Common Colours and Message Functions
+###
+
+def __print_message(colour, header, message):
+    print "%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+
+def colour_text(colour, text):
+    # A useful shorthand for applying a colour to a string.
+    return "%s%s%s" % (colour, text, COLOUR_OFF)
+
 def enable_colours(force = False):
     global COLOUR_PURPLE
     global COLOUR_RED
@@ -30,15 +40,14 @@ def enable_colours(force = False):
         COLOUR_OFF = ''
 enable_colours()
 
-#
-# Common Message Functions
-###
-
+error_count = 0
 def print_error(message):
-    print "%s%s%s[%s%s%s]: %s" % (COLOUR_RED, "Error", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
+    global error_count
+    error_count += 1
+    __print_message(COLOUR_RED, "Error", message)
 
 def print_notice(message):
-    print "%s%s%s[%s%s%s]: %s" % (COLOUR_BLUE, "Notice", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
+    __print_message(COLOUR_BLUE, "Notice", message)
 
 def print_warning(message):
-    print "%s%s%s[%s%s%s]: %s" % (COLOUR_YELLOW, "Warning", COLOUR_OFF, COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, message)
+    __print_message(COLOUR_YELLOW, "Warning", message)

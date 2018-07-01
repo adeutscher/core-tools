@@ -836,3 +836,7 @@ if ! (( "${lazy:-0}" )); then
   (( "${__record_count:-0}" )) && summary "$(printf "Records retrieved: ${BOLD}%s${NC}" "${__record_count}")"
   (( "${__unknown_count:-0}" )) && summary "$(printf "Unknown entries: ${BOLD}%s${NC}" "${__unknown_count}")"
 fi
+
+(( "${__error_count:-0}" )) && ret=1
+
+exit "${ret:-0}"

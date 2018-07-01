@@ -20,6 +20,11 @@ fi
 
 error(){
   printf "${RED}"'Error'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename ${0})" "${@}"
+  __error_count=$((${__error_count:-0}+1))
+}
+
+notice(){
+  printf "${BLUE}"'Notice'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename ${0})" "${@}"
 }
 
 # Script Functions
@@ -34,19 +39,22 @@ trap end SIGINT
 _a="${1}" # Address
 _t="${2:-60}" # Target number
 
-if [ -z "${_a}" ]; then
-  error "No address provided."
-  exit 1
-elif ! grep -Pq "^\d+$" <<< "${_t}"; then
+if ! grep -Pq "^\d+$" <<< "${_t}"; then
   error "$(printf "Invalid ping count: ${BOLD}%s${NC}" "${_t}")"
-  exit 1
 fi
 
-ping -w1 -c1 "${_a}" 2> /dev/null >&2
-if [ "${?}" -eq 2 ]; then
-  error "$(printf "Invalid address: ${GREEN}%s${NC}" "${_a}")"
-  exit 1
+if [ -z "${_a}" ]; then
+  error "No address provided."
+else
+  ping -w1 -c1 "${_a}" 2> /dev/null >&2
+  if [ "${?}" -eq 2 ]; then
+    error "$(printf "Invalid address: ${GREEN}%s${NC}" "${_a}")"
+  fi
 fi
+
+(( "${__error_count:-0}" )) && exit 1
+
+notice "$(printf "Waiting until ${GREEN}%s${NC} ${RED}%s${NC} be pinged ${BOLD}%d${NC} times in a row." "${_a}" "cannot" "${_t}")"
 
 while [ "${_c:-0}" -lt "${_t}" ]; do
   _c=$((${_c:-0}+1))
@@ -57,7 +65,7 @@ while [ "${_c:-0}" -lt "${_t}" ]; do
   fi
 
   # Print status
-  printf "\rUnsteady %s pings: %02d/%02d" "${_a}" "${_c}" "${_t}"
+  printf "\33[2K\rUnsteady ${GREEN}%s${NC} pings: ${BOLD}%d${NC}/${BOLD}%d${NC}" "${_a}" "${_c}" "${_t}"
 
   # Sleep for a bit on non-timeout
   [ "${_c}" -eq 0 ] && sleep 1

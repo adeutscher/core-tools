@@ -304,13 +304,6 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
                 self.close_connection = 1
                 return
 
-            if not access.is_allowed(self.client_address[0]):
-                self.requestline = ''
-                self.request_version = ''
-                self.command = ''
-                self.send_error(403,"Access Denied")
-                return
-
             if not self.parse_request():
                 # An error code has been sent, just exit
                 return
@@ -511,6 +504,7 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         requestline = self.raw_requestline
         requestline = requestline.rstrip('\r\n')
         self.requestline = requestline
+
         words = requestline.split()
         if len(words) == 3:
             command, path, version = words
@@ -546,11 +540,16 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
                                 "Bad HTTP/0.9 request type (%r)" % command)
                 return False
         elif not words:
+            # TODO: Confirm why this check is as it is...
             return False
         else:
             self.send_error(400, "Bad request syntax (%r)" % requestline)
             return False
         self.command, self.path, self.request_version = command, path, version
+
+        if not access.is_allowed(self.client_address[0]):
+            self.send_error(403,"Access Denied")
+            return False
 
         # Examine the headers and look for a Connection directive
         self.headers = self.MessageClass(self.rfile, 0)
