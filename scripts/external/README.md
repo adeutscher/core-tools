@@ -36,8 +36,6 @@ Notes on usage:
 
 This script works by making a new configuration file and restarting BIND9, which can be a bit slow (~4s or higher) because of the DNS blacklist that I also use. At some point in the near future, I hope to hammer out my troubles with the `rndc addzone` and `rndc delzone` commands to be able to avoid restarting BIND9 and make the new configuration available a little faster.
 
-### 
-
 ## snat-adjuster
 
 If IPv4 forwarding is enabled when a new interface connects, then add an SNAT rule for traffic coming out of the new interface.

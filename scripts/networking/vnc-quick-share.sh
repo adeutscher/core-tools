@@ -139,7 +139,7 @@ function handle_arguments(){
 }
 
 function hexit(){
-    notice "Usage: ./vnc-quick-share [-c] [-h] [-l] [-m monitor] [-p passwd|-P] [-w]"
+    notice "Usage: ./vnc-quick-share [-c] [-d dimensions] [-h] [-l] [-m monitor] [-p passwd|-P] [-w]"
     exit "${1:-0}"
 }
 

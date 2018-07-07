@@ -90,7 +90,7 @@ get_pixel_hex(){
 }
 
 hexit(){
-  printf "${GREEN}./%s${NC} -i in-file -o out-file [-c canvas/colour] [-C|-L|-R] [-D|-U] [-H] [-h canvas-height] [-w canvas-width] [-x pos-x] [-y pos-y]\n" "$(basename "$(readlink -f "$0")")"
+  printf "${GREEN}./%s${NC} -i in-file -o out-file [-c canvas/colour] [-C|-L|-R] [-D|-U] [-H] [-h canvas-height] [-w canvas-width] [-s scale] [-x pos-x] [-y pos-y]\n" "$(basename "$(readlink -f "$0")")"
   exit ${1:-1}
 }
 
