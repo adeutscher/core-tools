@@ -15,7 +15,7 @@ def colour_text(colour, text):
 def convert(file_handle, title):
     try:
         src_body = yaml.load(file_handle.read())
-    except yaml.parser.ParserError as e:
+    except yaml.error.MarkedYAMLError as e:
         # Conveniently, Python's pyyaml module gives a more informative error printout than the JSON module.
         if title == "standard input":
             print_error("Content of standard input is not in readable %s format: %s (line %d, column %d)" % (format_name, e.problem, e.problem_mark.line + 1, e.problem_mark.column + 1))

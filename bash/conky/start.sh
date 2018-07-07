@@ -156,7 +156,9 @@ get_coords(){
     fi
 
     if (( $__is_bl )); then
-        # Bottom-left
+        # Bottom-left display.
+        # Despite my ongoing troubles with right-aligned displays,
+        #   the bottom-left display remains more consistent.
         TARGET_X="$((- ( $__primary_monitor_bl_x - $MONITOR_CORNER_BL_X ) + $__add_x ))"
     else
         # Bottom-right
@@ -165,11 +167,12 @@ get_coords(){
         # Some testing swears that it is off of the primary monitor, and a year later it will be
         #   off of the right-hand side of the display.
 
-        if [ "${__total_x}" -eq "${MONITOR_CORNER_BR_X}" ]; then
-            # Monitor is the primary monitor, or is otherwise in alignment with the primary monitor's X value.
-            # As offsets are calculated relative to the primary monitor, use plain offset without any further calculations.
-            TARGET_X="${__add_x}"
+        if (( "${CONKY_X_RIGHT_PRIMARY:-0}" )); then
+            # Judge the righthand side of the primary monitor as "0" for right-aligned displays.
+            TARGET_X="$((( $__primary_monitor_br_x - $MONITOR_CORNER_BR_X ) + $__add_x ))"
         else
+            # Judge the righthand side of the overall X11 display as "0" for right-aligned displays.
+            # I have had the most luck this option recently, so it shall be the default.
             TARGET_X="$((${__total_x} - ${MONITOR_CORNER_BR_X} + ${__add_x}))"
         fi
     fi
@@ -443,6 +446,16 @@ fi
 timeout 0.5 notify-send --icon=esd "Starting Conky" "$(printf "%s\n  Display: %s\n  Location: %s" "$message" "${CONKY_SCREEN:-$__primary_monitor}" "$location")" 2> /dev/null >&2
 # Print the message to stdout for good measure.
 echo "$message"
+
+if (( "${CONKY_X_RIGHT_PRIMARY:-0}" )); then
+  position_judge="primary monitor"
+  position_reverse="To use the edge of the overall X11 display instead, unset the CONKY_X_RIGHT_PRIMARY variable."
+else
+  position_judge="overall X display"
+  position_reverse="To use the edge of the primary monitor instead, set 'export CONKY_X_RIGHT_PRIMARY=1'."
+fi
+
+printf "Judging '0' for primary conky display's X positioning as the right edge of %s.\n%s\n" "${position_judge}" "${position_reverse}"
 
 if (( "${DEBUG:-0}" )); then
     # Debug mode

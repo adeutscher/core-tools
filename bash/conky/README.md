@@ -6,11 +6,11 @@ This directory contains my `conky` setup.
 My goal with this configuration was to make a flexible status display
   that could be used on multiple systems without needing adjust scripts
   each time.
-  
+
 For per-system adjustments, the scripts in this configuration
   will listen to various environment variables (described below).
 
-## Usage 
+## Usage
 
 The display must be started through `start.sh` in order
   to be properly positioned.
@@ -33,6 +33,7 @@ The following environment variables can be exported to affect my `conky` display
 | CONKY_SCREEN              | Controls primary display location. Display will be placed in the bottom-right corner.                         | DVI-1, HDMI-0       |
 | CONKY_PADDING_X           | Horizontal offset of primary display from bottom-right corner (default: 10).                                  | 10                  |
 | CONKY_PADDING_Y           | Vertical offset of primary display from bottom-right corner (default: 35).                                    | 35                  |
+| CONKY_X_RIGHT_PRIMARY     | Set to '1' if `conky` is being strange and marking the right edge of primary monitor as "0"                   | 1                   |
 | CONKY_ENABLE_CLOCK        | Set to '1' to enable a time display in system information area.                                               | 1                   |
 | CONKY_ENABLE_TASKS        | Set to '1' to enable the secondary display (off by default). See "Tasks Display" section for more information | 1                   |
 | CONKY_SECONDARY_SCREEN    | Controls secondary display location. Display will be placed in the bottom-right corner.                       | DVI-1, HDMI-0       |

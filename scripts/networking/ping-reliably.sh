@@ -16,6 +16,7 @@ if [ -t 1 ]; then
   BOLD='\033[1m'
   RED='\033[1;31m'
   GREEN='\033[1;32m'
+  BLUE='\033[1;94m'
   NC='\033[0m' # No Color
 fi
 

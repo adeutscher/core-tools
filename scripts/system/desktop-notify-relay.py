@@ -207,7 +207,17 @@ class NetAccess:
 # Credit for IP functions: http://code.activestate.com/recipes/66517/
 
 def do_message(header, addr, data):
+    # Strip out everything including  after the first newline.
+    # Ignore unprintable characters.
     message = re.sub(r"\n.*", "", data)
+
+    if not message or re.match(r"[^ -~]", message):
+        # We stripped out ALL data or found unprintable bytes.
+        # Print an error and do not go to desktop notification.
+        # This probably triggers because the script was run on a
+        #   common port and picked up another protocol.
+        print_error("%s: %s%s%s" % (header, COLOUR_RED, "No printable data.", COLOUR_OFF))
+        return
 
     print_notice("%s: %s" % (header, message))
 

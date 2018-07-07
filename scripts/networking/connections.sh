@@ -128,7 +128,7 @@ get_data(){
       cat -
     else
       netstat -tn 2> /dev/null
-    fi | grep -P "^tcp\s" | sed 's/:/ /g' | awk '{print $1" "$4" "$6" "$5" "$7" "$8 }'
+    fi | grep -P "^tcp6?\s" | grep -P '(([0-9]){1,3}\.){3}([0-9]{1,3})' | sed -e 's/:/ /g' -e 's/^tcp6/tcp/g' | awk '{print $1" "$4" "$6" "$5" "$7" "$8 }'
     )"
   else
     # Conntrack

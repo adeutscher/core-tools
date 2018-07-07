@@ -67,7 +67,7 @@ done
 if [ "${gateway_count}" -gt "0" ]; then
     # Remove leading comma
     tentative_gateway="$(sed 's/^,\ //' <<< "${tentative_gateway}")"
-    
+
     if [ "${gateway_count}" -ge "${gateway_display_limit}" ]; then
         # Too many gateways to be worth displaying
         # Fall back to conky's default output of just saying "multiple".
@@ -223,11 +223,11 @@ for iface in ${interfaces}; do
     ###################
     # Bridge Handling #
     ###################
-        
+
     # If we're looking at a bridge interface, print member information
     elif [ -d "/sys/class/net/${iface}/bridge" ]; then
         members=$(brctl show ${iface} | sed -e '/bridge name/d' -e 's/\t/\ /g' | tr -d \\n | awk '{ $1="";$2="";$3="";print $0 }')
-        
+
         if [[ "${down_interfaces}" =~ (^|\ )"${iface}"($|\ ) ]]; then
             printf " (\${color #${colour_warning}}DOWN\${color})\n"
         else
@@ -238,7 +238,7 @@ for iface in ${interfaces}; do
 
             # "  Members:" is 10 characters
             characterIndex=10
-    
+
             for member in ${members}; do
                 ifaceLength=$(expr length "${member}")
                 candidateLength=$((${characterIndex} + ${ifaceLength} + 2))
@@ -380,7 +380,8 @@ connections_in="$(netstat -Wtun | grep ESTABLISHED \
     | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n -k 5,5n -k 6,6n -k 7,7n -k 8,8n -k 9,9n -k 10,10 \
     | cut -d' ' -f2- | uniq -c | grep --colour=never -Pvw '(127\.0\.0\.1|::1)' \
     | awk '{
-        if($2 ~ /6$/){
+        if(!($3 ~ /^(([0-9]){1,3}\.){3}([0-9]{1,3})$/)){
+            # IPv6 (source is not in IPv4 foramt).
             if(length($3) > 25 && $1 > 1){
                 pad = "\n    (" $2 "/" $5 ", Count: " $1 ")"
             } else if(length($3) > 25){
@@ -390,6 +391,14 @@ connections_in="$(netstat -Wtun | grep ESTABLISHED \
             }
             print " ${color #'${colour_network_address}'}" $3 "${color}" pad
         } else {
+            # IPv4
+
+            # Note: IPv4 addresses may mistakenly have a 'tcp6' label.
+            # Strictly speaking, this SHOULD never happened, but it was observed with a MariaDB server.
+            # The logic of this script will still treat things as an IPv4 connection.
+
+            # Leaving the 'tcp6' in as a reminder that things are freaky and strange.
+            # If I ever did want to strip out the '6': gensub(/(tcp)6?/,"\\1", "g", $2)
             print " ${color #'${colour_network_address}'}" $3 "${color}->${color #'${colour_network_address}'}" $4 "${color} ("$2"/"$5")"
         }
         if(length($3) <= 25 && $1 > 1){
@@ -404,7 +413,7 @@ connections_in="$(netstat -Wtun | grep ESTABLISHED \
 # Confirming that UDP "connections" (extended open sockets) can actually show up and get printed out correctly, though I had to make a situation with nc to have an example to double-check.
 # Reminder for re-testing (binds to udp/1234):
 ## Server (conky machine): nc -u -l 1234 > /dev/null
-## Client: cat /dev/zero | nc -u any-address-but-localhost 1234 
+## Client: cat /dev/zero | nc -u any-address-but-localhost 1234
 
 if [ -n "${connections_in}" ]; then
     # Print a separate header and report content.
