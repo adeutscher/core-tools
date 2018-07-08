@@ -163,21 +163,28 @@ get_coords(){
     else
         # Bottom-right
 
-        # I could swear that the position that conky uses to mark '0' keeps jumping around on me...
-        # Some testing swears that it is off of the primary monitor, and a year later it will be
-        #   off of the right-hand side of the display.
+        # The "0" point on the X-axis as a user sees with Xinerama is calculated as:
+        #   primary_monitor_offset + primary_monitor_right_edge_position
+        # A bit strange and unintuitive, especially when it could easily toss the the "0" position far off the screen. Oh well...
+        # Tested on Fedora 28 (2017-07-07).
+        # Something similar seems to the "0" point for the Y-axis too for vertical stacking (just for the secondary display?)
+        # The Y-axis issue is currently unsolved (see below by the TARGET_Y calculation).
 
-        if (( "${CONKY_X_RIGHT_PRIMARY:-0}" )); then
-            # Judge the righthand side of the primary monitor as "0" for right-aligned displays.
-            TARGET_X="$((( $__primary_monitor_br_x - $MONITOR_CORNER_BR_X ) + $__add_x ))"
-        else
-            # Judge the righthand side of the overall X11 display as "0" for right-aligned displays.
-            # I have had the most luck this option recently, so it shall be the default.
-            TARGET_X="$((${__total_x} - ${MONITOR_CORNER_BR_X} + ${__add_x}))"
-        fi
+        # Calculate the value required to place the display on the right edge of our overall conky display.
+        X_POS_CORRECTION="$(((${__primary_monitor_offset_x} + ${__primary_monitor_br_x}) - ${__total_x}))"
+        # Calculate number required to reach target screen.
+        # This is a separate calculation from X_POS_CORRECTION to make debugging easier and to leave room for all these comments.
+        # The two uses of $__total_x that cancel each other out are also intentionally left in.
+        TARGET_X="$((${X_POS_CORRECTION} + (${__total_x} - ${MONITOR_CORNER_BR_X}) + ${__add_x}))"
     fi
 
-    # TODO: Do similar calculations to X co-ordinates once it becomes a problem.
+    # With testing for the most recent X co-ordinates fix, it appears that there
+    #   is something wrong with Y positioning. However, there is also some fundamental problem
+    #   conky displaying at all in certain configurations. For example, the display was seen
+    #   to cut out in the middle of a screen. If conky will not display even when everything is
+    #   arranged properly, then it makes troubleshooting very difficult.
+    # Taking the win with X positioning for the moment and shelving Y-axis
+    #   problem for another session.
     TARGET_Y="$(( $MONITOR_CORNER_BR_Y - $__primary_monitor_br_y + $__add_y ))"
 }
 
@@ -446,16 +453,6 @@ fi
 timeout 0.5 notify-send --icon=esd "Starting Conky" "$(printf "%s\n  Display: %s\n  Location: %s" "$message" "${CONKY_SCREEN:-$__primary_monitor}" "$location")" 2> /dev/null >&2
 # Print the message to stdout for good measure.
 echo "$message"
-
-if (( "${CONKY_X_RIGHT_PRIMARY:-0}" )); then
-  position_judge="primary monitor"
-  position_reverse="To use the edge of the overall X11 display instead, unset the CONKY_X_RIGHT_PRIMARY variable."
-else
-  position_judge="overall X display"
-  position_reverse="To use the edge of the primary monitor instead, set 'export CONKY_X_RIGHT_PRIMARY=1'."
-fi
-
-printf "Judging '0' for primary conky display's X positioning as the right edge of %s.\n%s\n" "${position_judge}" "${position_reverse}"
 
 if (( "${DEBUG:-0}" )); then
     # Debug mode
