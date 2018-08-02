@@ -20,3 +20,7 @@ unset -f wait-for-pid 2> /dev/null
 # Converted connection aliases.
 unset -f connections-in connections-in-all connections-in-remote connections-in-lan connections-in-local
 unset -f connections-out connections-out-all connections-out-remote connections-out-lan connections-out-local
+
+# 2018-07-17
+# Scriptified 'mux' functions
+unset -f mux mux-force

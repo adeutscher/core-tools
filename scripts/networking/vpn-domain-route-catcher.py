@@ -464,6 +464,7 @@ if __name__ == "__main__":
             import pcap
         except ImportError:
             print_error("Python module %s%s%s is not installed." % (COLOUR_BOLD, "pypcap", COLOUR_OFF))
+            print_notice("To install: dnf install -y libpcap-devel python-devel redhat-rpm-config && pip install pypcap")
 
     if error_count:
         hexit(1)

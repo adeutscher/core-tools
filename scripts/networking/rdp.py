@@ -37,6 +37,8 @@ def enable_colours(force = False):
         COLOUR_OFF = ''
 enable_colours()
 
+DEFAULT_VERBOSE = False
+
 # Store argument titles as variables
 TITLE_SERVER = "server"
 TITLE_DOMAIN = "domain"
@@ -44,6 +46,7 @@ TITLE_USER = "user"
 TITLE_PASSWORD = "password"
 TITLE_HEIGHT = "height"
 TITLE_WIDTH = "width"
+TITLE_VERBOSE = "verbose"
 
 def do_rdp(cli_args):
     env_status = validate_environment()
@@ -53,12 +56,14 @@ def do_rdp(cli_args):
     good_args = validate_args(args) and env_status and good_args
 
     if not good_args:
-        print "Usage: ./rdp.py server [-d domain] [-D] [-g HxW] [-h height] [-p password] [-P] [-u user] [-U] [-w width]"
+        print "Usage: ./rdp.py server [-d domain] [-D] [-g HxW] [-h height] [-p password] [-P] [-u user] [-U] [-v] [-w width]"
         exit(1)
 
     command = process_switches(args)
-
     print_summary(args)
+
+    if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
+        print "Command: %s" % " ".join(command)
 
     try:
         p = subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr)
@@ -99,7 +104,7 @@ def process_args(cli_args):
     good_args = True
 
     try:
-        opts, operands = getopt.gnu_getopt(cli_args, "d:Dg:h:p:Pu:Uw:")
+        opts, operands = getopt.gnu_getopt(cli_args, "d:Dg:h:p:Pu:Uvw:")
     except getopt.GetoptError as e:
         print_error(e)
         exit(1)
@@ -153,6 +158,8 @@ def process_args(cli_args):
         if opt == "-U":
             # Manual user input
             record_var(values, TITLE_USER, COLOUR_BOLD, False)
+        if opt in ("-v"):
+            values[TITLE_VERBOSE] = True
         if opt == "-w":
             if validate_int(optarg, TITLE_WIDTH):
                 set_var(values, TITLE_WIDTH, int(optarg))

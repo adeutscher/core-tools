@@ -466,7 +466,7 @@ try:
     import pcap
 except ImportError:
     print_error("Unable to import PCAP module, not installed.")
-    print_notice("To install: dnf install -y python-devel redhat-rpm-config && pip install pypcap")
+    print_notice("To install: dnf install -y libpcap-devel python-devel redhat-rpm-config && pip install pypcap")
 
 args = {}
 

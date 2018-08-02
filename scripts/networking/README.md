@@ -150,6 +150,7 @@ Arguments:
 
 * `-a address/range`: Network address or range to whitelist.
 * `-A allow-list-file`: File containing addresses or ranges to whitelist.
+* `-b bind`: Address to bind to.
 * `-d address/range`: Network address or range to blacklist. Blacklists override conflicting whitelists.
 * `-D allow-list-file`: File containing addresses or ranges to blacklist. Blacklists override conflicting whitelists.
 * `-b bind`: Network address to bind to (default: `0.0.0.0`).
@@ -283,6 +284,8 @@ Arguments:
 
 * `-a address/range`: Network address or range to whitelist.
 * `-A allow-list-file`: File containing addresses or ranges to whitelist.
+* `-b bind`: Address to bind to.
+* `-c`: Force colours, even if stdout is not a terminal.
 * `-d address/range`: Network address or range to blacklist. Blacklists override conflicting whitelists.
 * `-D allow-list-file`: File containing addresses or ranges to blacklist. Blacklists override conflicting whitelists.
 * `-h`: Print a help menu and exit.
@@ -373,7 +376,7 @@ Usage:
 
 Arguments:
 
-* -a target_address: Send to specific broadcast address .This is necessary when waking up a device on a different collision domain than your default gateway interface.
+* `-a target_address`: Send to specific broadcast address .This is necessary when waking up a device on a different collision domain than your default gateway interface.
    * Example value: `192.168.100.0`
 * `-h`: Display this help menu and exit.
 * `-p port`: Select UDP port.

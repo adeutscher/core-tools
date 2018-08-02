@@ -62,11 +62,13 @@ TITLE_REVERSE = "reverse"
 TITLE_TIMESORT = "timesort"
 TITLE_NO_LINKS = "nolinks"
 TITLE_LOCAL_LINKS = "locallinks"
+TITLE_VERBOSE="verbose"
 
 DEFAULT_AUTH_PROMPT = "Authorization Required"
+DEFAULT_VERBOSE = False
 
 def hexit(exit_code):
-    print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-D deny-list-file] [-h] [-l] [-n] [-p port] [-P] [-r] [-t]" % os.path.basename(sys.argv[0])
+    print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-D deny-list-file] [-h] [-l] [-n] [-p port] [-P] [-r] [-t] [-v]" % os.path.basename(sys.argv[0])
     exit(exit_code)
 
 def process_arguments():
@@ -77,7 +79,7 @@ def process_arguments():
     access = NetAccess()
 
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hlnp:Prt", ["local-links", "no-links", "password=", "prompt=", "user="])
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hlnp:Prtv", ["local-links", "no-links", "password=", "prompt=", "user="])
     except getopt.GetoptError as e:
         print "GetoptError: %s" % e
         hexit(1)
@@ -106,6 +108,8 @@ def process_arguments():
             args[TITLE_REVERSE] = True
         elif opt in ("-t"):
             args[TITLE_TIMESORT] = True
+        elif opt in ("-v"):
+            args[TITLE_VERBOSE] = True
         elif opt in ("--password"):
             args[TITLE_PASSWORD] = arg
         elif opt in ("--prompt"):
@@ -436,7 +440,7 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         return f
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *values):
         """Log an arbitrary message.
         This is used by all other logging functions.  Override
         it if you have specific logging wishes.
@@ -451,20 +455,20 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         Modified to have a bit more colour, as Apache-style logging was not deemed a requirement for this script.
         """
 
-        if type(args[0]) == int:
+        if type(values[0]) == int:
             # Errors may be presented as tuples starting with error code as int.
             # Do not bother printing extra information on error codes in a new line.
             return
         else:
-            words = args[0].split()
-            if args[1] == '404' and len(words) > 1 and words[1].endswith("favicon.ico"):
+            words = values[0].split()
+            if values[1] == '404' and len(words) > 1 and words[1].endswith("favicon.ico"):
                 # Do not bother printing not-found information on favicon.ico.
                 return
 
         http_code_colour = COLOUR_RED
         extra_info = ''
         try:
-            response_code = int(args[1])
+            response_code = int(values[1])
         except ValueError:
             response_code = "???"
 
@@ -478,17 +482,28 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
 
         # Does address string match the client address? If not, print both.
         s = self.address_string()
+        footer = ""
 
         # A 400 (bad request) error is more likely to contain corrupted information.
         # A likely cause of a bad request is a non-HTTP protocol being used (e.g. HTTPS, SSH).
-        # We do not want to print this information, so we will be overwriting our args tuple.
+        # We do not want to print this information, so we will be overwriting our values tuple.
         if response_code == 400:
-            args = ("%s%s%s" % (COLOUR_RED, "BAD REQUEST", COLOUR_OFF), response_code, args[2])
+            values = ("%s%s%s" % (COLOUR_RED, "BAD REQUEST", COLOUR_OFF), response_code, values[2])
+        else:
+            # Non-400 response.
+            request_items = values[0].split(" ")
+            values = (" ".join([request_items[0], "%s%s%s" % (COLOUR_GREEN, request_items[1], COLOUR_OFF), request_items[2]]), values[1], values[2])
+
+            if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
+                user_agent = self.headers_dict.get("User-Agent")
+                if user_agent:
+                    footer=" (User Agent: %s%s%s)" % (COLOUR_BOLD, user_agent.strip(), COLOUR_OFF)
 
         if s == self.client_address[0]:
-            sys.stdout.write("%s%s%s [%s%s%s][%s%s%s]%s: %s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, extra_info, args[0]))
+            sys.stdout.write("%s%s%s [%s%s%s][%s%s%s]%s: %s%s\n" % (COLOUR_GREEN, self.address_string(), COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, values[1], COLOUR_OFF, extra_info, values[0], footer))
         else:
-            sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]%s: %s\n" % (COLOUR_GREEN, s, COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, args[1], COLOUR_OFF, extra_info, args[0]))
+            sys.stdout.write("%s%s%s (%s%s%s)[%s%s%s][%s%s%s]%s: %s%s\n" % (COLOUR_GREEN, s, COLOUR_OFF, COLOUR_GREEN, self.client_address[0], COLOUR_OFF, COLOUR_BOLD, self.log_date_time_string(), COLOUR_OFF, http_code_colour, values[1], COLOUR_OFF, extra_info, values[0], footer))
+        sys.stdout.flush()
 
     def parse_request(self):
         """Parse a request (internal).
@@ -504,6 +519,7 @@ class SimpleHTTPVerboseReqeustHandler(SimpleHTTPRequestHandler):
         requestline = self.raw_requestline
         requestline = requestline.rstrip('\r\n')
         self.requestline = requestline
+        self.headers_dict = {}
 
         words = requestline.split()
         if len(words) == 3:
@@ -727,6 +743,9 @@ if __name__ == '__main__':
         print_notice("Ignoring all symbolic links.")
     elif args.get(TITLE_LOCAL_LINKS, False):
         print_notice("Serving only local symbolic links.")
+
+    if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
+        print_notice("Client user agent shall also be printed.")
 
     if args.get(TITLE_POST, False):
         print_notice("Accepting %s%s%s messages. Will not process, but will not throw a %s%s%s code either." % (COLOUR_BOLD, "POST", COLOUR_OFF, COLOUR_RED, "501", COLOUR_OFF))

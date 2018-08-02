@@ -606,13 +606,15 @@ getlabel(){
         if [ -n "$vendor" ]; then
           if [ -n "$address" ]; then
             # User provided resolveable domain name or IP address
-            unknown "$(printf "No record for ${GREEN}%s${NC} (${BOLD}%s${NC}) Vendor: ${BOLD}%s${NC}" "$address" "$mac" "$vendor")"
+            if ! (( "${lazy:-0}" )); then
+              unknown "$(printf "No record for ${GREEN}%s${NC} (${BOLD}%s${NC}) Vendor: ${BOLD}%s${NC}" "$address" "$mac" "$vendor")"
+            fi
           elif ! grep -iPq '^[a-f0-9]{2}([:|-][a-f0-9]{2}){5}$' <<< "${mac}"; then
             # User provided an incomplete MAC address.
             # Assuming that the user did this intentionally in order
             #   to specifically check a vendor.
             record "$(printf "Vendor for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "${mac}" "${vendor}")"
-          else
+          elif ! (( "${lazy:-0}" )); then
             # User only provided a full-fledged MAC address
             unknown "$(printf "No record for ${BOLD}%s${NC} (Vendor: ${BOLD}%s${NC})..." "$mac" "$vendor")"
           fi

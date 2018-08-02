@@ -16,11 +16,13 @@ DEFAULT_UDP = False
 DEFAULT_RELAY_PORT = 1234
 DEFAULT_NOTIFY = True
 DEFAULT_BIND = "0.0.0.0"
+DEFAULT_HEADERS = True
 
 TITLE_UDP = "udp"
 TITLE_NOTIFY = "notify"
 TITLE_PORT = "port"
 TITLE_BIND = "bind"
+TITLE_HEADERS = "headers"
 
 def enable_colours(force = False):
     global COLOUR_PURPLE
@@ -207,6 +209,9 @@ class NetAccess:
 # Credit for IP functions: http://code.activestate.com/recipes/66517/
 
 def do_message(header, addr, data):
+
+    global print_headers
+
     # Strip out everything including  after the first newline.
     # Ignore unprintable characters.
     message = re.sub(r"\n.*", "", data)
@@ -216,10 +221,15 @@ def do_message(header, addr, data):
         # Print an error and do not go to desktop notification.
         # This probably triggers because the script was run on a
         #   common port and picked up another protocol.
-        print_error("%s: %s%s%s" % (header, COLOUR_RED, "No printable data.", COLOUR_OFF))
+        if print_headers:
+            print_error("%s: %s%s%s" % (header, COLOUR_RED, "No printable data.", COLOUR_OFF))
         return
 
-    print_notice("%s: %s" % (header, message))
+    if print_headers:
+        print_notice("%s: %s" % (header, message))
+    else:
+        print message
+    sys.stdout.flush()
 
     if not args.get(TITLE_NOTIFY, DEFAULT_NOTIFY):
         return
@@ -244,7 +254,7 @@ def do_message(header, addr, data):
         print_error(sys.stderr, "OSError: %s" % str(e))
 
 def hexit(exit_code):
-    print_notice("%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-A deny-list-file] [-h] [-p port] [-u] [-n]" % os.path.basename(sys.argv[0]))
+    print_notice("%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-A deny-list-file] [-h] [-p port] [-u] [-n] [-q]" % os.path.basename(sys.argv[0]))
     exit(exit_code)
 
 def main():
@@ -253,21 +263,25 @@ def main():
     if error_count:
         exit(1)
 
+    global print_headers
+    print_headers = args.get(TITLE_HEADERS, DEFAULT_HEADERS)
+
     access.announce_filter_actions()
 
     udpMode = args.get(TITLE_UDP, DEFAULT_UDP)
 
-    # Print a summary of directory/bind options.
-    if args.get(TITLE_NOTIFY, DEFAULT_NOTIFY):
-        verb = "Relaying"
-    else:
-        verb = "Printing"
-    if udpMode:
-        noun = "datagrams"
-    else:
-        noun = "connections"
+    if print_headers:
+        # Print a summary of directory/bind options.
+        if args.get(TITLE_NOTIFY, DEFAULT_NOTIFY):
+            verb = "Relaying"
+        else:
+            verb = "Printing"
+        if udpMode:
+            noun = "datagrams"
+        else:
+            noun = "connections"
 
-    print_notice("%s messages in %s received on %s%s:%d%s" % (verb, noun, COLOUR_GREEN, args.get(TITLE_BIND, DEFAULT_BIND), args.get(TITLE_PORT, DEFAULT_RELAY_PORT), COLOUR_OFF))
+        print_notice("%s messages in %s received on %s%s:%d%s" % (verb, noun, COLOUR_GREEN, args.get(TITLE_BIND, DEFAULT_BIND), args.get(TITLE_PORT, DEFAULT_RELAY_PORT), COLOUR_OFF))
 
     if udpMode:
         sockobj = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -323,7 +337,7 @@ def process_arguments():
     raw_ints = {}
 
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hnp:u")
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hnp:qu")
     except getopt.GetoptError as e:
         print_error("GetoptError: %s" % e)
         hexit(1)
@@ -344,6 +358,8 @@ def process_arguments():
             args[TITLE_NOTIFY] = False
         elif opt in ("-p"):
             raw_ints[TITLE_PORT] = arg
+        elif opt in ("-q"):
+            args[TITLE_HEADERS] = False
         elif opt in ("-u"):
             args[TITLE_UDP] = True
 

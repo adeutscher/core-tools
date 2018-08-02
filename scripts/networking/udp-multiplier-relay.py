@@ -64,6 +64,9 @@ def print_skipped(message):
 def print_usage(message):
     __print_message(COLOUR_PURPLE, "Usage", message)
 
+def print_warning(message):
+    __print_message(COLOUR_YELLOW, "Warning", message)
+
 # Network Access Class
 # Required modules: re, socket, struct, sys
 ###
@@ -209,6 +212,10 @@ TITLE_BIND = "bind address"
 TITLE_LISTEN_PORT = "listen port"
 TITLE_TARGET_PORT = "target port"
 
+# A count of default items.
+# If the item is greater than zero, then the summary will not print the target port.
+default_count = 0
+
 def do_relay():
 
     # Save constant lookups
@@ -237,7 +244,6 @@ def do_relay():
             print_denied("%s (%s)" % (header, colour_text(COLOUR_RED, "Ignored")))
             continue
 
-
         local_addresses = socket.gethostbyname_ex(socket.gethostname())[2]
 
         relayed = 0
@@ -250,7 +256,10 @@ def do_relay():
                 print_skipped("%s (%s)" % (header, colour_text(COLOUR_RED, "Potential short loop: %s" % colour_text(COLOUR_GREEN, addr[0]))))
                 continue
 
-            sockobj.sendto(data, addr)
+            try:
+                sockobj.sendto(data, addr)
+            except socket.error as e:
+                print_error("Error sending to target (%s:%s): %s" % (colour_text(COLOUR_GREEN, addr[0]), colour_text(COLOUR_GREEN, addr[1]), e))
             relayed += 1
 
         if relayed != len(targets):
@@ -266,7 +275,7 @@ def do_relay():
             print_notice("%s%s" % (header, footer))
 
 def hexit(code = 0):
-    print_usage("./%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-D deny-list-file] [-h] [-p listen-port] [-t target-port] target-address [target-address-b ...]" % os.path.basename(sys.argv[0]))
+    print_usage("./%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-c] [-d deny-address/range] [-D deny-list-file] [-h] [-p listen-port] [-t target-port] target-address [target-address-b ...]" % os.path.basename(sys.argv[0]))
     exit(code)
 
 def process_arguments():
@@ -276,8 +285,10 @@ def process_arguments():
     access = NetAccess()
     raw_ints = {}
 
+    global default_count
+
     try:
-        opts, operands = getopt.gnu_getopt(sys.argv[1:],"a:A:b:d:D:hp:t:")
+        opts, operands = getopt.gnu_getopt(sys.argv[1:],"a:A:b:cd:D:hp:t:")
     except getopt.GetoptError as e:
         print "GetoptError: %s" % e
         hexit(1)
@@ -289,6 +300,8 @@ def process_arguments():
             access.load_whitelist_file(arg)
         elif opt in ("-b"):
             args[TITLE_BIND] = arg
+        elif opt in ("-c"):
+            enable_colours(True)
         elif opt in ("-d"):
             access.add_blacklist(arg)
         elif opt in ("-D"):
@@ -300,6 +313,7 @@ def process_arguments():
         elif opt in ("-t"):
             raw_ints[TITLE_TARGET_PORT] = arg
 
+    bad_target_port = False
     for key in [TITLE_LISTEN_PORT, TITLE_TARGET_PORT]:
         if key not in raw_ints:
             continue
@@ -307,20 +321,50 @@ def process_arguments():
             args[key] = int(raw_ints[key])
         except ValueError:
             print_error("Invalid %s value: %s" % (colour_text(COLOUR_BOLD, key), colour_text(COLOUR_BOLD, raw_ints[key])))
+            if key == TITLE_TARGET_PORT:
+                bad_target_port = True
 
     if not operands:
         print_error("No target addresses defined.")
     else:
         local_addresses = socket.gethostbyname_ex(socket.gethostname())[2]
 
-        for addr in operands:
+        for target in operands:
+            items = target.split(":")
+
+            if not items:
+                continue
+            elif not items[0]:
+                addr = "127.0.0.1" # Assume localhost with a blank field.
+            elif re.match(r"^\d+$", items[0]):
+                print_error("Invalid target address: %s" % colour_text(COLOUR_GREEN, items[0]))
+                continue # Error in resolving IP address.
+            else:
+                addr = items[0]
+
+            # Handle IP address
             res = access.ip_validate_address(addr)
             if res[0]:
+                print_error("Could not validate target address: %s" % colour_text(COLOUR_GREEN, addr))
                 continue # Error in resolving IP address.
+
+            # Handle Ports
+            if len(items) > 1:
+                try:
+                    port = int(items[1])
+                except ValueError:
+                    print_error("Invalid port for address %s: %s" % (colour_text(COLOUR_GREEN, addr), colour_text(COLOUR_BOLD, items[1])))
+                    continue
+            else:
+                port = args.get(TITLE_TARGET_PORT, DEFAULT_TARGET_PORT)
 
             display = "%s (%s)" % (colour_text(COLOUR_GREEN, res[2]), colour_text(COLOUR_GREEN, addr))
 
-            if args.get(TITLE_LISTEN_PORT, DEFAULT_LISTEN_PORT) == args.get(TITLE_TARGET_PORT, DEFAULT_TARGET_PORT) and (res[2].startswith("127.") or (res[2] in local_addresses and args.get(TITLE_BIND, DEFAULT_BIND) in ["0.0.0.0", addr[0]])):
+            if not bad_target_port and args.get(TITLE_LISTEN_PORT, DEFAULT_LISTEN_PORT) == port and (res[2].startswith("127.") or (res[2] in local_addresses and args.get(TITLE_BIND, DEFAULT_BIND) in ["0.0.0.0", addr[0]])):
+
+                # Check for loops against target port.
+                # If there is a problem with the target port from up above in the arguments,
+                # then we will not bother with this check because loop checking might give false positives.
 
                 # If our source port is our target port, then check for an immediate loop.
                 # With a basic relay, not much we can do to avoid some joker setting up
@@ -342,14 +386,25 @@ def process_arguments():
                 print_error("Target port is equal to destination port and address is a local address (avoiding a loop): %s" % display)
                 continue
 
-            targets.append((res[2], args.get(TITLE_TARGET_PORT, DEFAULT_TARGET_PORT)))
-
-            if addr == res[2]:
-                # Provided an IP address
-                display_addresses.append(colour_text(COLOUR_GREEN, addr))
+            pair = (res[2], port)
+            if pair in targets:
+                if port == args.get(TITLE_TARGET_PORT, DEFAULT_TARGET_PORT):
+                    print_warning("An target was specified twice: %s" % (colour_text(COLOUR_GREEN, pair[0])))
+                else:
+                    print_warning("An target was specified twice: %s:%s" % (colour_text(COLOUR_GREEN, pair[0]), colour_text(COLOUR_GREEN, pair[1])))
             else:
-                # Provided some variety of domain name.
-                display_addresses.append(display)
+                targets.append(pair)
+
+                if addr == res[2]:
+                    # Provided an IP address
+                    if port == args.get(TITLE_TARGET_PORT, DEFAULT_TARGET_PORT):
+                        default_count += 1
+                        display_addresses.append(colour_text(COLOUR_GREEN, addr))
+                    else:
+                        display_addresses.append(colour_text(COLOUR_GREEN, "%s:%s" % (addr, port)))
+                else:
+                    # Provided some variety of domain name.
+                    display_addresses.append(display)
 
 def readable_bytes(nbytes):
     units = ["B", "KB"]
@@ -359,9 +414,12 @@ def readable_bytes(nbytes):
     return "%d%s" % (nbytes, units[0])
 
 def summarize_arguments():
+    global default_count
+
     print_notice("Bind address: %s" % colour_text(COLOUR_GREEN, args.get(TITLE_BIND, DEFAULT_BIND)))
     print_notice("Listen port: %s" % colour_text(COLOUR_BOLD, "UDP/%d" % args.get(TITLE_LISTEN_PORT, DEFAULT_LISTEN_PORT)))
-    print_notice("Target port: %s" % colour_text(COLOUR_BOLD, "UDP/%d" % args.get(TITLE_TARGET_PORT, DEFAULT_TARGET_PORT)))
+    if default_count:
+        print_notice("Default target port: %s" % colour_text(COLOUR_BOLD, "UDP/%d" % args.get(TITLE_TARGET_PORT, DEFAULT_TARGET_PORT)))
 
     if len(display_addresses) > 1:
         wording = "addresses"

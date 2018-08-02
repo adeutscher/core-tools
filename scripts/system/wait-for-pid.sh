@@ -93,6 +93,11 @@ while [ -n "${1}" ]; do
       # If the argument is not a number, then assume that we want to pgrep for matcing entries.
       notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${1}")"
 
+      if [ "$(wc -c <<< "${1}")" -ge "16" ]; then
+        error "$(printf "Pattern length is ${BOLD}%d${NC} characters or greater. ${BLUE}%s${NC} will not be able to match pattern: ${BOLD}%s${NC}" "16" "pgrep" "${1}")"
+        # Not leaving the loop to drive the point home with the "No matching processes" error.
+      fi
+
       # Get results, sanitizing options beginning in '-'.
       # Strip out PID of script and the subshell that collects input to respectively
       # avoid infinite waiting when waiting for other invocations of this script and

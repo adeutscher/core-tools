@@ -29,13 +29,13 @@
 
   - name: "install .net core 2.1"
     become: yes
-    yum:
+    dnf:
       name: aspnetcore-runtime-2.1
       state: latest
 
   - name: "install other items"
     become: yes
-    yum:
+    dnf:
       name: "{{ item }}"
       state: latest
     with_items:

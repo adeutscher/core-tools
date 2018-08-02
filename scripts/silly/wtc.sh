@@ -74,7 +74,15 @@ exit 0
 
 # What-The-Commit is a site that has random silly commit quotes.
 wtc(){
-  curl -s "http://whatthecommit.com/" | grep '<div id="content">' -A 1 | tail -n 1 | sed 's/<p>//'
+  local src="http://whatthecommit.com/"
+  # Adding in a catch-all grep for "." to give us a non-zero error code for empty content.
+  if ! curl -s "${src}" | grep '<div id="content">' -A 1 | tail -n 1 | sed 's/<p>//' | grep --colour=none "."; then
+    # Being unable to get content probably means a networking problem on our end.
+    # Less likely, the site has changed its layout and needs to be revisited.
+    # Even less likely, the site is gone altogether.
+    error "$(printf "Unable to get commit content. Is ${GREEN}%s${NC} reachable?" "${src}")"
+    exit 1
+  fi
 }
 
 # Constantly print out wtc quotes.

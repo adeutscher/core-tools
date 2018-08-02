@@ -146,3 +146,19 @@ __strlen(){
         expr length "$1"
     fi
 }
+
+####################
+#  Tmux Functions  #
+####################
+
+# Load session-specific variables if we are within a TMUX instance.
+# See comments in mux function for the reasoning behind this.
+# If for some reason TMUX_PANE is set but tmux is not installed
+#  (recently uninstalled?), then the info grab will fall flat
+#  on its face without fanfare.
+if [ -n "${TMUX_PANE}" ]; then
+  export TMUX_SESSION="$(tmux list-panes -a -F "#{pane_id} #{session_name}" 2> /dev/null | grep -wm1 "^${TMUX_PANE}" | cut -d' ' -f2)"
+  if [ -f "/tmp/${USER}/tmux/env.${TMUX_SESSION}" ]; then
+    . "/tmp/${USER}/tmux/env.${TMUX_SESSION}"
+  fi
+fi

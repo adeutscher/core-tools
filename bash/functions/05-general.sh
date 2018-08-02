@@ -23,6 +23,9 @@ alias reload="reload-tools"
 # Alias for our most-used rsync switches.
 alias rsync="rsync -av --progress"
 
+# Lazy alias to eliminate buffer
+alias antibuf="stdbuf -oL"
+
 ########################
 ##   Time Functions   ##
 ########################

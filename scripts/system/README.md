@@ -132,8 +132,18 @@ Notes:
 
 * The `-s` switch can be used to specify how often processes should be checked for completeness. By default, this is every 0.5 seconds.
 * The script currently assumes that a PID will not be re-used by another process between check intervals.
-* If no PIDs exist when the script is invoked, then it will exit with a non-zero exit code.
-* Process names are dealt with by invoking `pgrep`. `pgrep` is a bit unfortunate in that it lops the end off of longer command names (e.g. `transmission-cli`).
+* If no PIDs exist when the script is invoked, then the script will exit with a non-zero exit code.
+* Process names are dealt with by invoking `pgrep`. `pgrep` reads off of the Linux procfs. Procfs is a bit unfortunate in that the name of a process (which `pgrep` searches for by default trims the process name to be a maximum of 15 characters.
+  Command searches longer than 15 characters shall not register.
+* A downside of this script is that it is unable to detect whether or not a process ended with a non-zero exit code.
+
+### Use Cases
+
+This script might be useful for the following kinds of situations:
+
+* If you want to begin multiple actions simultaneously after another job has finished, then multiple instances of `wait-for-pid` could be used.
+* Being non-commital to actions taken after long-running processes. For example, `dnf upgrade && poweroff` would mean that you either need to cancel a system upgrade or shut down your machine. `wait-for-pid` allows long-running tasks to remain open while a shutdown was cancelled.
+* On the other hand, the script could be used to add on actions after a long-running process after the process has already been started. To flip the previous non-commital example, one could add `wait-for-pid dnf && poweroff` to shut down a machine after an upgrade had finished.
 
 ## zombie-scanner.sh
 
