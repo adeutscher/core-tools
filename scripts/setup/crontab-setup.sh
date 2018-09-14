@@ -4,6 +4,7 @@
 . "$(dirname "${0}")/functions.sh"
 
 crontab_contents="$(crontab -l)\n"
+marker="core-tools-crontab"
 
 # Prep new tasks in case we need to use them.
 # Mostly outside of the if statement just because it looks better without indentation shenanigans.
@@ -17,7 +18,7 @@ EOF
 temp_file="$(mktemp)"
 printf "${crontab_contents}" > "${temp_file}"
 temp_file_checksum="$(md5sum "${temp_file}" | cut -d' ' -f1)"
-"${DOTFILE_SCRIPT}" "${temp_file}" core-tools-crontab - <<< "${new_tasks}"
+"${DOTFILE_SCRIPT}" "${temp_file}" "${marker}" - <<< "${new_tasks}"
 temp_file_checksum_new="$(md5sum "${temp_file}" | cut -d' ' -f1)"
 
 if [[ "${temp_file_checksum}" != "${temp_file_checksum_new}" ]]; then

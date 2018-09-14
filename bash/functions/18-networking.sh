@@ -22,6 +22,13 @@ alias ping6-all-eth0='ping6 ff02::2%eth0'
 # default switches for iftop
 alias iftop="iftop -nNp"
 
+###########
+# Ansible #
+###########
+
+# Include ansible scripts in path.
+qtype ansible && __add_to_path "$toolsDir/bin/topics/ansible"
+
 ########
 # Curl #
 ########

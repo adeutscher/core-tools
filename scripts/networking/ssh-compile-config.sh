@@ -80,32 +80,34 @@ ssh_compile_config(){
     local noWrite=1
   fi
 
-  local totalModuleCount=0
-  local updatedConfigCount=0
-  local totalConfigCount=0
+  totalModuleCount=0
+  updatedConfigCount=0
+  totalConfigCount=0
 
   for toolDir in $(sort -t ':' -k 1n,2 <<< "$toolDirVariables" | cut -d':' -f2-); do
 
-    local totalModuleCount=$(($totalModuleCount+1))
-    local moduleSSHDir="$(eval echo \${$toolDir})/ssh"
-    local moduleSSHConfig="$moduleSSHDir/config"
+    totalModuleCount=$(($totalModuleCount+1))
+    moduleDir="$(eval echo \${$toolDir})"
+    moduleParent="$(readlink -f "${moduleDir}/..")"
+    moduleSSHDir="${moduleDir}/ssh"
+    moduleSSHConfig="$moduleSSHDir/config"
     # Replace $HOME with ~ for display purposes
-    local moduleSSHDirDisplay="$(sed "s|^$HOME|~|" <<< "$moduleSSHDir")"
+    moduleSSHDirDisplay="$(sed "s|^$HOME|~|" <<< "$moduleSSHDir")"
     if [ -f "$moduleSSHConfig" ]; then
 
-      local totalConfigCount=$(($totalConfigCount+1))
+      totalConfigCount=$(($totalConfigCount+1))
 
       local moduleSSHMarker="$toolDir-marker"
       # Get a checksum from all loaded files.
       # README files in config.d/ are actually skipped by this function,
       #   but skipping them AND not putting in a required file extension would be a pain.
-      local checksum=$(md5sum "$moduleSSHConfig" "$moduleSSHDir/config.d/"* "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null | md5sum | cut -d' ' -f1)
+      checksum="$(md5sum "${moduleSSHConfig}" "${moduleSSHDir}/config.d/"* "${moduleSSHDir}/fluid" "${moduleSSHDir}/fluid.d/"* "${moduleSSHDir}/hosts/config-${HOSTNAME%-*}" 2> /dev/null | md5sum | cut -d' ' -f1)"
 
       if [ -f "$sshConfig" ]; then
         # SSH Configuration exist, probe for existing versions.
-        local sectionStart=$(grep -wnm1 "$moduleSSHMarker" < "$sshConfig" | cut -d':' -f1)
-        local sectionEnd=$(grep -wnm1 "$moduleSSHMarker-end" < "$sshConfig" | cut -d':' -f1)
-        local sectionChecksum=$(grep -wm1 "$moduleSSHMarker" < "$sshConfig" | grep -o "checksum:[^ ]*" | cut -d':' -f2)
+        sectionStart=$(grep -wnm1 "$moduleSSHMarker" < "$sshConfig" | cut -d':' -f1)
+        sectionEnd=$(grep -wnm1 "$moduleSSHMarker-end" < "$sshConfig" | cut -d':' -f1)
+        sectionChecksum=$(grep -wm1 "$moduleSSHMarker" < "$sshConfig" | grep -o "checksum:[^ ]*" | cut -d':' -f2)
       fi
 
       local updatedConfigCount=$(($updatedConfigCount+1))
@@ -129,37 +131,24 @@ ssh_compile_config(){
         fi
 
         # Write header and general configs.
-        (printf "# $moduleSSHMarker checksum:$checksum\n\n"; cat "$moduleSSHConfig" 2> /dev/null) >> $sshConfig;
+        (printf "# $moduleSSHMarker checksum:${checksum}\n\n"; cat "${moduleSSHConfig}" 2> /dev/null; printf "\n") >> "${sshConfig}";
 
-        # Print divided configurations
-        for subConfigFile in "$moduleSSHDir/config.d/"*; do
+        append_fluid "${sshConfig}"
 
-          if grep -qi "README" <<< "${subConfigFile##*/}"; then
-              # Silently skip any file with "README" anywhere in its name.
-              continue
-          fi
+        append_config_d "${sshConfig}"
 
-          if [ -f "$subConfigFile" ]; then
-            printf "###\n# Sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}"  "$moduleSSHDir" >> "$sshConfig"
-            cat "$subConfigFile" 2> /dev/null >> "$sshConfig";
-          fi
-        done
+        append_fluid_d "${sshConfig}"
 
-        # Print a special flag for host-specific config. Helps to reduce confusion.
-        if [ -f "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" ]; then
-          if [[ "$HOSTNAME" != "${HOSTNAME%-*}" ]]; then
-            # Enumerated hostname
-            printf "###\n# Host-specific config for $HOSTNAME (generated for ${HOSTNAME%-*})\n###\n\n" >> "$sshConfig"
-          else
-            printf "###\n# Host-specific config for $HOSTNAME\n###\n\n" >> "$sshConfig"
-          fi
-          cat "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null >> "$sshConfig";
-        fi
+        append_host_config "${sshConfig}"
+
         # Write tail.
         printf "\n# $moduleSSHMarker-end \n\n" >> "$sshConfig"
 
-        # Replace SSH_DIR with module dir.
-        sed -i "s|SSH_DIR|$moduleSSHDir|g" "$sshConfig"
+        # Perform substitutions
+        sed -i "s|TOOLS_DIR|${moduleDir}|g" "${sshConfig}"
+        sed -i "s|TOOLS_PARENT|${moduleParent}|g" "${sshConfig}"
+        sed -i "s|SSH_DIR|${moduleSSHDir}|g" "${sshConfig}"
+
         if [ -z "$sectionStart" ]; then
           success "$(printf "${GREEN}Inserted${NC} SSH config from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
         else
@@ -174,39 +163,27 @@ ssh_compile_config(){
           continue
         fi
 
-        local configLines=$(wc -l < "$sshConfig")
+        local configLines=$(wc -l < "${sshConfig}")
 
         # Write previous content, header, and general configs.
-        (head -n "$(($sectionStart-1))" "$sshConfig"; printf "# $moduleSSHMarker checksum:$checksum\n\n"; cat "$moduleSSHConfig" 2> /dev/null) > "$sshConfig.new"
+        (head -n "$(($sectionStart-1))" "$sshConfig"; printf "# ${moduleSSHMarker} checksum:${checksum}\n\n"; cat "${moduleSSHConfig}" 2> /dev/null; printf "\n") > "${sshConfig}.new"
 
-        # Print divided configurations
-        for subConfigFile in "$moduleSSHDir/config.d/"*; do
+        append_fluid "${sshConfig}.new"
 
-          if grep -qi "README" <<< "${subConfigFile##*/}"; then
-              # Silently skip any file with "README" anywhere in its name.
-              continue
-          fi
+        append_config_d "${sshConfig}.new"
 
-          if [ -f "$subConfigFile" ]; then
-            printf "###\n# Sub-config \"%s\" for $moduleSSHDir\n###\n\n" "${subConfigFile##*/}" >> "$sshConfig.new"
-            cat "$subConfigFile" 2> /dev/null >> "$sshConfig.new";
-          fi
-        done
+        append_fluid_d "${sshConfig}.new"
 
-        # Print a special flag for host-specific config. Helps to reduce confusion.
-        if [ -f "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" ]; then
-          if [[ "$HOSTNAME" != "${HOSTNAME%-*}" ]]; then
-            # Enumerated hostname
-            printf "###\n# Host-specific config for $HOSTNAME (generated for ${HOSTNAME%-*})\n###\n\n" >> "$sshConfig.new"
-          else
-            printf "###\n# Host-specific config for $HOSTNAME\n###\n\n" >> "$sshConfig.new"
-          fi
-          cat "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null >> "$sshConfig.new";
-        fi
+        append_host_config "${sshConfig}.new"
+
         (printf "\n# $moduleSSHMarker-end \n\n"; tail -n "-$(($configLines-$sectionEnd-1))" "$sshConfig") >> "$sshConfig.new"
         mv "$sshConfig.new" "$sshConfig"
 
-        sed -i "s|SSH_DIR|$moduleSSHDir|g" "$sshConfig"
+        # Perform substitutions
+        sed -i "s|TOOLS_DIR|${moduleDir}|g" "${sshConfig}"
+        sed -i "s|TOOLS_PARENT|${moduleParent}|g" "${sshConfig}"
+        sed -i "s|SSH_DIR|${moduleSSHDir}|g" "${sshConfig}"
+
         success "$(printf "${BLUE}Updated${NC} SSH configuration from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
 
       else
@@ -240,6 +217,69 @@ ssh_compile_config(){
   ssh-fix-permissions
 
   unset toolDir
+}
+
+append_config_d(){
+  local target="${1}"
+
+  # Print divided configurations
+  if [ -d "${moduleSSHDir}/config.d" ]; then
+    for subConfigFile in "$moduleSSHDir/config.d/"*; do
+
+      if grep -qi "README" <<< "${subConfigFile##*/}"; then
+          # Silently skip any file with "README" anywhere in its name.
+          continue
+      fi
+
+      if [ -f "${subConfigFile}" ]; then
+        printf "\n###\n# Sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "${moduleSSHDir}"
+        cat "${subConfigFile}" 2> /dev/null;
+      fi
+    done
+  fi >> "${target}"
+}
+
+append_fluid(){
+  local target="${1}"
+
+  if [ -f "${moduleSSHDir}/fluid" ]; then
+    (printf "\n###\n# Non-versioned subconfig: ${moduleSSHDir}/fluid\n\n"; cat "${moduleSSHDir}/fluid")
+  fi >> "${target}"
+}
+
+append_fluid_d(){
+  local target="${1}"
+
+  # Print divided unversioned configurations
+  if [ -d "${moduleSSHDir}/fluid.d" ]; then
+    for subConfigFile in "$moduleSSHDir/fluid.d/"*; do
+
+      if grep -qi "README" <<< "${subConfigFile##*/}"; then
+        # Silently skip any file with "README" anywhere in its name.
+        continue
+      fi
+
+      if [ -f "$subConfigFile" ]; then
+        printf "###\n# Non-versioned sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "$moduleSSHDir"
+        cat "$subConfigFile" 2> /dev/null;
+      fi
+    done
+  fi >> "${target}"
+}
+
+append_host_config(){
+  local target="${1}"
+
+  # Print a special flag for host-specific config. Helps to reduce confusion.
+  if [ -f "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" ]; then
+    if [[ "$HOSTNAME" != "${HOSTNAME%-*}" ]]; then
+      # Enumerated hostname
+      printf "###\n# Host-specific config for $HOSTNAME (generated for ${HOSTNAME%-*})\n###\n\n"
+    else
+      printf "###\n# Host-specific config for $HOSTNAME\n###\n\n"
+    fi
+  cat "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null;
+  fi >> "${target}"
 }
 
 ssh_compile_config $@

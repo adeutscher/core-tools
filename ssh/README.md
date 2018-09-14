@@ -25,6 +25,8 @@ SSH configuration is read from the following locations in each loaded module (re
   * **Note**: Having a `ssh/config` file is mandatory for the moment if you want to use a module for SSH. It can even empty if you want to exclusively use other loading options.
 * `ssh/config.d/*` : Any files in this directory will be loaded.
   * The exception to this rule is any file with "readme" in its name, which will be ignored. This is to avoid loading `README.md` or any similar guide files into your SSH configuration and causing syntax errors.
+* `ssh/fluid` and `ssh/fluid.d/` are used in the same way as `ssh/config` and `ssh/config.d/`. The expectation is that there is a `.gitignore` file that keeps these files out of version control.
+  * `ssh/fluid` and `ssh/fluid.d/` were made with the idea that you might have SSH configurations to write that were too volatile to justifiably place in version control but that you would still want to keep organized within a module. I originally wrote the script to use these fluid files when I was doing a number of experiments with Amazon EC2 instances that would have a lifespan of hours.
 * `ssh/hosts/config-$HOSTNAME`
   * Files in `ssh/hosts/` will only be loaded in if by a specific host. For example, `config-host.domain.lan` would only be loaded in on `host.domain.lan`.
 
@@ -52,3 +54,10 @@ Example of an SSH entry using **SSH_DIR**:
         hostname 10.11.12.13
         user local
         IdentityFile SSH_DIR/keys/centos-vm2-key
+
+#### Similar Variables
+
+In the same style as **SSH_DIR**, the following substitutions can also be used:
+
+* **TOOLS_DIR**: Substituted for the base of your tool module's directory.
+* **TOOLS_PARENT**: Subsituted for the parent directory of your tool module.

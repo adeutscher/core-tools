@@ -37,10 +37,12 @@ def enable_colours(force = False):
         COLOUR_OFF = ''
 enable_colours()
 
+DEFAULT_RDP_SECURITY = True
 DEFAULT_VERBOSE = False
 
 # Store argument titles as variables
 TITLE_SERVER = "server"
+TITLE_RDP_SECURITY = "RDP Security"
 TITLE_DOMAIN = "domain"
 TITLE_USER = "user"
 TITLE_PASSWORD = "password"
@@ -104,7 +106,7 @@ def process_args(cli_args):
     good_args = True
 
     try:
-        opts, operands = getopt.gnu_getopt(cli_args, "d:Dg:h:p:Pu:Uvw:")
+        opts, operands = getopt.gnu_getopt(cli_args, "d:Dg:h:p:Psu:Uvw:")
     except getopt.GetoptError as e:
         print_error(e)
         exit(1)
@@ -150,6 +152,8 @@ def process_args(cli_args):
         if opt == "-P":
             # Manual password input
             record_var(values, TITLE_PASSWORD, COLOUR_BOLD, False)
+        elif opt == "-s":
+            values[TITLE_RDP_SECURITY] = False
         if opt == "-u":
             if validate_string(optarg, TITLE_USER):
                 set_var(values, TITLE_USER, optarg)
@@ -211,7 +215,9 @@ def process_switches(args):
         # New switch scheme
 
         # Static switches
-        switches = "xfreerdp +auto-reconnect /sec:rdp +clipboard +compression +heartbeat /compression-level:2".split(" ")
+        switches = "xfreerdp +auto-reconnect +clipboard +compression +heartbeat /compression-level:2".split(" ")
+        if args.get(TITLE_RDP_SECURITY, DEFAULT_RDP_SECURITY):
+            switches.append("/sec:rdp")
         # Display size
         switches.append("/h:%d" % args[TITLE_HEIGHT])
         switches.append("/w:%d" % args[TITLE_WIDTH])
@@ -228,7 +234,12 @@ def process_switches(args):
         # Old switch scheme
 
         # Static switches
-        switches = "xfreerdp --sec rdp --plugin cliprdr".split(" ")
+        switches = "xfreerdp --plugin cliprdr".split(" ")
+
+        # RDP Security Switch
+        if args.get(TITLE_RDP_SECURITY, DEFAULT_RDP_SECURITY):
+            switches.extend("--sec rdp".split(" "))
+
         # Display size
         switches.extend(["-g", "%dx%d" % (args[TITLE_WIDTH], args[TITLE_HEIGHT])])
         # Domain/Password/User

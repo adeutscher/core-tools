@@ -57,20 +57,13 @@ Other similar functions/aliases:
 
 I use my module system to store SSH configurations in sub-modules. The sensitive nature of SSH configurations are a major part of why the module system even exists, and I wanted to create a convenient method of deploying them and applying changes.
 
-Locations for SSH configurations:
-
-* A central SSH configuration file must exist for a module at `ssh/config` in a modules' directory.
-* SSH configurations can be organized in the `ssh/config.d/` directory.
-* Host-specific SSH configurations can be placed in the `ssh/hosts` directory (e.g. `ssh/hosts/config-demo.localdomain` would only be loaded on a machine with the hostname of `demo.localdomain`).
-
-If you use key files in your SSH configuration, all processed SSH configurations substitute **SSH_DIR** for your module's SSH configuration (e.g. `SSH_DIR/keys/demo` might become `/home/user/tools/demo-module/ssh/keys/demo`).
-To compile SSH configuration from loaded modules, run `ssh-compile-config`:
-
     ssh-compile-config
 
 SSH configuration compilation detects changes to your modules' SSH configuration files, and updates your `~/.ssh/config` file. It then reports in on modules that have had updated configurations. If you wish to test this feature without meddling with your current `~/.ssh/config` file, provide a path as your first argument:
 
     ssh-compile-config demo-config
+
+For more information on `ssh-compile-config`, see the `README.md` file in the [SSH directory](ssh/) directory.
 
 ### Prompt
 
