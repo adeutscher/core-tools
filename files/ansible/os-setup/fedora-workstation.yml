@@ -187,6 +187,7 @@
           - firefox             # Web Browser
           - google-chrome       # Fallback Web Browser
           - geany               # Code Editor
+          - geany-themes        # Extra colour layouts for geany
           - tigervnc            # VNC Client
           - x11vnc              # Ad-Hoc VNC Server
           - slick-greeter       # Really neat-looking greeter (originated with Ubuntu?)

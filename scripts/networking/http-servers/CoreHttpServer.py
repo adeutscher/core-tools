@@ -14,6 +14,11 @@ from SimpleHTTPServer import SimpleHTTPRequestHandler
 from SocketServer import ThreadingMixIn
 import getopt, os, re, socket, struct, sys
 
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
+
 def __print_message(colour, header, message):
     print "%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
 
@@ -469,7 +474,41 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         self.end_headers()
         return None
 
-    def translate_path(self, path):
+    def serve_content(self, content, code = 200, mimetype = "text/html"):
+        f = StringIO()
+        f.write(content)
+        length = f.tell()
+        f.seek(0)
+        self.send_response(200)
+        encoding = sys.getfilesystemencoding()
+        self.send_header("Content-type", "text/html; charset=%s" % encoding)
+        self.send_header("Content-Length", str(length))
+        self.end_headers()
+        return f
+
+    def serve_file(self, path):
+
+        if not (os.path.exists(path) and os.path.isfile(path)):
+            return self.send_error(404, "File not found.")
+
+        ctype = self.guess_type(path)
+        try:
+            # Always read in binary mode. Opening files in text mode may cause
+            # newline translations, making the actual size of the content
+            # transmitted *less* than the content-length!
+            f = open(path, 'rb')
+        except IOError:
+            self.send_error(404, "File not found")
+            return None
+        self.send_response(200)
+        self.send_header("Content-type", ctype)
+        fs = os.fstat(f.fileno())
+        self.send_header("Content-Length", str(fs[6]))
+        self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
+        self.end_headers()
+        return f
+
+    def translate_path(self, path, include_cwd = True):
         """Translate a /-separated PATH to the local filename syntax.
         Components that mean special things to the local file system
         (e.g. drive or directory names) are ignored.  (XXX They should
@@ -480,7 +519,15 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # abandon query parameters
         path = path.split('?',1)[0]
         path = path.split('#',1)[0]
+        # Reminder: The use of posixpath.normpath accounts for
+        # potential malicious crafted request paths.
         path = posixpath.normpath(urllib.unquote(path))
+
+        if not include_cwd:
+            # Return path as-is
+            return path
+
+        # Prepare to tack on current working directory.
         words = path.split('/')
         words = filter(None, words)
         path = os.getcwd()

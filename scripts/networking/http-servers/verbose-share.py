@@ -6,10 +6,6 @@
 
 import getopt, os, socket, sys, urllib
 import CoreHttpServer as common
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
 
 # Specific to browser sharer
 
@@ -112,17 +108,25 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         else:
             itemlist.sort(key=lambda a: a.lower(), reverse = reverse_order)
 
-        f = StringIO()
         displaypath = cgi.escape(urllib.unquote(self.path))
-        f.write('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">\n')
-        f.write("<html>\n<title>Directory listing for %s (%s)</title>\n" % (displaypath, os.getcwd()))
-        f.write("<body>\n  <h2>Directory listing for %s</h2>\n" % displaypath)
-        f.write("    <h3>Full path: %s%s</h3>\n" % (os.getcwd(), displaypath))
-        f.write("        <p>%s</p>\n" % self.render_breadcrumbs(displaypath))
-        f.write("      <hr>\n      <ul>\n")
+        htmlContent = """<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+    <head>
+        <title>Directory listing for %s (%s)</title>
+    </head>
+    <body>
+        <h2>Directory listing for %s</h2>
+        <h3>Full path: %s%s</h3>
+        <p>%s</p>
+        <hr>
+        <ul>
+""" % (displaypath, os.getcwd(), # Title
+        displaypath,
+        os.getcwd(), displaypath, # Full path
+        self.render_breadcrumbs(displaypath)) # Breadcrumbs
 
-        if not self.path == "/":
-            f.write('        <li><a href="..">%s</a></li>\n' % cgi.escape("<UP ONE LEVEL>"))
+        if self.path != "/":
+            htmlContent += '        <li><a href="..">%s</a></li>\n' % cgi.escape("<UP ONE LEVEL>")
         for name in itemlist:
             fullname = os.path.join(path, name)
             displayname = linkname = name
@@ -166,20 +170,11 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                 extrainfo = "(%s File)" % self.humansize(os.stat(fullname).st_size)
 
             if linkname and reachable:
-                f.write('        <li><a href="%s">%s</a> %s</li>\n'
-                        % (urllib.quote(linkname), cgi.escape(displayname), extrainfo))
+                htmlContent += '        <li><a href="%s">%s</a> %s</li>\n' % (urllib.quote(linkname), cgi.escape(displayname), extrainfo)
             else:
-                f.write('        <li><strong>%s</strong> %s</li>\n'
-                        % (cgi.escape(displayname), extrainfo))
-        f.write("      </ul>\n      <hr>\n  </body>\n</html>\n")
-        length = f.tell()
-        f.seek(0)
-        self.send_response(200)
-        encoding = sys.getfilesystemencoding()
-        self.send_header("Content-type", "text/html; charset=%s" % encoding)
-        self.send_header("Content-Length", str(length))
-        self.end_headers()
-        return f
+                htmlContent += '        <li><strong>%s</strong> %s</li>\n' % (cgi.escape(displayname), extrainfo)
+        htmlContent += "      </ul>\n      <hr>\n  </body>\n</html>\n"
+        return self.serve_content(htmlContent)
 
     def send_head(self):
         """Common code for GET and HEAD commands.
@@ -217,22 +212,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                     break
             else:
                 return self.list_directory(path)
-        ctype = self.guess_type(path)
-        try:
-            # Always read in binary mode. Opening files in text mode may cause
-            # newline translations, making the actual size of the content
-            # transmitted *less* than the content-length!
-            f = open(path, 'rb')
-        except IOError:
-            self.send_error(404, "File not found")
-            return None
-        self.send_response(200)
-        self.send_header("Content-type", ctype)
-        fs = os.fstat(f.fileno())
-        self.send_header("Content-Length", str(fs[6]))
-        self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
-        self.end_headers()
-        return f
+        return self.serve_file(path)
 
 if __name__ == '__main__':
     if not process_arguments():
@@ -252,4 +232,4 @@ if __name__ == '__main__':
     elif common.args.get(TITLE_LOCAL_LINKS, False):
         common.print_notice("Serving only local symbolic links.")
 
-    common.serve(SimpleHTTPVerboseReqeustHandler, directory)
+    common.serve(SimpleHTTPVerboseReqeustHandler, True)

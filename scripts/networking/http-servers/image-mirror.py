@@ -337,7 +337,7 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         title = relativePath
         if not title:
             title = "."
-        return self.send_content(self.render_page("Image Directory: %s" % os.path.realpath(GALLERY_PATH+"/"+relativePath), self.render_breadcrumbs(relativePath), contents))
+        return self.serve_content(self.render_page("Image Directory: %s" % os.path.realpath(GALLERY_PATH+"/"+relativePath), self.render_breadcrumbs(relativePath), contents))
 
     def handle_random(self, realPath, arguments):
 
@@ -413,11 +413,7 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         image_html += "</div>"
 
         path_html = "<p>Viewing: <strong>.%s</strong></p><p>Path: <strong>%s</strong></p><p>Image Dirs:%s</p>" % (page_path, os.path.realpath(GALLERY_PATH + page_path), self.render_breadcrumbs(os.path.dirname(page_path), False))
-        return self.send_content(self.render_page("Image: %s (%s)" % (os.path.basename(page_path), os.path.realpath(os.path.dirname(GALLERY_PATH+page_path))), self.render_breadcrumbs(path), nav_html + image_html + nav_html + path_html, self.get_navigation_javascript()))
-
-
-    def quote_html(self, html):
-        return html.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return self.serve_content(self.render_page("Image: %s (%s)" % (os.path.basename(page_path), os.path.realpath(os.path.dirname(GALLERY_PATH+page_path))), self.render_breadcrumbs(path), nav_html + image_html + nav_html + path_html, self.get_navigation_javascript()))
 
     def render_breadcrumbs(self, path, trailer=True):
         current = "/browse/"
@@ -498,19 +494,6 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
   </body>
 </html>""" % (title, extra_headers, breadcrumb_content, entry_content)
 
-    def send_content(self, content, code=200):
-
-        f = StringIO()
-        f.write(content)
-        length = f.tell()
-        f.seek(0)
-        self.send_response(200)
-        encoding = sys.getfilesystemencoding()
-        self.send_header("Content-type", "text/html; charset=%s" % encoding)
-        self.send_header("Content-Length", str(length))
-        self.end_headers()
-        return f
-
     def send_head(self):
         """Common code for GET and HEAD commands.
         This sends the response code and MIME headers.
@@ -525,24 +508,10 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         mode, realPath, relativePath, arguments = self.translate_path(self.path)
 
         if mode == "image":
-            ctype = self.guess_type(relativePath)
 
-            # TODO: Replace with generic "send file" method.
-            try:
-                # Always read in binary mode. Opening files in text mode may cause
-                # newline translations, making the actual size of the content
-                # transmitted *less* than the content-length!
-                f = open("%s/%s" % (GALLERY_PATH, relativePath), 'rb')
-            except IOError:
-                self.send_error(404, "File not found")
-                return None
-            self.send_response(200)
-            self.send_header("Content-type", ctype)
-            fs = os.fstat(f.fileno())
-            self.send_header("Content-Length", str(fs[6]))
-            self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
-            self.end_headers()
-            return f
+            target_path = "%s/%s" % (GALLERY_PATH, relativePath)
+            print "HEY"
+            return self.serve_file(target_path)
         elif mode == "random":
             # If nothing is specified, boot them back to root browsing...
             if 'path' not in arguments:
@@ -565,10 +534,12 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
                 else:
                     return self.handle_path(relativePath, realPath)
             else:
-                return self.send_content("Directory not found: %s" % realPath)
+                return self.serve_content("Directory not found: %s" % realPath, code = 404)
 
     def translate_path(self, path):
-        """Translate a /-separated PATH to the local filename syntax.
+        """
+        Translate a /-separated PATH to the local filename syntax.
+
         Components that mean special things to the local file system
         (e.g. drive or directory names) are ignored.  (XXX They should
         probably be diagnosed.)
