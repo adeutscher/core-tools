@@ -87,7 +87,7 @@ def announce_common_arguments(verb = "Hosting content"):
     print_notice("%s in %s on %s" % (verb, colour_text(COLOUR_GREEN, directory), colour_text(COLOUR_GREEN, "%s:%d" % (bind_address, bind_port))))
 
     if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
-        print_notice("Client user agent shall also be printed.")
+        print_notice("Extra information shall also be printed.")
 
     if args.get(TITLE_POST, DEFAULT_POST):
         print_notice("Accepting %s messages. Will not process, but will not throw a %s code either." % (colour_text(COLOUR_BOLD, "POST"), colour_text(COLOUR_RED, "501", COLOUR_OFF)))
@@ -157,11 +157,27 @@ def serve(handler, change_directory = False):
         server.kill_requests()
         exit(130)
 
+# Default error message template
+DEFAULT_ERROR_MESSAGE = """\
+<html>
+    <head>
+        <title>Error Response: %(code)d</title>
+    </head>
+    <body>
+        <h1>Error Response</h1>
+        <p>Error code %(code)d.</p>
+        <p>Message: %(message)s.</p>
+        <p>Error code explanation: %(code)s = %(explain)s.
+    </body>
+</html>
+"""
 
 class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
     server_version = "CoreHttpServer"
     alive = True
+
+    error_message_format = DEFAULT_ERROR_MESSAGE
 
     def __init__(self, request, client_address, server):
         self.request = request
@@ -234,21 +250,38 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                 # An error code has been sent, just exit
                 return
 
+            verbose = args.get(TITLE_VERBOSE, DEFAULT_VERBOSE)
             wanted_user = args.get(TITLE_USER, "")
             wanted_password = args.get(TITLE_PASSWORD, "")
             if wanted_user or wanted_password:
                 raw_creds = self.headers_dict.get("Authorization", "").split()
                 if not raw_creds or len(raw_creds) < 2:
                     # No creds message
+                    if verbose:
+                        print_error("Client provided no credentials.")
                     return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
-                creds_list = base64.b64decode(raw_creds[1]).split(":")
+
+                # Decode
+                creds_list = []
+                try:
+                    creds_list = base64.b64decode(raw_creds[1]).split(":")
+                except TypeError:
+                    pass
+
                 if len(creds_list) < 2:
                     # Creds message invalid, too few fields within.
+                    if verbose:
+                        print_error("Client provided an invalid Authorization header.")
                     return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
                 user = creds_list[0]
                 password = ":".join(creds_list[1:])
                 if user != wanted_user or password != wanted_password:
                     # Bad Credentials
+                    if verbose:
+                        # Also printing credentials.
+                        # This is supposed to be used for quick, silly sharing scripts.
+                        # If this ever gets used for something more serious, this printout should be removed.
+                        print_error("Client provided invalid credentials: (User: %s)(Password: %s)" % (colour_text(COLOUR_BOLD, user), colour_text(COLOUR_BOLD, password)))
                     return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
 
             if self.command == "POST" and args.get(TITLE_POST, DEFAULT_POST):
