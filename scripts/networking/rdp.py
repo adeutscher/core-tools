@@ -7,7 +7,16 @@ import getopt, getpass, os, re, subprocess, sys
 DEFAULT_HEIGHT = 900
 DEFAULT_WIDTH = 1600
 
-# Colours
+#
+# Common Colours and Message Functions
+###
+
+def __print_message(colour, header, message):
+    print "%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+
+def colour_text(colour, text):
+    # A useful shorthand for applying a colour to a string.
+    return "%s%s%s" % (colour, text, COLOUR_OFF)
 
 def enable_colours(force = False):
     global COLOUR_PURPLE
@@ -37,8 +46,35 @@ def enable_colours(force = False):
         COLOUR_OFF = ''
 enable_colours()
 
+error_count = 0
+def print_error(message):
+    global error_count
+    error_count += 1
+    __print_message(COLOUR_RED, "Error", message)
+
+def print_notice(message):
+    __print_message(COLOUR_BLUE, "Notice", message)
+
+def print_usage(message):
+    __print_message(COLOUR_PURPLE, "Usage", message)
+
+def print_warning(message):
+    __print_message(COLOUR_YELLOW, "Warning", message)
+
+# Script Variables and Functions
+###
+
+# Defaults
 DEFAULT_RDP_SECURITY = True
+DEFAULT_USER = os.getlogin()
 DEFAULT_VERBOSE = False
+
+# Environment Variables
+ENV_DOMAIN = "RDP_DOMAIN"
+ENV_PASSWORD = "RDP_PASSWORD"
+ENV_USER = "RDP_USER"
+ENV_HEIGHT = "RDP_HEIGHT"
+ENV_WIDTH = "RDP_WIDTH"
 
 # Store argument titles as variables
 TITLE_SERVER = "server"
@@ -49,64 +85,58 @@ TITLE_PASSWORD = "password"
 TITLE_HEIGHT = "height"
 TITLE_WIDTH = "width"
 TITLE_VERBOSE = "verbose"
+TITLE_EC2_FILE = "EC2 Key File"
 
-def do_rdp(cli_args):
-    env_status = validate_environment()
+def get_user(display = False):
 
-    args, good_args = process_args(cli_args)
-
-    good_args = validate_args(args) and env_status and good_args
-
-    if not good_args:
-        print "Usage: ./rdp.py server [-d domain] [-D] [-g HxW] [-h height] [-p password] [-P] [-u user] [-U] [-v] [-w width]"
-        exit(1)
-
-    command = process_switches(args)
-    print_summary(args)
-
-    if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
-        print "Command: %s" % " ".join(command)
-
-    try:
-        p = subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr)
-        p.communicate()
-        exit(p.returncode)
-    except KeyboardInterrupt:
-        p.kill()
-        exit(130)
-    except OSError as e:
-        print "OSError: %s" % e
-        exit(1)
-
-def print_error(message):
-    print "%sError%s: %s" % (COLOUR_RED, COLOUR_OFF, message)
-
-def print_summary(args):
-
-    if TITLE_DOMAIN in args:
-        user = "%s\\%s" % (args[TITLE_DOMAIN], args[TITLE_USER])
+    if TITLE_EC2_FILE in args:
+        user = "administrator" # Assume to always be 'administrator' for EC2 instances.
+    elif display and TITLE_DOMAIN in args:
+        user = "%s\\%s" % (args[TITLE_DOMAIN], get_user())
     else:
-        user = args[TITLE_USER]
+        user = args.get(TITLE_USER, os.environ.get(ENV_USER, DEFAULT_USER))
 
-    message = "Connecting to %s%s%s (display: %s%dx%d%s) as %s%s%s" % (COLOUR_GREEN, args[TITLE_SERVER], COLOUR_OFF, COLOUR_BOLD, args[TITLE_WIDTH], args[TITLE_HEIGHT], COLOUR_OFF, COLOUR_BOLD, user, COLOUR_OFF)
+    return user
+
+def print_summary():
+
+    message = "Connecting to %s (display: %s) as %s" % (colour_text(COLOUR_GREEN, args[TITLE_SERVER]), colour_text(COLOUR_BOLD, "%sx%s" % (args[TITLE_WIDTH], args[TITLE_HEIGHT])), colour_text(COLOUR_BOLD, get_user(True)))
 
     if TITLE_PASSWORD in args:
         message += " with a password"
     message += "."
 
-    print message
+    print_notice(message)
 
-def print_warning(message):
-    print "%sWarning%s: %s" % (COLOUR_YELLOW, COLOUR_OFF, message)
+    if TITLE_EC2_FILE in args:
+        print_warning("'%s' user is assumed for connecting to an EC2 instance." % colour_text(COLOUR_BOLD, get_user()))
 
-def process_args(cli_args):
+def get_ec2_cipher():
+    cipher = None
+    if not os.path.isfile(args[TITLE_EC2_FILE]):
+        print_error("EC2 Keyfile not found: %s" % colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE]))
+    else:
+        # File exists.
+        try:
+            input = open(args[TITLE_EC2_FILE])
+            key = RSA.importKey(input.read())
+            input.close()
+            cipher = PKCS1_v1_5.new(key)
+        except NameError as e:
+            print_error("Could not load EC2 key file because required RSA module was not loaded from pycrypto.")
+        except Exception as e:
+            # Most likely: Path provided was not to a file with a proper RSA key.
+            print_error("Encountered %s loading EC2 key file ('%s'): %s" % (colour_text(COLOUR_RED, type(e).__name__), colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE]), str(e)))
+    return cipher
+
+def process_args():
     values = {}
 
     # Errors that have not been resolved.
     good_args = True
 
     try:
-        opts, operands = getopt.gnu_getopt(cli_args, "d:Dg:h:p:Psu:Uvw:")
+        opts, operands = getopt.gnu_getopt(sys.argv, "d:De:g:h:p:Psu:Uvw:")
     except getopt.GetoptError as e:
         print_error(e)
         exit(1)
@@ -120,6 +150,8 @@ def process_args(cli_args):
         if opt == "-D":
             # Manual domain input
             record_var(values, TITLE_DOMAIN, COLOUR_BOLD, False)
+        if opt in ('-e'):
+            set_var(values, TITLE_EC2_FILE, optarg)
         if opt == "-g":
             # Single-arg geometry
             # Try a few different delimiters ('x', ',', and ' ')
@@ -176,21 +208,19 @@ def process_args(cli_args):
     # If no values were set, load in defaults instead.
     # Doing this after loading because of the override notice.
     if TITLE_HEIGHT not in values:
-        values[TITLE_HEIGHT] = int(os.environ.get("RDP_HEIGHT", DEFAULT_HEIGHT))
+        values[TITLE_HEIGHT] = int(os.environ.get(ENV_HEIGHT, DEFAULT_HEIGHT))
     if TITLE_WIDTH not in values:
-        values[TITLE_WIDTH] = int(os.environ.get("RDP_WIDTH", DEFAULT_WIDTH))
-    if TITLE_DOMAIN not in values and "RDP_DOMAIN" in os.environ:
-        set_var(values, TITLE_DOMAIN, os.environ.get("RDP_DOMAIN"))
-    if TITLE_PASSWORD not in values and "RDP_PASSWORD" in os.environ:
-        set_var(values, TITLE_PASSWORD, os.environ.get("RDP_PASSWORD"))
-    if TITLE_USER not in values:
-        set_var(values, TITLE_USER, os.environ.get("RDP_USER", os.getlogin()))
+        values[TITLE_WIDTH] = int(os.environ.get(ENV_WIDTH, DEFAULT_WIDTH))
+    if TITLE_DOMAIN not in values and ENV_DOMAIN in os.environ:
+        set_var(values, TITLE_DOMAIN, os.environ.get(ENV_DOMAIN))
+    if TITLE_PASSWORD not in values and ENV_PASSWORD in os.environ:
+        set_var(values, TITLE_PASSWORD, os.environ.get(ENV_PASSWORD))
 
     return values, good_args
 
 def process_switches(args):
-    # Read no-arg output to determine xfreerdp version
 
+    # Read no-arg output to determine xfreerdp version
     new_switches=False
 
     try:
@@ -216,8 +246,10 @@ def process_switches(args):
 
         # Static switches
         switches = "xfreerdp +auto-reconnect +clipboard +compression +heartbeat /compression-level:2".split(" ")
-        if args.get(TITLE_RDP_SECURITY, DEFAULT_RDP_SECURITY):
+
+        if args.get(TITLE_RDP_SECURITY, DEFAULT_RDP_SECURITY) and not TITLE_EC2_FILE in args:
             switches.append("/sec:rdp")
+
         # Display size
         switches.append("/h:%d" % args[TITLE_HEIGHT])
         switches.append("/w:%d" % args[TITLE_WIDTH])
@@ -226,8 +258,7 @@ def process_switches(args):
             switches.append("/d:%s" % args[TITLE_DOMAIN])
         if TITLE_PASSWORD in args:
             switches.append("/p:%s" % args[TITLE_PASSWORD])
-        if TITLE_USER in args:
-            switches.append("/u:%s" % args[TITLE_USER])
+        switches.append("/u:%s" % get_user())
         # Server address
         switches.append("/v:%s" % args[TITLE_SERVER])
     else:
@@ -237,7 +268,7 @@ def process_switches(args):
         switches = "xfreerdp --plugin cliprdr".split(" ")
 
         # RDP Security Switch
-        if args.get(TITLE_RDP_SECURITY, DEFAULT_RDP_SECURITY):
+        if args.get(TITLE_RDP_SECURITY, DEFAULT_RDP_SECURITY) and not TITLE_EC2_FILE in args:
             switches.extend("--sec rdp".split(" "))
 
         # Display size
@@ -247,8 +278,7 @@ def process_switches(args):
             switches.extend(["-d", args[TITLE_DOMAIN]])
         if TITLE_PASSWORD in args:
             switches.extend(["-p", args[TITLE_PASSWORD]])
-        if TITLE_USER in args:
-            switches.extend(["-u", args[TITLE_USER]])
+        switches.extend(["-u", get_user()])
         # Server address
         switches.append(args[TITLE_SERVER])
     return switches
@@ -283,21 +313,125 @@ def record_var(values, title, colour=COLOUR_BOLD, reportOverwrite=True):
                 temp = ""
     set_var(values, title, temp, colour, reportOverwrite)
 
+def set_ec2_info():
+    good = False
+    target = args.get(TITLE_SERVER)
+
+    end = False
+
+    try:
+        ec2client = boto3.client('ec2')
+        response = ec2client.describe_instances()
+
+        tag_name = 'Name'
+        label_instance_id = "instance ID"
+        label_public_ip = "public IP"
+        label_public_dns = "public DNS"
+        label_tag_name = "'%s' tag" % tag_name
+
+        for reservation in response["Reservations"]:
+            for instance in reservation["Instances"]:
+
+                state = instance.get('State')
+                if not state or state.get('Name') != 'running':
+                    # Immediately ignore anything that isn't running.
+                    continue
+
+                public_dns = instance.get('PublicDnsName')
+                public_ip = instance.get('PublicIpAddress')
+                instance_id = instance.get('InstanceId')
+                platform = instance.get('Platform')
+
+                # Attempt to match from InstanceId, public IP, public DNS name, or 'Name' tag.
+
+                label = None
+                name = ""
+                if instance_id == target:
+                    label = label_instance_id
+                elif public_ip == target:
+                    label = label_public_ip
+                elif public_dns == target:
+                    label = label_public_dns
+                else:
+                    tags = instance.get("Tags", [])
+                    for tag in tags:
+                        if tag.get("Key") == tag_name:
+                            name = tag.get("Value", "")
+                            if name == target:
+                                label = label_tag_name
+                            break
+
+                if not label:
+                    # Could not find a matching instance.
+                    continue
+
+                # After finding an instance, confirm that it is a Windows instance.
+                # If a matching case is not Windows, then print a warning and try
+                # the next entry.
+                if not public_ip or instance.get('Platform') != 'windows':
+                    print_warning("EC2 instance %s matches requested %s, but is not a Windows instance." % (instance_id, colour_text(COLOUR_BOLD, label)))
+                    continue
+
+                print_notice("Connecting to EC2 instance by %s matching target: %s" % (label, colour_text(COLOUR_BOLD, target)))
+
+                # Found our target instance.
+                # Whether or not we are able to get a password, we will be stopping with this item.
+                end = True
+
+                password_data =  ec2client.get_password_data(InstanceId = instance_id)
+                raw_password = password_data.get("PasswordData", "").strip().decode('base64')
+
+                if not raw_password:
+                    print_error("Unable to get encrypted password data from instance matching %s: %s" % (label, colour_text(COLOUR_BOLD, target)))
+                    break
+
+                # Attempt to get password.
+                cipher = get_ec2_cipher()
+                plain_password = cipher.decrypt(raw_password, None)
+                if not plain_password:
+                    print_error("Unable to decode encrypted password data, decryption key is probably be incorrect. File: %s" % colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE]))
+                    break
+
+                args[TITLE_SERVER] = public_ip
+                args[TITLE_PASSWORD] = plain_password
+                # Note: Username is handled by get_user(). Assumed to always be 'administrator' for EC2 connections.
+                if TITLE_DOMAIN in args:
+                    del args[TITLE_DOMAIN]
+
+                good = True
+                break
+            if end:
+                break
+    except Exception as e:
+        print_error("Error resolving EC2 identifier (%s) to an active instance: %s" % (colour_text(COLOUR_BOLD, target), str(e)))
+        good = False
+
+    if not good:
+        print_error("Unable to resolve target to a running EC2 instance: %s" % colour_text(COLOUR_BOLD, target))
+        print_notice("The following properties are checked: %s, %s, %s, and %s" % (label_instance_id, label_public_ip, label_public_dns, label_tag_name))
+
+    return good
+
 def set_var(values, title, value, colour=COLOUR_BOLD, reportOverwrite=True):
     if title in values and value != values[title]:
         # Print a warning if a value is already set.
         # Don't bother raising a fuss if the same value has been specified twice.
         if reportOverwrite:
-            print_warning("More than one %s specified in arguments: Replacing '%s%s%s' with '%s%s%s'" % (title, colour, value, COLOUR_OFF, colour, values[title], COLOUR_OFF))
+            print_warning("More than one %s specified in arguments: Replacing '%s' with '%s'" % (title, colour_text(colour, value), colour_text(colour, values[title])))
         else:
-            print_warning("More than one %s specified in arguments. Using latest value." % title)
+            print_warning("More than one %s specified in arguments. Using latest value." % colour_text(COLOUR_BOLD, title))
     values[title] = value
 
 def validate_args(args):
     all_clear = True
+
     if TITLE_SERVER not in args:
         print_error("No server specified.")
         all_clear = False
+
+    if TITLE_EC2_FILE in args and not get_ec2_cipher():
+        all_clear = False
+
     return all_clear
 
 
@@ -344,4 +478,59 @@ def which(program):
     return None
 
 if __name__ == "__main__":
-    do_rdp(sys.argv)
+    good_env = validate_environment()
+
+    args, good_args = process_args()
+
+    if args.get(TITLE_EC2_FILE):
+        # Must load modules outside of functions.
+        try:
+            import base64, boto3
+            from Crypto.Cipher import PKCS1_v1_5
+            from Crypto.PublicKey import RSA
+        except ImportError as e:
+            print_error("Error loading modules for EC2 password: %s" % str(e))
+            good_args = False
+
+    good_args = validate_args(args) and good_args
+
+    if not good_args:
+        print_usage("./rdp.py server [-d domain] [-D] [-e ec2-key-file] [-g HxW] [-h height] [-p password] [-P] [-u user] [-U] [-v] [-w width]")
+        exit(1)
+
+    if not good_env:
+        exit(2)
+
+    if TITLE_EC2_FILE in args and not set_ec2_info():
+        # Unable to resolve EC2 name to an active instance.
+        exit(3)
+
+    command = process_switches(args)
+
+    print_summary()
+
+    if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
+        print_notice("Command: %s" % " ".join(command))
+
+    try:
+        p = subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr)
+
+        # Clean password from memory a bit.
+        # It's not perfect, but it does axe at least a few instances of the password from a memory dump.
+        # If you're really paranoid about password security, you should really be entering it yourself.
+        # The password can't be found at the Python level if it's never entered there in the first place.
+        if TITLE_PASSWORD in args:
+            del args[TITLE_PASSWORD]
+        if ENV_PASSWORD in os.environ:
+            del os.environ[ENV_PASSWORD]
+        del command
+
+        # Run until the process ends.
+        p.communicate()
+        exit(p.returncode)
+    except KeyboardInterrupt:
+        p.kill()
+        exit(130)
+    except OSError as e:
+        print_error("OSError: %s" % e)
+        exit(1)

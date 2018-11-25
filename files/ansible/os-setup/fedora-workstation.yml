@@ -11,7 +11,9 @@
     # A check is necessary because the repository is not present immediately after the launch of a new Fedora version.
     # For example, the fedora-28 repository did not exist as of 2018-05-04.
     # This variable makes for an easy toggle.
-    freerdp_nightly_max_version: "27"
+    # Also track the minimum of nightly build used by the FreeRDP team.
+    freerdp_nightly_min_version: "28"
+    freerdp_nightly_max_version: "29"
 
     google_repo:
       name: "google-chrome"
@@ -61,7 +63,7 @@
           - "nonfree"
 
       - name: freerdp-nightly repository
-        when: ansible_distribution_major_version <= freerdp_nightly_max_version
+        when: ansible_distribution_major_version <= freerdp_nightly_max_version and ansible_distribution_major_version >= freerdp_nightly_min_version
         yum_repository:
           name: freerdp-nightly
           description: freerdp-nightly
@@ -116,7 +118,7 @@
 
       ## Development Tools and CLI items
 
-      - name: install/confirm other development tools and cli items
+      - name: install/update development tools and cli items
         dnf: name={{item}} state=latest
         become: yes
         with_items:
@@ -130,13 +132,13 @@
           - python   # Python
           - python3  # Python v3
 
-      - name: fun cli items
+      - name: install/update fun cli items
         dnf: name={{item}} state=latest
         become: yes
         with_items:
           - mpg123 # Play sounds from the command line
 
-      - name: standard package updates
+      - name: install/update standard packages
         # Make sure that some boring common packages are up to date.
         dnf: name={{item}} state=latest
         become: yes
@@ -148,7 +150,7 @@
           - unzip
           - zip
 
-      - name: install the 'development-tools' package group
+      - name: install/update the 'development-tools' package group
         become: yes
         dnf: name='@development-tools' state=latest
         # Install failed when run against a Fedora 25 machine due to a module problem.
@@ -162,7 +164,7 @@
         when: (ansible_distribution == "Fedora" and ansible_distribution_version >= "26")
 
       ## Network-Based Items
-      - name: install network utilities
+      - name: install/update network utilities
         become: yes
         dnf: name={{item}} state=latest
         with_items:
@@ -199,10 +201,10 @@
           - NetworkManager      # Network Management Service
           - wine                # Windows compatibility
 
-      - name: install freerdp-nightly
+      - name: install/update freerdp-nightly
         become: yes
         dnf: name=freerdp-nightly state=latest # RDP Client
-        when: ansible_distribution_major_version <= freerdp_nightly_max_version
+        when: ansible_distribution_major_version <= freerdp_nightly_max_version and ansible_distribution_major_version >= freerdp_nightly_min_version
 
       # Remove Default Greeter for Fedora MATE spin
       - name: remove lightdm-gtk greeter

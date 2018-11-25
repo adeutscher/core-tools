@@ -139,6 +139,28 @@ __add_to_path_if_dir(){
     return 1
 }
 
+# Library path version of __add_to_path.
+
+__add_to_lib(){
+  [ -z "${1}" ] && return
+  if grep -qP -m1 "(^|:)$1($|:)" <<< "$LD_LIBRARY_PATH"; then
+    [ -z "${2}" ] && return 0
+    # If a second argument was given, strip before prepending.
+    # Not done by default because it significantly adds to reload time
+    #   (.+0.1s on a machine with a fair number of modules).
+    export LD_LIBRARY_PATH="$(sed -r -e "s|^${1}:||g" -e "s|:${1}$||g" -e "s|:${1}:|:|g" <<< "${PATH}")"
+  fi
+  export LD_LIBRARY_PATH=$1:${LD_LIBRARY_PATH}
+}
+
+__add_to_lib_if_dir(){
+    if [ -n "$1" ] && [ -d "$1" ]; then
+        __add_to_lib "$1" "${2}"
+        return 0
+    fi
+    return 1
+}
+
 __strlen(){
     if __is_mac; then
         awk '{ print length }' <<< "$1"

@@ -1,0 +1,36 @@
+---
+
+# Set up FreeRDP nightly builds on Fedora boxes.
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  vars:
+    # Maximum version of Fedora that supports the freerdp-nightly repository
+    # A check is necessary because the repository is not present immediately after the launch of a new Fedora version.
+    # For example, the fedora-28 repository did not exist as of 2018-05-04.
+    # This variable makes for an easy toggle.
+    # Also track the minimum of nightly build used by the FreeRDP team.
+    freerdp_nightly_min_version: "28"
+    freerdp_nightly_max_version: "29"
+
+  tasks:
+  
+  - name: Install Repositories (Fedora)
+    become: yes
+    when: ansible_distribution == "Fedora" and ansible_distribution_major_version <= freerdp_nightly_max_version and ansible_distribution_major_version >= freerdp_nightly_min_version
+    block: 
+
+      - name: freerdp-nightly repository
+        when: ansible_distribution_major_version <= freerdp_nightly_max_version and ansible_distribution_major_version >= freerdp_nightly_min_version
+        yum_repository:
+          name: freerdp-nightly
+          description: freerdp-nightly
+          baseurl: https://pub.freerdp.com/repositories/rpm/fedora/$releasever/freerdp-nightly/
+          metadata_expire: 43200 # 12 hours
+          ip_resolve: 4
+          gpgcheck: no
+
+      - name: install/update freerdp-nightly
+        become: yes
+        dnf: name=freerdp-nightly state=latest # RDP Client

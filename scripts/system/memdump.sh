@@ -63,10 +63,17 @@ for pid in $@; do
     continue
   fi
 
+  dir="memdump-${pid}"
+  mkdir "${dir}" || continue
+
+  notice "$(printf "Dumping contents of process ${BOLD}%d${NC} to ${GREEN}%s${NC}." "${pid}" "${dir}")"
+
   while read start stop; do
     [ -z "$start" ] && continue
-    gdb --batch --pid "${pid}" -ex "dump memory process-${pid}-$start-$stop-memory.dump 0x$start 0x$stop";
+    gdb --batch --pid "${pid}" -ex "dump memory ${dir}/process-${pid}-$start-$stop-memory.dump 0x$start 0x$stop";
   done <<< "$(grep rw-p "${map}" | sed -n 's/^\([0-9a-f]*\)-\([0-9a-f]*\) .*$/\1 \2/p')"
+
+  notice "$(printf "Finished dumping contents of process ${BOLD}%d${NC} to ${GREEN}%s${NC}." "${pid}" "${dir}")"
 done
 
 (( ${__error_count:-0} )) && exit 1 # Exit with error if at least one

@@ -1,0 +1,31 @@
+---
+
+# Version of youtube-dl playbook to install youtube-dl for the local user only.
+# A successful run assumes that Python's setuptools are already installed.
+
+- hosts: all
+
+  vars:
+    git_src: "https://github.com/rg3/youtube-dl.git"
+    git_dest: "{{ ansible_user_dir }}/.local/youtube-dl-local"
+
+  tasks:
+
+  - name: get youtube-dl source
+    git:
+      repo: "{{ git_src }}"
+      dest: "{{ git_dest }}"
+    notify: build youtube-dl
+
+  handlers:
+
+  - name: build youtube-dl
+    shell: python setup.py clean && python setup.py build
+    args:
+      chdir: "{{ git_dest }}"
+    notify: install youtube-dl
+
+  - name: install youtube-dl
+    shell: python setup.py install --user
+    args:
+      chdir: "{{ git_dest }}"

@@ -63,12 +63,14 @@ def print_error(message):
 def print_notice(message):
     __print_message(COLOUR_BLUE, "Notice", message)
 
-common_short_opts = "a:A:b:d:D:p:v"
+common_short_opts = "a:A:b:d:D:p:Pv"
 common_long_opts = ["password=", "prompt=", "user="]
 
 DEFAULT_AUTH_PROMPT = "Authorization Required"
 DEFAULT_POST = False
 DEFAULT_VERBOSE = False
+
+REGEX_INET4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 
 TITLE_BIND = "bind"
 TITLE_PORT = "port"
@@ -84,13 +86,14 @@ def announce_common_arguments(verb = "Hosting content"):
 
     bind_address, bind_port, directory = get_target_information()
 
-    print_notice("%s in %s on %s" % (verb, colour_text(COLOUR_GREEN, directory), colour_text(COLOUR_GREEN, "%s:%d" % (bind_address, bind_port))))
+    if verb:
+        print_notice("%s in %s on %s" % (verb, colour_text(COLOUR_GREEN, directory), colour_text(COLOUR_GREEN, "%s:%d" % (bind_address, bind_port))))
 
     if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
         print_notice("Extra information shall also be printed.")
 
     if args.get(TITLE_POST, DEFAULT_POST):
-        print_notice("Accepting %s messages. Will not process, but will not throw a %s code either." % (colour_text(COLOUR_BOLD, "POST"), colour_text(COLOUR_RED, "501", COLOUR_OFF)))
+        print_notice("Accepting %s messages. Will not process, but will not throw a %s code either." % (colour_text(COLOUR_BOLD, "POST"), colour_text(COLOUR_RED, "501")))
 
     if args.get(TITLE_USER):
         print_notice("Basic authentication enabled (User: %s)" % colour_text(COLOUR_BOLD, args.get(TITLE_USER, "<EMPTY>")))
@@ -158,7 +161,7 @@ def serve(handler, change_directory = False):
         exit(130)
 
 # Default error message template
-DEFAULT_ERROR_MESSAGE = """\
+DEFAULT_ERROR_MESSAGE = """
 <html>
     <head>
         <title>Error Response: %(code)d</title>
@@ -176,6 +179,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
     server_version = "CoreHttpServer"
     alive = True
+    log_on_send_error = False
 
     error_message_format = DEFAULT_ERROR_MESSAGE
 
@@ -185,17 +189,20 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         self.server = server
         self.setup()
 
+    def copyobj(self, src, dst):
+        while self.alive:
+            buf = src.read(16*1024)
+            if not (buf and self.alive):
+                break
+            dst.write(buf)
+        self.alive = False
+        src.close()
+
     def do_GET(self):
         """Serve a GET request."""
         f = self.send_head()
         if f:
-            while self.alive:
-                buf = f.read(16*1024)
-                if not (buf and self.alive):
-                    break
-                self.wfile.write(buf)
-            self.alive = False
-            f.close()
+            self.copyobj(f, self.wfile)
 
     extensions_map = mimetypes.types_map.copy()
     extensions_map.update({
@@ -204,6 +211,9 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         '.c': 'text/plain',
         '.h': 'text/plain',
         })
+
+    def get_header_dict(self, header_str):
+        return {l.split(":")[0]:":".join(l.split(":")[1:]) for l in str(header_str).split("\r\n") if l}
 
     def guess_type(self, path):
         """Guess the type of a file.
@@ -234,6 +244,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         That being said, I overrode this function in order to have a
         nice upstream spot to put the whitelist/blacklist feature.
         """
+
         try:
             self.raw_requestline = self.rfile.readline(65537)
             if len(self.raw_requestline) > 65536:
@@ -360,10 +371,58 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                     footer=" (User Agent: %s)" % colour_text(COLOUR_BOLD, user_agent.strip())
 
         trailer = "[%s][%s]%s: %s%s\n" % (colour_text(COLOUR_BOLD, self.log_date_time_string()), colour_text(http_code_colour, values[1]), extra_info, values[0], footer)
-        if s == self.client_address[0]:
-            sys.stdout.write("%s %s" % (colour_text(COLOUR_GREEN, self.address_string()), trailer))
+        src = "%s " % colour_text(COLOUR_GREEN, self.client_address[0])
+
+        if s != self.client_address[0]:
+            src += "(%s)" % colour_text(COLOUR_GREEN, s)
+
+        # When a a proxy such as Squid or Apache forwards information,
+        # (ProxyPass/ProxyPassReverse directives for Apache),
+        # the original client's IP is stored in the 'X-Forwarded-For' header.
+        # Trust this value as the true client address if it regexes to an IPv4 address.
+        proxy_src = None
+        proxy_steps = []
+        forward_spec = self.headers_dict.get("X-Forwarded-For", "").strip()
+        if forward_spec:
+            forward_components = [c.strip() for c in forward_spec.split(",")]
+            forward_addr = forward_components.pop(0)
+            if forward_addr and re.match(REGEX_INET4, forward_addr):
+                proxy_src = forward_addr
+                proxy_steps = forward_components
         else:
-            sys.stdout.write("%s (%s)%s" % (colour_text(COLOUR_GREEN, s), colour_text(COLOUR_GREEN, self.client_address[0]), trailer))
+            # As a fallback, try the 'Forwarded' header put forward by RFC 7239.
+            forward_spec = self.headers_dict.get("Forwarded", "").strip()
+            try:
+                forward_addr = forward_spec.split(";")[2].split("=")[1]
+                if forward_addr and re.match(REGEX_INET4, forward_addr):
+                    proxy_src = forward_addr
+            except:
+                # Lazy approach. Skip validation of lists by encasing everything in a try-catch.
+                pass
+
+        if proxy_src:
+            old_src = src.strip()
+            src = "%s [proxy via " % colour_text(COLOUR_GREEN, proxy_src)
+
+            if proxy_steps:
+                first = True
+                for step in proxy_steps:
+                    if not first:
+                        first += "->"
+                    first = False
+                    if re.match(REGEX_INET4, step):
+                        src += colour_text(COLOUR_GREEN, step)
+                    else:
+                        # Wonky input. Maliciously formed?
+                        # For now, just say "???" and deal with any troubles as they come up.
+                        src += colour_text(COLOUR_BOLD, "???")
+                src += "->%s" % old_src
+            else:
+                # One proxy step, quick and simple.
+                src += old_src
+            src += "]"
+
+        sys.stdout.write("%s%s" % (src, trailer))
         sys.stdout.flush()
 
     def quote_html(self, html):
@@ -434,7 +493,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # Examine the headers and look for a Connection directive
         self.headers = self.MessageClass(self.rfile, 0)
         # I was not able to successfully use the MIMEMessage object, so parsing it into a dictionary instead.
-        self.headers_dict = {l.split(":")[0]:":".join(l.split(":")[1:]) for l in str(self.headers).split("\r\n") if l}
+        self.headers_dict = self.get_header_dict(self.headers)
 
         conntype = self.headers.get('Connection', "")
         if conntype.lower() == 'close':
@@ -491,7 +550,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         self.log_error("code %d, message %s", code, message)
         # using _quote_html to prevent Cross Site Scripting attacks (see bug #1100201)
         content = (self.error_message_format % {'code': code, 'message': self.quote_html(message), 'explain': explain})
-        self.send_response(code, message)
+        self.send_response(code, self.path)
         self.send_header("Content-Type", self.error_content_type)
         self.send_header('Connection', 'close')
         if code == 401:
@@ -499,6 +558,8 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != 'HEAD' and code >= 200 and code not in (204, 304):
             self.wfile.write(content)
+        if self.log_on_send_error:
+            self.log_message('"%s" %s %s', self.requestline, code, None)
 
     def send_redirect(self, target):
         # redirect browser - doing basically what apache does
