@@ -5,7 +5,7 @@
 #   * https://docs.python.org/2/library/simplehttpserver.html
 
 # Basic includes
-import base64, getopt, getpass, os, mimetypes, posixpath, re, shutil, ssl, socket, struct, sys, urllib, BaseHTTPServer
+import base64, getopt, getpass, os, mimetypes, posixpath, re, shutil, ssl, socket, struct, sys, time, urllib, BaseHTTPServer
 from random import randint
 from SocketServer import ThreadingMixIn
 
@@ -451,6 +451,14 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             self.log_error("Request timed out: %r", e)
             self.close_connection = 1
             return
+
+    def log_date_time_string(self):
+        """Return the current time formatted for logging."""
+        now = time.time()
+        year, month, day, hh, mm, ss, x, y, z = time.localtime(now)
+        return "%04d-%02d-%02d %02d:%02d:%02d" % (
+                year, month, day, hh, mm, ss)
+
 
     def log_message(self, format, *values):
         """Log an arbitrary message.

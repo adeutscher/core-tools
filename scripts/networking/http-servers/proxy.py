@@ -73,7 +73,10 @@ class Proxy(common.CoreHttpServer):
         # The X-Forwarded-Host (XFH) header is a de-facto standard header for identifying the
         #   original host requested by the client in the Host HTTP request header.
         req_headers["X-Forwarded-Host"] = req_headers.get("Host", None)
-        req_headers["X-Forwarded-Proto"] = "http" # Scheme of client to this server. This method only supports HTTP for the moment.
+        proto = "http"
+        if common.args.get(common.TITLE_SSL_CERT):
+            proto = "https"
+        req_headers["X-Forwarded-Proto"] = proto
 
         forward_chain = req_headers.get("X-Forwarded-For", "")
         if forward_chain:
