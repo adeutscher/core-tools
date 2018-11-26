@@ -23,10 +23,6 @@ image_extensions = ('.png','.jpg', '.jpeg', '.gif')
 
 # Functions and Classes
 
-def hexit(exit_code):
-    print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-D deny-list-file] [-h] [-p port]" % os.path.basename(sys.argv[0])
-    exit(exit_code)
-
 def process_arguments():
 
     # Image Mirror Arguments
@@ -35,7 +31,7 @@ def process_arguments():
     errors = []
 
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],common.common_short_opts + "h", common.common_long_opts)
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],common.get_opts(), common.get_opts_long())
     except getopt.GetoptError as e:
         print "GetoptError: %s" % str(e)
         hexit(1)
@@ -46,9 +42,6 @@ def process_arguments():
         if processed:
             continue
 
-        if opt in ("-h"):
-            hexit(0)
-
     switch_arg = False
     if len(flat_args):
         common.args[common.TITLE_DIR] = flat_args[len(flat_args)-1]
@@ -57,9 +50,12 @@ def process_arguments():
         good = False
         errors.extend(common.access.errors)
 
-    if good:
+    errors.extend(common.validate_common_arguments())
+
+    if good and not errors:
         common.access.announce_filter_actions()
     else:
+        good = False
         for e in errors:
             common.print_error(e)
 

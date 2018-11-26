@@ -5,7 +5,7 @@
 #   * https://docs.python.org/2/library/simplehttpserver.html
 
 # Basic includes
-import base64, getopt, getpass, os, mimetypes, posixpath, re, shutil, socket, struct, sys, urllib, BaseHTTPServer
+import base64, getopt, getpass, os, mimetypes, posixpath, re, shutil, ssl, socket, struct, sys, urllib, BaseHTTPServer
 from random import randint
 from SocketServer import ThreadingMixIn
 
@@ -63,12 +63,15 @@ def print_error(message):
 def print_notice(message):
     __print_message(COLOUR_BLUE, "Notice", message)
 
-common_short_opts = "a:A:b:d:D:p:Pv"
-common_long_opts = ["password=", "prompt=", "user="]
+# Variables
 
 DEFAULT_AUTH_PROMPT = "Authorization Required"
 DEFAULT_POST = False
 DEFAULT_VERBOSE = False
+
+DEFAULT_BIND = "0.0.0.0"
+DEFAULT_PORT = 8080
+DEFAULT_PORT_SSL = 8443
 
 REGEX_INET4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 
@@ -78,9 +81,166 @@ TITLE_POST = "post"
 TITLE_DIR = "dir"
 TITLE_VERBOSE="verbose"
 
-TITLE_AUTH_PROMPT = "auth-prompt"
+TITLE_AUTH_PROMPT = "prompt"
 TITLE_PASSWORD = "password"
 TITLE_USER = "user"
+
+TITLE_SSL_CERT = "SSL certfile"
+TITLE_SSL_KEY = "SSL keyfile"
+
+# Option Definitions
+
+OPT_TYPE_FLAG = "flag"
+OPT_TYPE_SHORT = "short"
+OPT_TYPE_LONG = "long"
+OPT_TYPE_LONG_FLAG = "long flag"
+
+class Opt:
+    def __init__(self, opt, description, label):
+        self.opt = opt
+        self.description = description
+        self.label = label
+
+    def get_description(self):
+        if self.description:
+            return self.description
+        return "No description defined."
+
+    def get_label(self):
+        if self.label:
+            return self.label
+        return "???"
+
+opts = { OPT_TYPE_FLAG: {}, OPT_TYPE_SHORT: {}, OPT_TYPE_LONG: {}, OPT_TYPE_LONG_FLAG: {}}
+
+def add_opt(opt_type, flag, description=None, label=None):
+    if opt_type not in opts:
+        raise Exception("Bad type: %s" % opt_type)
+
+    if flag in opts[opt_type]:
+        raise Exception("Flag already exists: %s" % flag)
+
+    opts[opt_type][flag] = Opt(flag, description, label)
+
+def get_opts():
+    s = ""
+    for key in opts[OPT_TYPE_FLAG]:
+        s += key
+    for key in opts[OPT_TYPE_SHORT]:
+        s += "%s:" % key
+    return s
+
+def get_opts_long():
+    return ["%s=" % key for key in sorted(opts[OPT_TYPE_LONG].keys())] + sorted(opts[OPT_TYPE_LONG_FLAG].keys())
+
+def handle_common_argument(opt, arg):
+    global args
+    global access
+
+    good = True
+    processed = True
+
+    if opt in ("-a"):
+        error = access.add_whitelist(arg) or error
+    elif opt in ("-A"):
+        error = access.load_whitelist_file(arg) or error
+    elif opt in ("-b"):
+        args[TITLE_BIND] = arg
+    elif opt in ("-c"):
+        args[TITLE_SSL_CERT] = arg
+    elif opt in ("-d"):
+        good = access.add_blacklist(arg) and good
+    elif opt in ("-D"):
+        good = access.load_blacklist_file(arg) and good
+    elif opt in ("-k"):
+        args[TITLE_SSL_KEY] = arg
+    elif opt in ("-h"):
+        hexit(0)
+    elif opt in ("-p"):
+        raw_int_args[TITLE_PORT] = arg
+    elif opt in ("-P"):
+        args[TITLE_POST] = True
+    elif opt in ("-v"):
+        args[TITLE_VERBOSE] = True
+    elif opt in ("--password"):
+        args[TITLE_PASSWORD] = arg
+    elif opt in ("--prompt"):
+        args[TITLE_AUTH_PROMPT] = arg
+    elif opt in ("--user"):
+        args[TITLE_USER] = arg
+    else:
+        processed = False
+
+    return good, processed
+
+def validate_common_arguments():
+
+    errors = []
+
+    for k in sorted(raw_int_args.keys()):
+        try:
+            args[k] = int(raw_int_args[k])
+        except ValueError:
+            errors.append("Invalid port number: %s" % colour_text(COLOUR_BOLD, raw_int_args[k]))
+
+    if TITLE_PORT in args:
+        if args[TITLE_PORT] < 0 or args[TITLE_PORT] > 65535:
+            errors.append("Port must be 0-65535. Given: %s" % colour_text(COLOUR_BOLD, args[TITLE_PORT]))
+
+    for label, title in [("certificate", TITLE_SSL_CERT), ("key", TITLE_SSL_KEY)]:
+        path = args.get(title)
+        if path and not os.path.isfile(path):
+            errors.append("SSL %s file not found: %s" % (label, colour_text(COLOUR_GREEN, path)))
+
+    # TODO: Some more detailed SSL validation?
+
+    return errors
+
+
+def hexit(exit_code = 0):
+    s = "./%s" % os.path.basename(sys.argv[0])
+    lines = []
+    if opts[OPT_TYPE_FLAG]:
+        lines.append("Flags:")
+        s += " [-%s]" % "".join([opts[OPT_TYPE_FLAG][f].opt for f in opts[OPT_TYPE_FLAG]])
+        lines.extend(["  -%s: %s" % (opts[OPT_TYPE_FLAG][f].opt, opts[OPT_TYPE_FLAG][f].get_description()) for f in sorted(opts[OPT_TYPE_FLAG].keys())])
+    if opts[OPT_TYPE_SHORT]:
+        lines.append("Options:")
+        s += " %s" % " ".join(["[-%s %s]" % (opts[OPT_TYPE_SHORT][f].opt, opts[OPT_TYPE_SHORT][f].label) for f in sorted(opts[OPT_TYPE_SHORT].keys())])
+        lines.extend(["  -%s <%s>: %s" % (opts[OPT_TYPE_SHORT][f].opt, opts[OPT_TYPE_SHORT][f].get_label(), opts[OPT_TYPE_SHORT][f].get_description()) for f in sorted(opts[OPT_TYPE_SHORT])])
+    if opts[OPT_TYPE_LONG_FLAG]:
+        lines.append("Long Flags:")
+        s += " %s" % " ".join("[--%s]" % f for f in sorted(opts[OPT_TYPE_LONG_FLAG].keys()))
+        lines.extend(["  --%s: %s" % (f, opts[OPT_TYPE_LONG_FLAG][f].get_description()) for f in sorted(opts[OPT_TYPE_LONG_FLAG].keys())])
+    if opts[OPT_TYPE_LONG]:
+        lines.append("Long Options:")
+        s += " %s" % " ".join(["[--%s %s]" % (opts[OPT_TYPE_LONG][f].opt, opts[OPT_TYPE_LONG][f].label) for f in sorted(opts[OPT_TYPE_LONG].keys())])
+        lines.extend(["  --%s <%s>: %s" % (opts[OPT_TYPE_LONG][f].opt, opts[OPT_TYPE_LONG][f].get_label(), opts[OPT_TYPE_LONG][f].get_description()) for f in sorted(opts[OPT_TYPE_LONG].keys())])
+    __print_message(COLOUR_PURPLE, "Usage", s)
+    for l in lines:
+        print l
+    exit(exit_code)
+
+# Short opts
+add_opt(OPT_TYPE_FLAG, "h", "Display help menu and exit.")
+add_opt(OPT_TYPE_FLAG, "P", "Accept POST data. The server will not process it, but it won't raise any error either.")
+add_opt(OPT_TYPE_FLAG, "v", "Verbose output.")
+# Short flags
+add_opt(OPT_TYPE_SHORT, "a", "Add network address or CIDR range to whitelist.", "allow-address/range")
+add_opt(OPT_TYPE_SHORT, "A", "Add addresses or CIDR ranges in file to whitelist.", "allow-list-file")
+add_opt(OPT_TYPE_SHORT, "b", "Address to bind to (default: %s)." % DEFAULT_BIND, "bind-address")
+add_opt(OPT_TYPE_SHORT, "d", "Add network address or CIDR range to blacklist.", "deny-address/range")
+add_opt(OPT_TYPE_SHORT, "D", "Add addresses or CIDR ranges in file to blacklist.", "deny-list-file")
+add_opt(OPT_TYPE_SHORT, "p", "Specify server bind port (HTTP Default: %s, SSL Default: %s)." % (DEFAULT_PORT, DEFAULT_PORT_SSL), "port")
+
+add_opt(OPT_TYPE_SHORT, "c", "SSL certificate file path (PEM format). Can also contain the SSL key.", "certfile")
+add_opt(OPT_TYPE_SHORT, "k", "SSL key file path (PEM format).", "keyfile")
+
+# Long flags
+for t in [TITLE_AUTH_PROMPT, TITLE_USER, TITLE_PASSWORD]:
+    add_opt(OPT_TYPE_LONG, t, "Specify authentication %s." % t, t)
+
+# End option definitions
 
 def announce_common_arguments(verb = "Hosting content"):
 
@@ -95,54 +255,21 @@ def announce_common_arguments(verb = "Hosting content"):
     if args.get(TITLE_POST, DEFAULT_POST):
         print_notice("Accepting %s messages. Will not process, but will not throw a %s code either." % (colour_text(COLOUR_BOLD, "POST"), colour_text(COLOUR_RED, "501")))
 
+    for label, title in [("certificate", TITLE_SSL_CERT), ("key", TITLE_SSL_KEY)]:
+        path = args.get(title)
+        if path:
+            print_notice("SSL %s file: %s" % (label, colour_text(COLOUR_GREEN, path)))
+
     if args.get(TITLE_USER):
         print_notice("Basic authentication enabled (User: %s)" % colour_text(COLOUR_BOLD, args.get(TITLE_USER, "<EMPTY>")))
 
+def get_default_port():
+    if args.get(TITLE_SSL_CERT):
+        return DEFAULT_PORT_SSL
+    return DEFAULT_PORT
+
 def get_target_information():
-    return (args.get(TITLE_BIND, "0.0.0.0"), args.get(TITLE_PORT, 8080), args.get(TITLE_DIR, os.getcwd()))
-
-def handle_common_argument(opt, arg):
-    global args
-    global access
-
-    good = True
-    processed = False
-
-    if opt in ("-a"):
-        processed = True
-        error = access.add_whitelist(arg) or error
-    elif opt in ("-A"):
-        processed = True
-        error = access.load_whitelist_file(arg) or error
-    elif opt in ("-b"):
-        processed = True
-        args[TITLE_BIND] = arg
-    elif opt in ("-d"):
-        processed = True
-        good = access.add_blacklist(arg) and good
-    elif opt in ("-D"):
-        processed = True
-        good = access.load_blacklist_file(arg) and good
-    elif opt in ("-p"):
-        processed = True
-        args[TITLE_PORT] = int(arg)
-    elif opt in ("-P"):
-        processed = True
-        args[TITLE_POST] = True
-    elif opt in ("-v"):
-        processed = True
-        args[TITLE_VERBOSE] = True
-    elif opt in ("--password"):
-        processed = True
-        args[TITLE_PASSWORD] = arg
-    elif opt in ("--prompt"):
-        processed = True
-        args[TITLE_AUTH_PROMPT] = arg
-    elif opt in ("--user"):
-        processed = True
-        args[TITLE_USER] = arg
-
-    return good, processed
+    return (args.get(TITLE_BIND, DEFAULT_BIND), args.get(TITLE_PORT, get_default_port()), args.get(TITLE_DIR, os.getcwd()))
 
 def serve(handler, change_directory = False):
     bind_address, bind_port, directory = get_target_information()
@@ -150,15 +277,29 @@ def serve(handler, change_directory = False):
         if change_directory:
             os.chdir(directory)
         server = ThreadedHTTPServer((bind_address, bind_port), handler)
+
+        if args.get(TITLE_SSL_CERT):
+            server.socket = ssl.wrap_socket(server.socket, server_side=True, keyfile=args.get(TITLE_SSL_KEY), certfile=args.get(TITLE_SSL_CERT))
+
         print_notice("Starting server, use <Ctrl-C> to stop")
         server.serve_forever()
-    except socket.error as e:
-        print_error("SocketError: %s" % e)
-        exit(1)
     except KeyboardInterrupt:
         # Ctrl-C
         server.kill_requests()
         exit(130)
+    except ssl.SSLError as e:
+        m = "Unexpected %s: " % colour_text(COLOUR_RED, type(e).__name__)
+        if re.match("^\[SSL\] PEM lib", str(e)):
+            # '[SSL] PEM lib (_ssl.c:2798)' is super-unhelpful, so we will provide our own error message.
+            # Unconfirmed: Is a missing key the only that can cause this?
+            m+= "Must specify a key file or a cert file that also contains a key."
+        else:
+            # Append regular error message
+            m += str(e)
+        print_error(m)
+    except Exception as e:
+        print_error("Unexpected %s: %s" % (colour_text(COLOUR_RED, type(e).__name__), str(e)))
+        exit(1)
 
 # Default error message template
 DEFAULT_ERROR_MESSAGE = """
@@ -463,7 +604,10 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                     raise ValueError
                 version_number = int(version_number[0]), int(version_number[1])
             except (ValueError, IndexError):
-                self.send_error(400, "Bad request version (%r)" % version)
+                m = "Bad request version"
+                if len(version) < 20:
+                    m += " (%r)" % version
+                self.send_error(400, m)
                 return False
             if version_number >= (1, 1) and self.protocol_version >= "HTTP/1.1":
                 self.close_connection = 0
@@ -476,13 +620,16 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             self.close_connection = 1
             if command != 'GET':
                 self.send_error(400,
-                                "Bad HTTP/0.9 request type (%r)" % command)
+                                "Bad HTTP/0.9 request type (%s)" % command)
                 return False
         elif not words:
             # TODO: Confirm why this check is as it is...
             return False
         else:
-            self.send_error(400, "Bad request syntax (%r)" % requestline)
+            m = "Bad request syntax"
+            if len(requestline) < 30:
+                m += " (%s)" % requestline
+            self.send_error(400, m)
             return False
         self.command, self.path, self.request_version = command, path, version
 
@@ -788,4 +935,5 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
             self.requests[client_address].alive = False
 
 args = {}
+raw_int_args = {}
 access = NetAccess()

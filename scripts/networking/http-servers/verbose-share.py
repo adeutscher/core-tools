@@ -21,9 +21,16 @@ TITLE_TIMESORT = "timesort"
 TITLE_NO_LINKS = "nolinks"
 TITLE_LOCAL_LINKS = "locallinks"
 
-def hexit(exit_code):
-    print "%s [-a allow-address/range] [-A allow-list-file] [-b bind-address] [-d deny-address/range] [-D deny-list-file] [-h] [-l] [-n] [-p port] [-P] [-r] [-t] [-v]" % os.path.basename(sys.argv[0])
-    exit(exit_code)
+# Define arguments
+
+# Flags
+common.add_opt(common.OPT_TYPE_FLAG, "l", "Only show local links (symbolic links that point to within the shared directory).")
+common.add_opt(common.OPT_TYPE_FLAG, "n", "Do not allow symbolic links. Overrides local links.")
+common.add_opt(common.OPT_TYPE_FLAG, "r", "Display listings in reverse order.")
+common.add_opt(common.OPT_TYPE_FLAG, "t", "Display listings sorted by time (as opposed to alphabetically).")
+# Long Flags
+common.add_opt(common.OPT_TYPE_LONG_FLAG, "local-links", "Only show local links (symbolic links that point to within the shared directory).")
+common.add_opt(common.OPT_TYPE_LONG_FLAG, "no-links", "Do not allow symbolic links. Overrides local links.")
 
 def process_arguments():
 
@@ -32,11 +39,8 @@ def process_arguments():
     good = True
     errors = []
 
-    short_opts = common.common_short_opts + "hlnrt"
-    long_opts = common.common_long_opts + [ "--local-links", "--no-links" ]
-
     try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:], short_opts, long_opts)
+        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],common.get_opts(), common.get_opts_long())
     except getopt.GetoptError as e:
         print "GetoptError: %s" % str(e)
         hexit(1)
@@ -47,9 +51,7 @@ def process_arguments():
         if processed:
             continue
 
-        if opt in ("-h"):
-            hexit(0)
-        elif opt in ("-l", "--local-links"):
+        if opt in ("-l", "--local-links"):
             common.args[TITLE_LOCAL_LINKS] = True
         elif opt in ("-n", "--no-links"):
             common.args[TITLE_NO_LINKS] = True
@@ -66,9 +68,12 @@ def process_arguments():
         good = False
         errors.extend(common.access.errors)
 
-    if good:
+    errors.extend(common.validate_common_arguments())
+
+    if good and not errors:
         common.access.announce_filter_actions()
     else:
+        good = False
         for e in errors:
             common.print_error(e)
 
