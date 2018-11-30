@@ -142,7 +142,7 @@ class QueueLoader:
                 if not dry_run:
                     # Not a dry run, actually try to send the file into the queue.
                     self.queue.send_message(MessageBody=contents)
-            c += 1
+                c += 1
             break # Break after first directory, do not recurse.
 
         global error_count

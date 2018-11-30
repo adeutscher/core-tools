@@ -167,7 +167,7 @@ class QueueSaver:
             MessageAttributeNames=[
                 'All'
             ],
-            VisibilityTimeout=args.get(TITLE_EXTEND_TIME, DEFAULT_EXTEND_TIME)
+            VisibilityTimeout = args.get(TITLE_EXTEND_TIME, DEFAULT_EXTEND_TIME)
         )
 
         message = None
@@ -195,7 +195,7 @@ class QueueSaver:
             except:
                 pass
 
-            self.save_message(body, "%d.msg" % c)
+            self.save_message(body, "%05d.msg" % c)
             c += 1
 
             if not self.delete_message(msg):

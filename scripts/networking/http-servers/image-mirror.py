@@ -15,6 +15,9 @@ import getpass, posixpath, re
 from random import randint
 from urlparse import parse_qs
 
+# Remove unused arguments
+del common.opts[common.OPT_TYPE_FLAG]["P"]
+
 # Common fields
 
 INDEX_DIR = "scudder"

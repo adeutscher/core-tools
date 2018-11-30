@@ -67,6 +67,7 @@ def print_notice(message):
 
 DEFAULT_AUTH_PROMPT = "Authorization Required"
 DEFAULT_POST = False
+DEFAULT_TIMEOUT = 10
 DEFAULT_VERBOSE = False
 
 DEFAULT_BIND = "0.0.0.0"
@@ -79,6 +80,7 @@ TITLE_BIND = "bind"
 TITLE_PORT = "port"
 TITLE_POST = "post"
 TITLE_DIR = "dir"
+TITLE_TIMEOUT = "timeout"
 TITLE_VERBOSE="verbose"
 
 TITLE_AUTH_PROMPT = "prompt"
@@ -160,6 +162,8 @@ def handle_common_argument(opt, arg):
         raw_int_args[TITLE_PORT] = arg
     elif opt in ("-P"):
         args[TITLE_POST] = True
+    elif opt in ("-T"):
+        raw_int_args[TITLE_TIMEOUT] = arg
     elif opt in ("-v"):
         args[TITLE_VERBOSE] = True
     elif opt in ("--password"):
@@ -187,10 +191,17 @@ def validate_common_arguments():
         if args[TITLE_PORT] < 0 or args[TITLE_PORT] > 65535:
             errors.append("Port must be 0-65535. Given: %s" % colour_text(COLOUR_BOLD, args[TITLE_PORT]))
 
+    if TITLE_TIMEOUT in args:
+        if args[TITLE_TIMEOUT] <= 0:
+            errors.append("Timeout must be a positive value. Given: %s" % colour_text(COLOUR_BOLD, args[TITLE_PORT]))
+
     for label, title in [("certificate", TITLE_SSL_CERT), ("key", TITLE_SSL_KEY)]:
         path = args.get(title)
         if path and not os.path.isfile(path):
             errors.append("SSL %s file not found: %s" % (label, colour_text(COLOUR_GREEN, path)))
+
+    if TITLE_SSL_KEY in args and not TITLE_SSL_CERT in args:
+        errors.append("SSL %s path provided, but no %s path was provided." % (TITLE_SSL_KEY, TITLE_SSL_CERT))
 
     # TODO: Some more detailed SSL validation?
 
@@ -224,6 +235,7 @@ def hexit(exit_code = 0):
 # Short opts
 add_opt(OPT_TYPE_FLAG, "h", "Display help menu and exit.")
 add_opt(OPT_TYPE_FLAG, "P", "Accept POST data. The server will not process it, but it won't raise any error either.")
+add_opt(OPT_TYPE_FLAG, "T", "Read socket timeout (default: %d)." % DEFAULT_TIMEOUT)
 add_opt(OPT_TYPE_FLAG, "v", "Verbose output.")
 # Short flags
 add_opt(OPT_TYPE_SHORT, "a", "Add network address or CIDR range to whitelist.", "allow-address/range")
@@ -254,6 +266,9 @@ def announce_common_arguments(verb = "Hosting content"):
 
     if args.get(TITLE_POST, DEFAULT_POST):
         print_notice("Accepting %s messages. Will not process, but will not throw a %s code either." % (colour_text(COLOUR_BOLD, "POST"), colour_text(COLOUR_RED, "501")))
+
+    if TITLE_TIMEOUT in args:
+        print_notice("Read socket timeout: %s" % colour_bold(COLOUR_BOLD, args.get(TITLE_TIMEOUT)))
 
     for label, title in [("certificate", TITLE_SSL_CERT), ("key", TITLE_SSL_KEY)]:
         path = args.get(title)
@@ -320,6 +335,8 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
     server_version = "CoreHttpServer"
     alive = True
+
+    # (Kludgy) responses to specific problems without overriding an entire method.
     log_on_send_error = False
 
     error_message_format = DEFAULT_ERROR_MESSAGE
@@ -353,8 +370,21 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         '.h': 'text/plain',
         })
 
+    def get_command(self):
+        command = self.command
+        if self.command == "POST" and args.get(TITLE_POST, DEFAULT_POST):
+            command = "GET"
+        return command
+
     def get_header_dict(self, header_str):
-        return {l.split(":")[0]:":".join(l.split(":")[1:]) for l in str(header_str).split("\r\n") if l}
+        d = {}
+        for l in str(header_str).split("\r\n"):
+            if not l:
+                continue
+            items = l.split(":")
+            if items[1:]:
+                d[items[0]] = ":".join(items[1:]).strip()
+        return d
 
     def guess_type(self, path):
         """Guess the type of a file.
@@ -406,7 +436,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             wanted_user = args.get(TITLE_USER, "")
             wanted_password = args.get(TITLE_PASSWORD, "")
             if wanted_user or wanted_password:
-                raw_creds = self.headers_dict.get("Authorization", "").split()
+                raw_creds = self.headers.getheader("Authorization", "").split()
                 if not raw_creds or len(raw_creds) < 2:
                     # No creds message
                     if verbose:
@@ -436,21 +466,20 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                         print_error("Client provided invalid credentials: (User: %s)(Password: %s)" % (colour_text(COLOUR_BOLD, user), colour_text(COLOUR_BOLD, password)))
                     return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
 
-            if self.command == "POST" and args.get(TITLE_POST, DEFAULT_POST):
-                self.command = "GET"
+            command = self.get_command()
 
-            mname = 'do_' + self.command
+            mname = 'do_' + command
             if not hasattr(self, mname):
+                # Leave this as 'self.command' to not expose any possible custom handling from get_command().
                 self.send_error(501, "Unsupported method (%r)" % self.command)
                 return
             method = getattr(self, mname)
             method()
             self.wfile.flush() #actually send the response if not already done.
-        except socket.timeout, e:
-            #a read or a write timed out.  Discard this connection
-            self.log_error("Request timed out: %r", e)
+        except socket.timeout:
+            # a read or a write timed out.  Discard this connection
             self.close_connection = 1
-            return
+            return self.send_error(408, "Data timeout (%s seconds)" % args.get(TITLE_TIMEOUT, DEFAULT_TIMEOUT))
 
     def log_date_time_string(self):
         """Return the current time formatted for logging."""
@@ -459,12 +488,11 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         return "%04d-%02d-%02d %02d:%02d:%02d" % (
                 year, month, day, hh, mm, ss)
 
-
-    def log_message(self, format, *values):
+    def log_message(self, fmt, *values):
         """Log an arbitrary message.
         This is used by all other logging functions.  Override
         it if you have specific logging wishes.
-        The first argument, FORMAT, is a format string for the
+        The first argument, fmt, is a format string for the
         message to be logged.  If the format string contains
         any % escapes requiring parameters, they should be
         specified as subsequent arguments (it's just like
@@ -515,7 +543,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             values = (" ".join([request_items[0], colour_text(COLOUR_GREEN, request_items[1]), request_items[2]]), values[1], values[2])
 
             if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
-                user_agent = self.headers_dict.get("User-Agent")
+                user_agent = self.headers.getheader("User-Agent")
                 if user_agent:
                     footer=" (User Agent: %s)" % colour_text(COLOUR_BOLD, user_agent.strip())
 
@@ -531,7 +559,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # Trust this value as the true client address if it regexes to an IPv4 address.
         proxy_src = None
         proxy_steps = []
-        forward_spec = self.headers_dict.get("X-Forwarded-For", "").strip()
+        forward_spec = self.headers.getheader("X-Forwarded-For", "").strip()
         if forward_spec:
             forward_components = [c.strip() for c in forward_spec.split(",")]
             forward_addr = forward_components.pop(0)
@@ -540,7 +568,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                 proxy_steps = forward_components
         else:
             # As a fallback, try the 'Forwarded' header put forward by RFC 7239.
-            forward_spec = self.headers_dict.get("Forwarded", "").strip()
+            forward_spec = self.headers.getheader("Forwarded", "").strip()
             try:
                 forward_addr = forward_spec.split(";")[2].split("=")[1]
                 if forward_addr and re.match(REGEX_INET4, forward_addr):
@@ -931,7 +959,9 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
         try:
             req = self.RequestHandlerClass(request, client_address, self)
+            req.rfile._sock.settimeout(args.get(TITLE_TIMEOUT, DEFAULT_TIMEOUT))
             self.requests[client_address] = req
+
             req.run()
         except Exception as e:
             print_error("%s: %s" % (colour_text(COLOUR_GREEN, client_address[0]), e))

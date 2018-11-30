@@ -5,6 +5,9 @@ import cookielib, getopt, re, shutil, sys, urllib2, urlparse
 
 TITLE_TARGET = "proxy target"
 
+# Remove unused arguments
+del common.opts[common.OPT_TYPE_FLAG]["P"]
+
 def process_arguments():
 
     # Verbose Sharing Arguments
@@ -65,20 +68,23 @@ class Proxy(common.CoreHttpServer):
 
     log_on_send_error = True
 
-    def do_GET(self):
+    def do_PROXY(self):
         url = "%s%s" % (common.args[TITLE_TARGET], self.path)
 
+        # Copy request headers.
         req_headers = dict(self.headers_dict)
 
         # The X-Forwarded-Host (XFH) header is a de-facto standard header for identifying the
         #   original host requested by the client in the Host HTTP request header.
-        req_headers["X-Forwarded-Host"] = req_headers.get("Host", None)
+        host = self.headers.getheader("host", None)
+        if host:
+            req_headers["X-Forwarded-Host"] = host
         proto = "http"
         if common.args.get(common.TITLE_SSL_CERT):
             proto = "https"
         req_headers["X-Forwarded-Proto"] = proto
 
-        forward_chain = req_headers.get("X-Forwarded-For", "")
+        forward_chain = self.headers.getheader("X-Forwarded-For", "")
         if forward_chain:
             forward_chain += ", "
         forward_chain += self.client_address[0]
@@ -89,6 +95,35 @@ class Proxy(common.CoreHttpServer):
 
         # Construct request
         req = urllib2.Request(url, headers=req_headers)
+        req.get_method = lambda: self.command
+
+        data = None
+        try:
+            # Read from data to relay.
+            # This requires trusting user data more than I'm comfortable with,
+            #  but I think that I've taken enough precautions for a script
+            #  that should only be used as a quick, dirty, and above all TEMPORARY solution
+            if self.command.lower() in ("post", "put"):
+                # For an extra layer of safety, only bother to try reading further data from
+                # POST or PUT commands. Revise this if we discover an exception to the rule, of course.
+
+
+                # Use the content-length header, though being user-defined input it's not really trustworthy.
+                # Someone fudging this data is the main reason for my worrying over a timeout value.
+                l = int(self.headers.getheader('content-length', 0))
+
+                if l < 0:
+                    # Parsed properly, but some joker put in a negative number.
+                    raise ValueError()
+                elif l:
+                    data = self.rfile.read(l)
+            # Intentionally not bothering to catch socket.timeout exception. Let it bubble up.
+        except ValueError:
+            return self.send_error(500, "Illegal content-length header value: %s" % self.headers.getheader('content-length'))
+
+        if data:
+            req.add_data(data)
+
         try:
             resp = self.opener.open(req)
 
@@ -96,7 +131,7 @@ class Proxy(common.CoreHttpServer):
             resp_headers = self.get_header_dict(resp.info())
             code = str(resp.getcode())
         except urllib2.URLError as e:
-            return self.send_error(500, "Error relaying request")
+            return self.send_error(500, "Error relaying request.")
 
         # TODO: This is the place to modify headers before they're written.
 
@@ -110,6 +145,9 @@ class Proxy(common.CoreHttpServer):
 
         self.log_message('"%s" %s %s', self.requestline, code, None)
         self.copyobj(resp, self.wfile)
+
+    def get_command(self):
+        return "PROXY"
 
     def log_request(self, code='-', size='-'):
         """Log an accepted request.
