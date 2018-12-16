@@ -88,7 +88,7 @@ class Proxy(common.CoreHttpServer):
             resp_headers = self.get_header_dict(resp.info())
             code = str(resp.getcode())
         except urllib2.URLError as e:
-            return self.send_error(500, "Error relaying request.")
+            return self.send_error(502, "Error relaying request.")
 
         # TODO: This is the place to modify headers before they're written.
 
@@ -118,6 +118,7 @@ def validate_target(self):
     elif not re.match("^https?:\/\/[a-z0-9]+([\-\.]{1}[a-z0-9]+)*(\.[a-z0-9]+([\-\.]{1}[a-z0-9]+)*)*(:[0-9]{1,5})?(\/.*)?$", target):
         return "Invalid target URL: %s" % common.colour_text(target, common.COLOUR_GREEN)
     self.args[TITLE_TARGET] = target
+common.args.add_validator(validate_target)
 
 if __name__ == '__main__':
     common.args.process(sys.argv)
@@ -130,4 +131,4 @@ if __name__ == '__main__':
     common.print_notice("Forwarding requests on %s to target: %s" % (common.colour_text("%s:%d" % (bind_address, bind_port), common.COLOUR_GREEN), common.colour_text(target, common.COLOUR_GREEN)))
     common.announce_common_arguments(None)
 
-    common.serve(Proxy, True)
+    common.serve(Proxy, False)

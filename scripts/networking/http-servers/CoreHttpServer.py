@@ -263,7 +263,7 @@ class ArgHelper:
             cli_args = cli_args[1:]
 
         if not cli_args:
-            return
+            return True
 
         try:
             output_options, self.operands = getopt.gnu_getopt(cli_args, self._get_opts(), self._get_opts_long())
@@ -709,6 +709,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         except ValueError:
             response_code = "???"
 
+        # Adjust colouring and/or add context in extra_info message.
         if response_code == 200:
             http_code_colour = COLOUR_GREEN
         elif response_code in (301, 307):
@@ -716,6 +717,8 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             extra_info = '[%s]' % colour_text("Redirect", COLOUR_PURPLE)
         elif response_code == 404:
             extra_info = '[%s]' % colour_text("File Not Found", COLOUR_RED)
+        elif response_code == 502:
+            extra_info = '[%s]' % colour_text("Bad Gateway", COLOUR_RED)
 
         # Does address string match the client address? If not, print both.
         s = self.address_string()
