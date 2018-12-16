@@ -873,7 +873,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             # At least one match is present
             user_agent = self.headers.getheader("User-Agent")
             for p in args[TITLE_USER_AGENT]:
-                user_agent_match = re.match(p, user_agent)
+                user_agent_match = re.search(p, user_agent)
                 if user_agent_match:
                     break # Avoid redundant checks
 
