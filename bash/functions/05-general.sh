@@ -208,8 +208,8 @@ if __is_unix; then
     #     so this is definitely a Linux-only thing.
     if qtype conky; then
        alias conky-command="\"$toolsDir/bash/conky/start.sh\""
-       alias conky-restart="conky-command -r 2> /dev/null >&2 &"
-       alias conky-start="conky-command 2> /dev/null >&2 &"
+       alias conky-restart="conky-command -r 2> /dev/null >&2"
+       alias conky-start="conky-command 2> /dev/null >&2"
        alias conky-debug="conky-command -d"
     fi
 else

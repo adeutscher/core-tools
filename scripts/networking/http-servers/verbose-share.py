@@ -24,60 +24,11 @@ TITLE_LOCAL_LINKS = "locallinks"
 # Define arguments
 
 # Flags
-common.add_opt(common.OPT_TYPE_FLAG, "l", "Only show local links (symbolic links that point to within the shared directory).")
-common.add_opt(common.OPT_TYPE_FLAG, "n", "Do not allow symbolic links. Overrides local links.")
-common.add_opt(common.OPT_TYPE_FLAG, "r", "Display listings in reverse order.")
-common.add_opt(common.OPT_TYPE_FLAG, "t", "Display listings sorted by time (as opposed to alphabetically).")
-# Long Flags
-common.add_opt(common.OPT_TYPE_LONG_FLAG, "local-links", "Only show local links (symbolic links that point to within the shared directory).")
-common.add_opt(common.OPT_TYPE_LONG_FLAG, "no-links", "Do not allow symbolic links. Overrides local links.")
-
-def process_arguments():
-
-    # Verbose Sharing Arguments
-
-    good = True
-    errors = []
-
-    try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],common.get_opts(), common.get_opts_long())
-    except getopt.GetoptError as e:
-        print "GetoptError: %s" % str(e)
-        hexit(1)
-    for opt, arg in opts:
-        common_good, processed = common.handle_common_argument(opt, arg)
-        good = common_good and good
-
-        if processed:
-            continue
-
-        if opt in ("-l", "--local-links"):
-            common.args[TITLE_LOCAL_LINKS] = True
-        elif opt in ("-n", "--no-links"):
-            common.args[TITLE_NO_LINKS] = True
-        elif opt in ("-r"):
-            common.args[TITLE_REVERSE] = True
-        elif opt in ("-t"):
-            common.args[TITLE_TIMESORT] = True
-
-    switch_arg = False
-    if flat_args:
-        common.args[common.TITLE_DIR] = flat_args[len(flat_args)-1]
-
-    if len(common.access.errors):
-        good = False
-        errors.extend(common.access.errors)
-
-    errors.extend(common.validate_common_arguments())
-
-    if good and not errors:
-        common.access.announce_filter_actions()
-    else:
-        good = False
-        for e in errors:
-            common.print_error(e)
-
-    return good
+common.args.add_opt(common.OPT_TYPE_FLAG, "l", TITLE_LOCAL_LINKS, "Only show local links (symbolic links that point to within the shared directory).")
+common.args.add_opt(common.OPT_TYPE_FLAG, "n", TITLE_NO_LINKS, "Do not allow symbolic links. Overrides local links.")
+common.args.add_opt(common.OPT_TYPE_FLAG, "r", TITLE_REVERSE, "Display listings in reverse order.")
+common.args.add_opt(common.OPT_TYPE_FLAG, "t", TITLE_TIMESORT, "Display listings sorted by time (as opposed to alphabetically).")
+common.args.add_validator(common.validate_common_directory)
 
 class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
 
@@ -106,9 +57,9 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
             self.send_error(404, "No permission to list directory")
             return None
 
-        reverse_order = common.args.get(TITLE_REVERSE, DEFAULT_REVERSE)
+        reverse_order = common.args[TITLE_REVERSE]
 
-        if common.args.get(TITLE_TIMESORT, DEFAULT_TIMESORT):
+        if common.args[TITLE_TIMESORT]:
             itemlist.sort(key=lambda a: os.path.getmtime(os.path.join(path, a)), reverse = reverse_order)
         else:
             itemlist.sort(key=lambda a: a.lower(), reverse = reverse_order)
@@ -141,11 +92,11 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
             if os.path.islink(fullname):
                 # Note: a link to a directory displays with @ and links with /
                 displayname = name + "@"
-                reachable = not (common.args.get(TITLE_NO_LINKS, False) or (common.args.get(TITLE_LOCAL_LINKS, False) and not os.path.realpath(fullname).startswith(os.getcwd() + "/")))
+                reachable = not (common.args[TITLE_NO_LINKS] or (common.args[TITLE_LOCAL_LINKS] and not os.path.realpath(fullname).startswith(os.getcwd() + "/")))
 
                 if not reachable:
                     # Symbolic link is inaccessible. Override extra info to plainly say 'symlink'.
-                    if common.args.get(TITLE_NO_LINKS, False):
+                    if common.args[TITLE_NO_LINKS]:
                         extrainfo = "(Symlink)"
                     else:
                         # Implies local links only, meaning an unreachable link is external.
@@ -193,9 +144,9 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         if os.path.exists(path):
             # Symbolic link judgement.
             # Paths with denied symbolic links will pretend to be 404 errors.
-            if common.args.get(TITLE_LOCAL_LINKS, False) and not os.path.realpath(path).startswith(os.getcwd() + "/"):
+            if common.args[TITLE_LOCAL_LINKS] and not os.path.realpath(path).startswith(os.getcwd() + "/"):
                 return self.send_error(404, "File not found")
-            elif common.args.get(TITLE_NO_LINKS, False):
+            elif common.args[TITLE_NO_LINKS]:
                 # If all symbolic links are banned, then we must trace our
                 #   way down an existing path to make sure that no symbolic link exists
                 curr = path
@@ -220,21 +171,14 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         return self.serve_file(path)
 
 if __name__ == '__main__':
-    if not process_arguments():
-        exit(1)
-
-    bind_address, bind_port, directory = common.get_target_information()
-
-    if not os.path.isdir(directory):
-        common.print_error("Path %s does not seem to exist." % common.colour_text(common.COLOUR_GREEN, os.path.realpath(directory)))
-        exit(1)
+    common.args.process(sys.argv)
 
     common.announce_common_arguments("Serving files")
 
-    if common.args.get(TITLE_NO_LINKS, False):
+    if common.args[TITLE_NO_LINKS]:
         common.print_notice("Ignoring all symbolic links.")
 
-    elif common.args.get(TITLE_LOCAL_LINKS, False):
+    if common.args[TITLE_LOCAL_LINKS]:
         common.print_notice("Serving only local symbolic links.")
 
     common.serve(SimpleHTTPVerboseReqeustHandler, True)

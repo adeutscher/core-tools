@@ -31,7 +31,7 @@ fi
 prep(){
 
   local cacheDir="$1"
-  
+
   if [ -z "$cacheDir" ]; then
     return 1
   fi
@@ -42,29 +42,31 @@ prep(){
 
 draft-report(){
   # Make report
-  
+
   local reportPrefix="$1"
   local cacheDir="$2"
-  
+
   if [ -z "$cacheDir" ]; then
     return 1
   fi
 
   local reportFile="$tempRoot/$cacheDir/$reportPrefix$(date +%s)"
   arp -i $iface -na | egrep -v '(incomplete|no match)' | sed -r 's/(\(|\))//g' | cut -d' ' -f 2,4 | while read -r line; do
-          local ip="$(cut -d' ' -f 1 <<< "$line")"
-          if arping -I ${iface} -f -w1 -c1 -q "${ip}" || ping -c1 "${ip}" 2> /dev/null >&2; then
-              # Do not bother recording the MAC unless arping was successful.
-              local mac="$(cut -d' ' -f 2 <<< "$line")"
-              local data="$(sed 's/#/\\#/g' <<< "$(shorten_string "$(__get_mac_label "$mac")" 30)")"
-              if [ -z "$data" ]; then
-                  local data="$(sed 's/#/\\#/g' <<< $(shorten_string "$(__get_mac_vendor "$mac")" 25))"
-                  if [ -n "$data" ]; then
-                      local header="Vendor:"
-                  fi
-              fi
-              printf "%s %s %s\n" "$line" "$header" "$data" 2> /dev/null
-          fi
+    unset header
+    local ip="$(cut -d' ' -f 1 <<< "$line")"
+    if arping -I ${iface} -f -w1 -c1 -q "${ip}" || ping -c1 "${ip}" 2> /dev/null >&2; then
+      # Do not bother recording the MAC unless arping was successful.
+      local mac="$(cut -d' ' -f 2 <<< "$line")"
+      local data="$(sed 's/#/\\#/g' <<< "$(shorten_string "$(__get_mac_label "$mac")" 30)")"
+      if [ -z "$data" ]; then
+        local data="$(sed 's/#/\\#/g' <<< $(shorten_string "$(__get_mac_vendor "$mac")" 25))"
+        if [ -n "$data" ]; then
+          local header="Vendor: "
+        fi
+      fi
+
+      printf "%s %s%s\n" "$line" "$header" "$data" 2> /dev/null
+    fi
   done > $reportFile
 }
 
@@ -72,7 +74,7 @@ trim(){
 
   local reportPrefix="$1"
   local cacheDir="$2"
-  
+
   if [ -z "$cacheDir" ]; then
     return 1
   fi

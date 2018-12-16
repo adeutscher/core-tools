@@ -19,10 +19,16 @@ try:
 except ImportError:
     from StringIO import StringIO
 
-def __print_message(colour, header, message):
-    print "%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+#
+# Common Colours and Message Functions
+###
 
-def colour_text(colour, text):
+def _print_message(header_colour, header_text, message):
+    print "%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message)
+
+def colour_text(text, colour = None):
+    if not colour:
+        colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
@@ -58,28 +64,32 @@ error_count = 0
 def print_error(message):
     global error_count
     error_count += 1
-    __print_message(COLOUR_RED, "Error", message)
+    _print_message(COLOUR_RED, "Error", message)
+
+def print_exception(e, msg=None):
+    # Shorthand wrapper to handle an exception.
+    # msg: Used to provide more context.
+    sub_msg = ""
+    if msg:
+        sub_msg = " (%s)" % msg
+    print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
 
 def print_notice(message):
-    __print_message(COLOUR_BLUE, "Notice", message)
+    _print_message(COLOUR_BLUE, "Notice", message)
 
 # Variables
 
 DEFAULT_AUTH_PROMPT = "Authorization Required"
-DEFAULT_POST = False
 DEFAULT_TIMEOUT = 10
-DEFAULT_VERBOSE = False
 
 DEFAULT_BIND = "0.0.0.0"
 DEFAULT_PORT = 8080
-DEFAULT_PORT_SSL = 8443
 
 REGEX_INET4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 
 TITLE_BIND = "bind"
 TITLE_PORT = "port"
 TITLE_POST = "post"
-TITLE_DIR = "dir"
 TITLE_TIMEOUT = "timeout"
 TITLE_VERBOSE="verbose"
 
@@ -90,201 +100,374 @@ TITLE_USER = "user"
 TITLE_SSL_CERT = "SSL certfile"
 TITLE_SSL_KEY = "SSL keyfile"
 
-# Option Definitions
+TITLE_ALLOW = "allow address/range"
+TITLE_ALLOW_FILE = "allow address/range file"
+TITLE_DENY = "deny address/range"
+TITLE_DENY_FILE = "deny address/range file"
 
-OPT_TYPE_FLAG = "flag"
-OPT_TYPE_SHORT = "short"
-OPT_TYPE_LONG = "long"
-OPT_TYPE_LONG_FLAG = "long flag"
+TITLE_USER_AGENT = "user-agent pattern"
 
-class Opt:
-    def __init__(self, opt, description, label):
-        self.opt = opt
-        self.description = description
-        self.label = label
+###########################################
 
-    def get_description(self):
-        if self.description:
-            return self.description
-        return "No description defined."
+# Common Argument Handling Structure
+# My own implementation of an argparse-like structure to add args and
+#   build a help menu that I have a bit more control over.
+#
+# Note: These functions assume that my common message functions are also being used.
+#       If this is not the case or if the functions are in a different module:
+#          * Adjust print_foo functions.
+#          * Adjust colour_text() calls.
+#          * Adjust all mentions of COLOUR_* variables.
 
-    def get_label(self):
-        if self.label:
-            return self.label
-        return "???"
+import getopt, os, re, sys
 
-opts = { OPT_TYPE_FLAG: {}, OPT_TYPE_SHORT: {}, OPT_TYPE_LONG: {}, OPT_TYPE_LONG_FLAG: {}}
+MASK_OPT_TYPE_LONG = 1
+MASK_OPT_TYPE_ARG = 2
 
-def add_opt(opt_type, flag, description=None, label=None):
-    if opt_type not in opts:
-        raise Exception("Bad type: %s" % opt_type)
+OPT_TYPE_FLAG = 0
+OPT_TYPE_SHORT = MASK_OPT_TYPE_ARG
+OPT_TYPE_LONG_FLAG = MASK_OPT_TYPE_LONG
+OPT_TYPE_LONG = MASK_OPT_TYPE_LONG | MASK_OPT_TYPE_ARG
 
-    if flag in opts[opt_type]:
-        raise Exception("Flag already exists: %s" % flag)
+TITLE_HELP = "help"
 
-    opts[opt_type][flag] = Opt(flag, description, label)
+class ArgHelper:
 
-def get_opts():
-    s = ""
-    for key in opts[OPT_TYPE_FLAG]:
-        s += key
-    for key in opts[OPT_TYPE_SHORT]:
-        s += "%s:" % key
-    return s
+    args = {}
+    defaults = {}
+    raw_args = {}
+    operands = []
 
-def get_opts_long():
-    return ["%s=" % key for key in sorted(opts[OPT_TYPE_LONG].keys())] + sorted(opts[OPT_TYPE_LONG_FLAG].keys())
-
-def handle_common_argument(opt, arg):
-    global args
-    global access
-
-    good = True
-    processed = True
-
-    if opt in ("-a"):
-        error = access.add_whitelist(arg) or error
-    elif opt in ("-A"):
-        error = access.load_whitelist_file(arg) or error
-    elif opt in ("-b"):
-        args[TITLE_BIND] = arg
-    elif opt in ("-c"):
-        args[TITLE_SSL_CERT] = arg
-    elif opt in ("-d"):
-        good = access.add_blacklist(arg) and good
-    elif opt in ("-D"):
-        good = access.load_blacklist_file(arg) and good
-    elif opt in ("-k"):
-        args[TITLE_SSL_KEY] = arg
-    elif opt in ("-h"):
-        hexit(0)
-    elif opt in ("-p"):
-        raw_int_args[TITLE_PORT] = arg
-    elif opt in ("-P"):
-        args[TITLE_POST] = True
-    elif opt in ("-T"):
-        raw_int_args[TITLE_TIMEOUT] = arg
-    elif opt in ("-v"):
-        args[TITLE_VERBOSE] = True
-    elif opt in ("--password"):
-        args[TITLE_PASSWORD] = arg
-    elif opt in ("--prompt"):
-        args[TITLE_AUTH_PROMPT] = arg
-    elif opt in ("--user"):
-        args[TITLE_USER] = arg
-    else:
-        processed = False
-
-    return good, processed
-
-def validate_common_arguments():
-
+    validators = []
     errors = []
 
-    for k in sorted(raw_int_args.keys()):
+    opts = {OPT_TYPE_FLAG: {}, OPT_TYPE_SHORT: {}, OPT_TYPE_LONG: {}, OPT_TYPE_LONG_FLAG: {}}
+    opts_by_label = {}
+
+    def __init__(self):
+        self.add_opt(OPT_TYPE_FLAG, "h", TITLE_HELP, description="Display a help menu and then exit.")
+
+    def __contains__(self, arg):
+        return arg in self.args
+
+    def __getitem__(self, arg, default = None):
+        opt = self.opts_by_label.get(arg)
+        if opt and opt.multiple:
+            default = []
+        return self.args.get(arg, self.defaults.get(arg, default))
+
+    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, converter=str, multiple = False, strict_single = False):
+
+        if opt_type not in self.opts:
+            raise Exception("Bad option type: %s" % opt_type)
+
+        has_arg = opt_type & MASK_OPT_TYPE_ARG
+
+        prefix = "-"
+        match_pattern = "^[a-z0-9]$"
+        if opt_type & MASK_OPT_TYPE_LONG:
+            prefix = "--"
+            match_pattern = "^[a-z0-9\-]+$" # ToDo: Improve on this regex?
+
+        arg = prefix + flag
+
+        # Check for errors. Developer errors get intrusive exceptions instead of the error list.
+        if not label:
+            raise Exception("No label defined for flag: %s" % arg)
+        if not flag:
+            raise Exception("No flag defined for label: %s" % label)
+        if not opt_type & MASK_OPT_TYPE_LONG and len(flag) - 1:
+            raise Exception("Short options must be 1-character long.") # A bit redundant, but more informative
+        if not re.match(match_pattern, flag, re.IGNORECASE):
+            raise Exception("Invalid flag value: %s" % flag) # General format check
+        for g in self.opts:
+            if opt_type & MASK_OPT_TYPE_LONG == g & MASK_OPT_TYPE_LONG and arg in self.opts[g]:
+                raise Exception("Flag already defined: %s" % label)
+        if label in self.opts_by_label:
+            raise Exception("Duplicate label (new: %s%s): %s" % (arg, label))
+        if multiple and strict_single:
+            raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
+        # These do not cover harmless checks on arg modifiers with flag values.
+
+        obj = OptArg()
+        obj.opt_type = opt_type
+        obj.label = label
+        obj.required = required and opt_type & MASK_OPT_TYPE_ARG
+        obj.default = default
+        obj.multiple = multiple
+        obj.description = description
+        obj.converter = converter
+        obj.has_arg = has_arg
+        obj.strict_single = strict_single
+
+        self.opts_by_label[label] = self.opts[opt_type][arg] = obj
+        if not has_arg:
+            default = False
+        elif multiple:
+            default = []
+        self.defaults[label] = default
+
+    def add_validator(self, fn):
+        self.validators.append(fn)
+
+    def _get_opts(self):
+        s = "".join([k for k in sorted(self.opts[OPT_TYPE_FLAG])])
+        s += "".join(["%s:" % k for k in sorted(self.opts[OPT_TYPE_SHORT])])
+        return s.replace('-', '')
+
+    def _get_opts_long(self):
+        l = ["%s=" % key for key in sorted(self.opts[OPT_TYPE_LONG].keys())] + sorted(self.opts[OPT_TYPE_LONG_FLAG].keys())
+        return [re.sub("^-+", "", i) for i in l]
+
+    def convert_value(self, raw_value, opt):
+        value = None
+
         try:
-            args[k] = int(raw_int_args[k])
-        except ValueError:
-            errors.append("Invalid port number: %s" % colour_text(COLOUR_BOLD, raw_int_args[k]))
+            value = opt.converter(raw_value)
+        except:
+            pass
 
-    if TITLE_PORT in args:
-        if args[TITLE_PORT] < 0 or args[TITLE_PORT] > 65535:
-            errors.append("Port must be 0-65535. Given: %s" % colour_text(COLOUR_BOLD, args[TITLE_PORT]))
+        if value is None:
+            self.errors.append("Unable to convert %s to %s: %s" % (colour_text(opt.label), opt.converter.__name__, colour_text(raw_value)))
 
-    if TITLE_TIMEOUT in args:
-        if args[TITLE_TIMEOUT] <= 0:
-            errors.append("Timeout must be a positive value. Given: %s" % colour_text(COLOUR_BOLD, args[TITLE_PORT]))
+        return value
 
-    for label, title in [("certificate", TITLE_SSL_CERT), ("key", TITLE_SSL_KEY)]:
-        path = args.get(title)
+    get = __getitem__
+
+    def hexit(self, exit_code = 0):
+
+        s = "./%s" % os.path.basename(sys.argv[0])
+        lines = []
+        for label, section in [("Flags", OPT_TYPE_FLAG), ("Options", OPT_TYPE_SHORT), ("Long Flags", OPT_TYPE_LONG_FLAG), ("Long Options", OPT_TYPE_LONG)]:
+            if not self.opts[section]:
+                continue
+
+            lines.append("%s:" % label)
+            for f in sorted(self.opts[section].keys()):
+                obj = self.opts[section][f]
+                s+= obj.get_printout_usage(f)
+                lines.append(obj.get_printout_help(f))
+
+        _print_message(COLOUR_PURPLE, "Usage", s)
+        for l in lines:
+            print l
+        exit(exit_code)
+
+    def last_operand(self, default = None):
+        if not len(self.operands):
+            return default
+        return self.operands[-1]
+
+    def load_args(self, cli_args = []):
+        if cli_args == sys.argv:
+            cli_args = cli_args[1:]
+
+        if not cli_args:
+            return
+
+        try:
+            output_options, self.operands = getopt.gnu_getopt(cli_args, self._get_opts(), self._get_opts_long())
+        except Exception as e:
+            self.errors.append("Error parsing arguments: %s" % str(e))
+            return False
+
+        for opt, optarg in output_options:
+            found = False
+            for has_arg, opt_type_tuple in [(True, (OPT_TYPE_SHORT, OPT_TYPE_LONG)), (False, (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG))]:
+                if found:
+                    break
+                for opt_key in opt_type_tuple:
+                    if opt in self.opts[opt_key]:
+                        found = True
+                        obj = self.opts[opt_key][opt]
+                        if has_arg:
+                            if obj.label not in self.raw_args:
+                                self.raw_args[obj.label] = []
+                            self.raw_args[obj.label].append(optarg)
+                        else:
+                            # Flag, single-argument
+                            self.args[obj.label] = True
+        return True
+
+    def process(self, args = [], exit_on_error = True, print_errors = True):
+        validate = True
+        if not self.load_args(args):
+            validate = False
+
+        if self[TITLE_HELP]:
+            self.hexit(0)
+
+        if validate:
+            self.validate()
+
+        if self.errors:
+            if print_errors:
+                for e in self.errors:
+                    print_error(e)
+
+            if exit_on_error:
+                exit(1) # Intentionally doing a plain exit() instead of a hexit().
+        return not self.errors
+
+    def validate(self):
+        for key in self.raw_args:
+            obj = self.opts_by_label[key]
+            if not obj.has_arg:
+                self.args[obj.label] = True
+            if not obj.multiple:
+                if obj.strict_single and len(self.raw_args[obj.label]) > 1:
+                    self.errors.append("Cannot have multiple %s values." % colour_text(obj.label))
+                else:
+                    value = self.convert_value(self.raw_args[obj.label][-1], obj)
+                    if value is not None:
+                        self.args[obj.label] = value
+            elif obj.multiple:
+                self.args[obj.label] = []
+                for i in self.raw_args[obj.label]:
+                    value = self.convert_value(i, obj)
+                    if value is not None:
+                        self.args[obj.label].append(value)
+            elif self.raw_args[obj.label]:
+                value = self.convert_value(self.raw_args[obj.label][-1], obj)
+                if value is not None:
+                    self.args[obj.label] = value
+        for m in [self.opts_by_label[o].label for o in self.opts_by_label if self.opts_by_label[o].required and o not in self.raw_args]:
+            self.errors.append("Missing %s value." % colour_text(m))
+        for v in self.validators:
+            r = v(self)
+            if r:
+                if isinstance(r, list):
+                    self.errors.extend(r) # Append all list items
+                else:
+                    self.errors.append(r) # Assume that this is a string.
+
+class OptArg:
+
+    opt_type = 0
+
+    def is_flag(self):
+        return self.opt_type in (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)
+
+    def get_printout_help(self, opt):
+
+        desc = self.description or "No description defined"
+
+        if self.is_flag():
+            return "  %s: %s" % (opt, desc)
+        else:
+            return "  %s <%s>: %s" % (opt, self.label, desc)
+
+    def get_printout_usage(self, opt):
+
+        if self.is_flag():
+            s = opt
+        else:
+            s = "%s <%s>" % (opt, self.label)
+        if self.required:
+            return " %s" % s
+        else:
+            return " [%s]" % s
+
+args = ArgHelper()
+
+# Short opts
+args.add_opt(OPT_TYPE_FLAG, "P", TITLE_POST, "Accept POST data. The server will not process it, but it won't raise any error either.")
+args.add_opt(OPT_TYPE_FLAG, "v", TITLE_VERBOSE, "Verbose output.")
+# Short flags
+args.add_opt(OPT_TYPE_SHORT, "T", TITLE_TIMEOUT, "Read socket timeout (default: %s)." % colour_text(DEFAULT_TIMEOUT), converter = int, default = DEFAULT_TIMEOUT)
+args.add_opt(OPT_TYPE_SHORT, "a", TITLE_ALLOW, "Add network address or CIDR range to whitelist.", multiple = True)
+args.add_opt(OPT_TYPE_SHORT, "A", TITLE_ALLOW_FILE, "Add addresses or CIDR ranges in file to whitelist.", multiple = True)
+args.add_opt(OPT_TYPE_SHORT, "b", TITLE_BIND, "Address to bind to (Default: %s)." % colour_text(DEFAULT_BIND, COLOUR_GREEN), default = DEFAULT_BIND)
+args.add_opt(OPT_TYPE_SHORT, "d", TITLE_DENY, "Add network address or CIDR range to blacklist.", multiple = True)
+args.add_opt(OPT_TYPE_SHORT, "D", TITLE_DENY_FILE, "Add addresses or CIDR ranges in file to blacklist.", multiple = True)
+args.add_opt(OPT_TYPE_SHORT, "p", TITLE_PORT, "Specify server bind port (Default: %s)." % colour_text(DEFAULT_PORT), converter = int, default = DEFAULT_PORT)
+
+args.add_opt(OPT_TYPE_SHORT, "c", TITLE_SSL_CERT, "SSL certificate file path (PEM format). Can also contain the SSL key.")
+args.add_opt(OPT_TYPE_SHORT, "k", TITLE_SSL_KEY, "SSL key file path (PEM format).")
+
+# Long flags
+args.add_opt(OPT_TYPE_LONG, "user-agent", TITLE_USER_AGENT, "Regular expression to match user agents. When this option is in use, the client must match at least one provided pattern.", multiple = True)
+for default, title in [(DEFAULT_AUTH_PROMPT, TITLE_AUTH_PROMPT), ("", TITLE_USER), ("", TITLE_PASSWORD)]:
+    args.add_opt(OPT_TYPE_LONG, title, title, "Specify authentication %s." % title, default = default)
+
+def validate_common_arguments(self):
+    errors = []
+
+    port = self[TITLE_PORT]
+    if port < 0 or port > 65535:
+        errors.append("Port must be 0-65535. Given: %s" % colour_text(port))
+
+    if self[TITLE_TIMEOUT] <= 0:
+        errors.append("Timeout must be a positive value. Given: %s" % colour_text(COLOUR_BOLD, self.args[TITLE_PORT]))
+
+    for label in [TITLE_SSL_CERT, TITLE_SSL_KEY]:
+        path = self[label]
         if path and not os.path.isfile(path):
-            errors.append("SSL %s file not found: %s" % (label, colour_text(COLOUR_GREEN, path)))
+            errors.append("%s not found: %s" % (label, colour_text(path, COLOUR_GREEN)))
 
-    if TITLE_SSL_KEY in args and not TITLE_SSL_CERT in args:
-        errors.append("SSL %s path provided, but no %s path was provided." % (TITLE_SSL_KEY, TITLE_SSL_CERT))
-
-    # TODO: Some more detailed SSL validation?
+    if TITLE_SSL_KEY in self.args and not TITLE_SSL_CERT in self.args:
+        errors.append("%s path provided, but no %s path was provided." % (TITLE_SSL_KEY, TITLE_SSL_CERT))
 
     return errors
 
+args.add_validator(validate_common_arguments)
 
-def hexit(exit_code = 0):
-    s = "./%s" % os.path.basename(sys.argv[0])
-    lines = []
-    if opts[OPT_TYPE_FLAG]:
-        lines.append("Flags:")
-        s += " [-%s]" % "".join([opts[OPT_TYPE_FLAG][f].opt for f in opts[OPT_TYPE_FLAG]])
-        lines.extend(["  -%s: %s" % (opts[OPT_TYPE_FLAG][f].opt, opts[OPT_TYPE_FLAG][f].get_description()) for f in sorted(opts[OPT_TYPE_FLAG].keys())])
-    if opts[OPT_TYPE_SHORT]:
-        lines.append("Options:")
-        s += " %s" % " ".join(["[-%s %s]" % (opts[OPT_TYPE_SHORT][f].opt, opts[OPT_TYPE_SHORT][f].label) for f in sorted(opts[OPT_TYPE_SHORT].keys())])
-        lines.extend(["  -%s <%s>: %s" % (opts[OPT_TYPE_SHORT][f].opt, opts[OPT_TYPE_SHORT][f].get_label(), opts[OPT_TYPE_SHORT][f].get_description()) for f in sorted(opts[OPT_TYPE_SHORT])])
-    if opts[OPT_TYPE_LONG_FLAG]:
-        lines.append("Long Flags:")
-        s += " %s" % " ".join("[--%s]" % f for f in sorted(opts[OPT_TYPE_LONG_FLAG].keys()))
-        lines.extend(["  --%s: %s" % (f, opts[OPT_TYPE_LONG_FLAG][f].get_description()) for f in sorted(opts[OPT_TYPE_LONG_FLAG].keys())])
-    if opts[OPT_TYPE_LONG]:
-        lines.append("Long Options:")
-        s += " %s" % " ".join(["[--%s %s]" % (opts[OPT_TYPE_LONG][f].opt, opts[OPT_TYPE_LONG][f].label) for f in sorted(opts[OPT_TYPE_LONG].keys())])
-        lines.extend(["  --%s <%s>: %s" % (opts[OPT_TYPE_LONG][f].opt, opts[OPT_TYPE_LONG][f].get_label(), opts[OPT_TYPE_LONG][f].get_description()) for f in sorted(opts[OPT_TYPE_LONG].keys())])
-    __print_message(COLOUR_PURPLE, "Usage", s)
-    for l in lines:
-        print l
-    exit(exit_code)
+def validate_blacklists(self):
+    for i in self[TITLE_ALLOW]:
+        access.add_whitelist(i)
+    for i in self[TITLE_ALLOW_FILE]:
+        access.load_whitelist_file(i)
+    for i in self[TITLE_DENY]:
+        access.add_blacklist(i)
+    for i in self[TITLE_DENY_FILE]:
+        access.load_whitelist_file(i)
 
-# Short opts
-add_opt(OPT_TYPE_FLAG, "h", "Display help menu and exit.")
-add_opt(OPT_TYPE_FLAG, "P", "Accept POST data. The server will not process it, but it won't raise any error either.")
-add_opt(OPT_TYPE_FLAG, "T", "Read socket timeout (default: %d)." % DEFAULT_TIMEOUT)
-add_opt(OPT_TYPE_FLAG, "v", "Verbose output.")
-# Short flags
-add_opt(OPT_TYPE_SHORT, "a", "Add network address or CIDR range to whitelist.", "allow-address/range")
-add_opt(OPT_TYPE_SHORT, "A", "Add addresses or CIDR ranges in file to whitelist.", "allow-list-file")
-add_opt(OPT_TYPE_SHORT, "b", "Address to bind to (default: %s)." % DEFAULT_BIND, "bind-address")
-add_opt(OPT_TYPE_SHORT, "d", "Add network address or CIDR range to blacklist.", "deny-address/range")
-add_opt(OPT_TYPE_SHORT, "D", "Add addresses or CIDR ranges in file to blacklist.", "deny-list-file")
-add_opt(OPT_TYPE_SHORT, "p", "Specify server bind port (HTTP Default: %s, SSL Default: %s)." % (DEFAULT_PORT, DEFAULT_PORT_SSL), "port")
+    return access.errors
+args.add_validator(validate_blacklists)
 
-add_opt(OPT_TYPE_SHORT, "c", "SSL certificate file path (PEM format). Can also contain the SSL key.", "certfile")
-add_opt(OPT_TYPE_SHORT, "k", "SSL key file path (PEM format).", "keyfile")
-
-# Long flags
-for t in [TITLE_AUTH_PROMPT, TITLE_USER, TITLE_PASSWORD]:
-    add_opt(OPT_TYPE_LONG, t, "Specify authentication %s." % t, t)
+def validate_common_directory(self):
+    directory = get_target()
+    if not os.path.isdir(directory):
+        return "Path %s does not seem to exist." % colour_text(os.path.realpath(directory), COLOUR_GREEN)
 
 # End option definitions
 
 def announce_common_arguments(verb = "Hosting content"):
 
     bind_address, bind_port, directory = get_target_information()
+    directory = os.path.realpath(directory)
 
     if verb:
-        print_notice("%s in %s on %s" % (verb, colour_text(COLOUR_GREEN, directory), colour_text(COLOUR_GREEN, "%s:%d" % (bind_address, bind_port))))
+        print_notice("%s in %s on %s" % (verb, colour_text(directory, COLOUR_GREEN), colour_text("%s:%d" % (bind_address, bind_port), COLOUR_GREEN)))
 
-    if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
+    if args[TITLE_VERBOSE]:
         print_notice("Extra information shall also be printed.")
 
-    if args.get(TITLE_POST, DEFAULT_POST):
-        print_notice("Accepting %s messages. Will not process, but will not throw a %s code either." % (colour_text(COLOUR_BOLD, "POST"), colour_text(COLOUR_RED, "501")))
+    if args[TITLE_POST]:
+        print_notice("Accepting %s messages. Will not process, but will not throw a %s code either." % (colour_text("POST"), colour_text("501", COLOUR_RED)))
 
     if TITLE_TIMEOUT in args:
-        print_notice("Read socket timeout: %s" % colour_bold(COLOUR_BOLD, args.get(TITLE_TIMEOUT)))
+        print_notice("Read socket timeout: %s" % colour_text(args[TITLE_TIMEOUT]))
 
     for label, title in [("certificate", TITLE_SSL_CERT), ("key", TITLE_SSL_KEY)]:
-        path = args.get(title)
+        path = args[title]
         if path:
-            print_notice("SSL %s file: %s" % (label, colour_text(COLOUR_GREEN, path)))
+            print_notice("SSL %s file: %s" % (label, colour_text(path, COLOUR_GREEN)))
 
-    if args.get(TITLE_USER):
-        print_notice("Basic authentication enabled (User: %s)" % colour_text(COLOUR_BOLD, args.get(TITLE_USER, "<EMPTY>")))
+    if args[TITLE_USER]:
+        print_notice("Basic authentication enabled (User: %s)" % colour_text(args.get(TITLE_USER, "<EMPTY>")))
 
-def get_default_port():
-    if args.get(TITLE_SSL_CERT):
-        return DEFAULT_PORT_SSL
-    return DEFAULT_PORT
+    access.announce_filter_actions()
+
+    for ua in args[TITLE_USER_AGENT]:
+        print_notice("Whitelisted user agent pattern: %s" % colour_text(ua))
+
+DEFAULT_TARGET = os.getcwd() # Most implementations consider the target to be the current directory. Override if this is not the case.
+def get_target():
+    return args.last_operand(DEFAULT_TARGET)
 
 def get_target_information():
-    return (args.get(TITLE_BIND, DEFAULT_BIND), args.get(TITLE_PORT, get_default_port()), args.get(TITLE_DIR, os.getcwd()))
+    return (args[TITLE_BIND], args[TITLE_PORT], get_target())
 
 def serve(handler, change_directory = False):
     bind_address, bind_port, directory = get_target_information()
@@ -293,8 +476,8 @@ def serve(handler, change_directory = False):
             os.chdir(directory)
         server = ThreadedHTTPServer((bind_address, bind_port), handler)
 
-        if args.get(TITLE_SSL_CERT):
-            server.socket = ssl.wrap_socket(server.socket, server_side=True, keyfile=args.get(TITLE_SSL_KEY), certfile=args.get(TITLE_SSL_CERT))
+        if args[TITLE_SSL_CERT]:
+            server.socket = ssl.wrap_socket(server.socket, server_side=True, keyfile=args[TITLE_SSL_KEY], certfile=args[TITLE_SSL_CERT])
 
         print_notice("Starting server, use <Ctrl-C> to stop")
         server.serve_forever()
@@ -303,7 +486,7 @@ def serve(handler, change_directory = False):
         server.kill_requests()
         exit(130)
     except ssl.SSLError as e:
-        m = "Unexpected %s: " % colour_text(COLOUR_RED, type(e).__name__)
+        m = "Unexpected %s: " % colour_text(type(e).__name__, COLOUR_RED)
         if re.match("^\[SSL\] PEM lib", str(e)):
             # '[SSL] PEM lib (_ssl.c:2798)' is super-unhelpful, so we will provide our own error message.
             # Unconfirmed: Is a missing key the only that can cause this?
@@ -313,7 +496,7 @@ def serve(handler, change_directory = False):
             m += str(e)
         print_error(m)
     except Exception as e:
-        print_error("Unexpected %s: %s" % (colour_text(COLOUR_RED, type(e).__name__), str(e)))
+        print_exception(e)
         exit(1)
 
 # Default error message template
@@ -347,6 +530,43 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         self.server = server
         self.setup()
 
+    def check_authorization(self):
+        # Check for authorization (by default with the Authorization header),
+        #  then pass to check_credentials to confirm them against a password back-end.
+
+        if not self.check_authorization_required():
+            return True
+
+        verbose = args[TITLE_VERBOSE]
+
+        raw_creds = self.headers.getheader("Authorization", "").split()
+        if not raw_creds or len(raw_creds) < 2:
+            return False
+
+        # Decode
+        creds_list = []
+        try:
+            creds_list = base64.b64decode(raw_creds[1]).split(":")
+        except TypeError:
+            pass
+
+        if len(creds_list) < 2:
+            # Creds message invalid, too few fields within.
+            return False
+
+        # User and password from the user.
+        user = creds_list[0]
+        password = ":".join(creds_list[1:])
+        return self.check_credentials(user, password)
+
+    def check_authorization_required(self):
+        return TITLE_USER in args or TITLE_PASSWORD in args
+
+    def check_credentials(self, user, password):
+        wanted_user = args[TITLE_USER]
+        wanted_password = args[TITLE_PASSWORD]
+        return wanted_user == user and wanted_password == password
+
     def copyobj(self, src, dst):
         while self.alive:
             buf = src.read(16*1024)
@@ -372,7 +592,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def get_command(self):
         command = self.command
-        if self.command == "POST" and args.get(TITLE_POST, DEFAULT_POST):
+        if self.command == "POST" and args[TITLE_POST]:
             command = "GET"
         return command
 
@@ -432,39 +652,8 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                 # An error code has been sent, just exit
                 return
 
-            verbose = args.get(TITLE_VERBOSE, DEFAULT_VERBOSE)
-            wanted_user = args.get(TITLE_USER, "")
-            wanted_password = args.get(TITLE_PASSWORD, "")
-            if wanted_user or wanted_password:
-                raw_creds = self.headers.getheader("Authorization", "").split()
-                if not raw_creds or len(raw_creds) < 2:
-                    # No creds message
-                    if verbose:
-                        print_error("Client provided no credentials.")
-                    return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
-
-                # Decode
-                creds_list = []
-                try:
-                    creds_list = base64.b64decode(raw_creds[1]).split(":")
-                except TypeError:
-                    pass
-
-                if len(creds_list) < 2:
-                    # Creds message invalid, too few fields within.
-                    if verbose:
-                        print_error("Client provided an invalid Authorization header.")
-                    return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
-                user = creds_list[0]
-                password = ":".join(creds_list[1:])
-                if user != wanted_user or password != wanted_password:
-                    # Bad Credentials
-                    if verbose:
-                        # Also printing credentials.
-                        # This is supposed to be used for quick, silly sharing scripts.
-                        # If this ever gets used for something more serious, this printout should be removed.
-                        print_error("Client provided invalid credentials: (User: %s)(Password: %s)" % (colour_text(COLOUR_BOLD, user), colour_text(COLOUR_BOLD, password)))
-                    return self.send_error(401, args.get(TITLE_AUTH_PROMPT, DEFAULT_AUTH_PROMPT))
+            if not self.check_authorization():
+                return self.send_error(401, args[TITLE_AUTH_PROMPT])
 
             command = self.get_command()
 
@@ -479,7 +668,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         except socket.timeout:
             # a read or a write timed out.  Discard this connection
             self.close_connection = 1
-            return self.send_error(408, "Data timeout (%s seconds)" % args.get(TITLE_TIMEOUT, DEFAULT_TIMEOUT))
+            return self.send_error(408, "Data timeout (%s seconds)" % args[TITLE_TIMEOUT])
 
     def log_date_time_string(self):
         """Return the current time formatted for logging."""
@@ -524,9 +713,9 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             http_code_colour = COLOUR_GREEN
         elif response_code in (301, 307):
             http_code_colour = COLOUR_PURPLE
-            extra_info = '[%s]' % colour_text(COLOUR_PURPLE, "Redirect")
+            extra_info = '[%s]' % colour_text("Redirect", COLOUR_PURPLE)
         elif response_code == 404:
-            extra_info = '[%s]' % colour_text(COLOUR_RED, "File Not Found")
+            extra_info = '[%s]' % colour_text("File Not Found", COLOUR_RED)
 
         # Does address string match the client address? If not, print both.
         s = self.address_string()
@@ -536,22 +725,22 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # A likely cause of a bad request is a non-HTTP protocol being used (e.g. HTTPS, SSH).
         # We do not want to print this information, so we will be overwriting our values tuple.
         if response_code == 400:
-            values = (colour_text(COLOUR_RED, "BAD REQUEST"), response_code, values[2])
+            values = (colour_text("BAD REQUEST", COLOUR_RED), response_code, values[2])
         else:
             # Non-400 response.
             request_items = values[0].split(" ")
-            values = (" ".join([request_items[0], colour_text(COLOUR_GREEN, request_items[1]), request_items[2]]), values[1], values[2])
+            values = (" ".join([request_items[0], colour_text(request_items[1], COLOUR_GREEN), request_items[2]]), values[1], values[2])
 
-            if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
+            if args[TITLE_VERBOSE]:
                 user_agent = self.headers.getheader("User-Agent")
                 if user_agent:
-                    footer=" (User Agent: %s)" % colour_text(COLOUR_BOLD, user_agent.strip())
+                    footer=" (User Agent: %s)" % colour_text(user_agent.strip())
 
-        trailer = "[%s][%s]%s: %s%s\n" % (colour_text(COLOUR_BOLD, self.log_date_time_string()), colour_text(http_code_colour, values[1]), extra_info, values[0], footer)
-        src = "%s " % colour_text(COLOUR_GREEN, self.client_address[0])
+        trailer = "[%s][%s]%s: %s%s\n" % (colour_text(self.log_date_time_string(), COLOUR_BOLD), colour_text(values[1], http_code_colour), extra_info, values[0], footer)
+        src = "%s " % colour_text(self.client_address[0], COLOUR_GREEN)
 
         if s != self.client_address[0]:
-            src += "(%s)" % colour_text(COLOUR_GREEN, s)
+            src += "(%s)" % colour_text(s, COLOUR_GREEN)
 
         # When a a proxy such as Squid or Apache forwards information,
         # (ProxyPass/ProxyPassReverse directives for Apache),
@@ -560,6 +749,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         proxy_src = None
         proxy_steps = []
         forward_spec = self.headers.getheader("X-Forwarded-For", "").strip()
+
         if forward_spec:
             forward_components = [c.strip() for c in forward_spec.split(",")]
             forward_addr = forward_components.pop(0)
@@ -579,7 +769,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
         if proxy_src:
             old_src = src.strip()
-            src = "%s [proxy via " % colour_text(COLOUR_GREEN, proxy_src)
+            src = "%s [proxy via " % colour_text(proxy_src, COLOUR_GREEN)
 
             if proxy_steps:
                 first = True
@@ -588,11 +778,11 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                         first += "->"
                     first = False
                     if re.match(REGEX_INET4, step):
-                        src += colour_text(COLOUR_GREEN, step)
+                        src += colour_text(step, COLOUR_GREEN)
                     else:
                         # Wonky input. Maliciously formed?
                         # For now, just say "???" and deal with any troubles as they come up.
-                        src += colour_text(COLOUR_BOLD, "???")
+                        src += colour_text("???")
                 src += "->%s" % old_src
             else:
                 # One proxy step, quick and simple.
@@ -669,14 +859,24 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             return False
         self.command, self.path, self.request_version = command, path, version
 
-        if not access.is_allowed(self.client_address[0]):
-            self.send_error(403,"Access Denied")
-            return False
-
         # Examine the headers and look for a Connection directive
         self.headers = self.MessageClass(self.rfile, 0)
         # I was not able to successfully use the MIMEMessage object, so parsing it into a dictionary instead.
         self.headers_dict = self.get_header_dict(self.headers)
+
+        # Access control checks
+        user_agent_match = not args[TITLE_USER_AGENT]
+        if not user_agent_match:
+            # At least one match is present
+            user_agent = self.headers.getheader("User-Agent")
+            for p in args[TITLE_USER_AGENT]:
+                user_agent_match = re.match(p, user_agent)
+                if user_agent_match:
+                    break # Avoid redundant checks
+
+        if not user_agent_match or not access.is_allowed(self.client_address[0]):
+            self.send_error(403,"Access Denied")
+            return False
 
         conntype = self.headers.get('Connection', "")
         if conntype.lower() == 'close':
@@ -857,9 +1057,9 @@ class NetAccess:
 
             for title, ip, address in l:
                 if ip == address:
-                    print_notice("%s %s: %s" % (action, title, colour_text(COLOUR_GREEN, address)))
+                    print_notice("%s %s: %s" % (action, title, colour_text(address, COLOUR_GREEN)))
                 else:
-                    print_notice("%s %s: %s (%s)" % (action, title, colour_text(COLOUR_GREEN, address), colour_text(COLOUR_GREEN, ip)))
+                    print_notice("%s %s: %s (%s)" % (action, title, colour_text(address, COLOUR_GREEN), colour_text(ip, COLOUR_GREEN)))
 
     # Credit for initial IP functions: http://code.activestate.com/recipes/66517/
 
@@ -884,7 +1084,7 @@ class NetAccess:
             ip = socket.gethostbyname(candidate)
             return (True, self.ip_strton(ip), ip)
         except socket.gaierror:
-            self.errors.append("Unable to resolve: %s" % colour_text(COLOUR_GREEN, candidate))
+            self.errors.append("Unable to resolve: %s" % colour_text(candidate, COLOUR_GREEN))
             return (False, None, None)
 
     def ip_validate_cidr(self, candidate):
@@ -895,7 +1095,7 @@ class NetAccess:
                 return (True, self.ip_network_mask(a, m))
         except socket.gaierror:
             pass
-        self.errors.append("Invalid CIDR address: %s" % colour_text(COLOUR_GREEN, candidate))
+        self.errors.append("Invalid CIDR address: %s" % colour_text(candidate, COLOUR_GREEN))
         return (False, None)
 
     def is_allowed(self, address):
@@ -933,7 +1133,7 @@ class NetAccess:
 
     def load_access_file(self, fn, path, header):
         if not os.path.isfile(path):
-            self.errors.append("Path to %s file does not exist: %s" % (header, colour_text(COLOUR_GREEN, path)))
+            self.errors.append("Path to %s file does not exist: %s" % (header, colour_text(path, COLOUR_GREEN)))
             return False
         with open(path) as f:
             for l in f.readlines():
@@ -959,12 +1159,12 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
         try:
             req = self.RequestHandlerClass(request, client_address, self)
-            req.rfile._sock.settimeout(args.get(TITLE_TIMEOUT, DEFAULT_TIMEOUT))
+            req.rfile._sock.settimeout(args[TITLE_TIMEOUT])
             self.requests[client_address] = req
 
             req.run()
         except Exception as e:
-            print_error("%s: %s" % (colour_text(COLOUR_GREEN, client_address[0]), e))
+            print_exception(e)
         del self.requests[client_address]
 
     def kill_requests(self):
@@ -972,6 +1172,4 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
         for client_address in self.requests.keys():
             self.requests[client_address].alive = False
 
-args = {}
-raw_int_args = {}
 access = NetAccess()

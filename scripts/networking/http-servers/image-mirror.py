@@ -16,7 +16,8 @@ from random import randint
 from urlparse import parse_qs
 
 # Remove unused arguments
-del common.opts[common.OPT_TYPE_FLAG]["P"]
+del common.args.opts[common.OPT_TYPE_FLAG]["-P"]
+common.args.add_validator(common.validate_common_directory) # Validate directory.
 
 # Common fields
 
@@ -25,44 +26,6 @@ INDEX_DIR = "scudder"
 image_extensions = ('.png','.jpg', '.jpeg', '.gif')
 
 # Functions and Classes
-
-def process_arguments():
-
-    # Image Mirror Arguments
-
-    good = True
-    errors = []
-
-    try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],common.get_opts(), common.get_opts_long())
-    except getopt.GetoptError as e:
-        print "GetoptError: %s" % str(e)
-        hexit(1)
-    for opt, arg in opts:
-        common_good, processed = common.handle_common_argument(opt, arg)
-        good = common_good and good
-
-        if processed:
-            continue
-
-    switch_arg = False
-    if len(flat_args):
-        common.args[common.TITLE_DIR] = flat_args[len(flat_args)-1]
-
-    if len(common.access.errors):
-        good = False
-        errors.extend(common.access.errors)
-
-    errors.extend(common.validate_common_arguments())
-
-    if good and not errors:
-        common.access.announce_filter_actions()
-    else:
-        good = False
-        for e in errors:
-            common.print_error(e)
-
-    return good
 
 # Browser
 class BrowseController:
@@ -325,7 +288,7 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         interface the same as for send_head().
         """
         try:
-            bc = BrowseController(GALLERY_PATH, relativePath)
+            bc = BrowseController(common.get_target(), relativePath)
             sub_directories, imageCount = bc.getContents()
         except os.error:
             self.send_error(404, "No permission to list directory")
@@ -336,7 +299,7 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         title = relativePath
         if not title:
             title = "."
-        return self.serve_content(self.render_page("Image Directory: %s" % os.path.realpath(GALLERY_PATH+"/"+relativePath), self.render_breadcrumbs(relativePath), contents))
+        return self.serve_content(self.render_page("Image Directory: %s" % os.path.realpath(common.get_target()+"/"+relativePath), self.render_breadcrumbs(relativePath), contents))
 
     def handle_random(self, realPath, arguments):
 
@@ -411,8 +374,8 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
             image_html += "<img class='largeImage' src='/image%s'/>\n" % (page_path)
         image_html += "</div>"
 
-        path_html = "<p>Viewing: <strong>.%s</strong></p><p>Path: <strong>%s</strong></p><p>Image Dirs:%s</p>" % (page_path, os.path.realpath(GALLERY_PATH + page_path), self.render_breadcrumbs(os.path.dirname(page_path), False))
-        return self.serve_content(self.render_page("Image: %s (%s)" % (os.path.basename(page_path), os.path.realpath(os.path.dirname(GALLERY_PATH+page_path))), self.render_breadcrumbs(path), nav_html + image_html + nav_html + path_html, self.get_navigation_javascript()))
+        path_html = "<p>Viewing: <strong>.%s</strong></p><p>Path: <strong>%s</strong></p><p>Image Dirs:%s</p>" % (page_path, os.path.realpath(common.get_target() + page_path), self.render_breadcrumbs(os.path.dirname(page_path), False))
+        return self.serve_content(self.render_page("Image: %s (%s)" % (os.path.basename(page_path), os.path.realpath(os.path.dirname(common.get_target() + page_path))), self.render_breadcrumbs(path), nav_html + image_html + nav_html + path_html, self.get_navigation_javascript()))
 
     def render_breadcrumbs(self, path, trailer=True):
         current = "/browse/"
@@ -508,7 +471,7 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
 
         if mode == "image":
 
-            target_path = "%s/%s" % (GALLERY_PATH, relativePath)
+            target_path = "%s/%s" % (common.get_target(), relativePath)
             print "HEY"
             return self.serve_file(target_path)
         elif mode == "random":
@@ -555,12 +518,12 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         path = posixpath.normpath(urllib.unquote(path))
         words = path.split('/')
         words = filter(None, words)
-        path = GALLERY_PATH
+        path = common.get_target()
 
         for word in words[1:]:
             drive, word = os.path.splitdrive(word)
             head, word = os.path.split(word)
-            if word in (GALLERY_PATH, os.pardir): continue
+            if word in (common.get_target(), os.pardir): continue
             path = os.path.join(path, word)
         try:
             dir_path = "/".join(words[1:])
@@ -571,18 +534,11 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         return word, path, dir_path, args
 
 if __name__ == '__main__':
-    if not process_arguments():
-        exit(1)
-
-    bind_address, bind_port, GALLERY_PATH = common.get_target_information()
-
-    if not os.path.isdir(GALLERY_PATH):
-        common.print_error("Gallery path does not seem to exist: %s" % common.colour_text(common.COLOUR_GREEN, os.path.realpath(GALLERY_PATH)))
-        exit(1)
+    common.args.process(sys.argv)
 
     common.announce_common_arguments("Sharing images")
 
     if common.args.get(common.TITLE_USER):
-        print "Basic authentication enabled (User: %s)" % common.colour_text(common.COLOUR_BOLD, common.args.get(common.TITLE_USER, "<EMPTY>"))
+        print "Basic authentication enabled (User: %s)" % common.colour_text(common.args.get(common.TITLE_USER, "<EMPTY>"))
 
     common.serve(ImageMirrorRequestHandler)

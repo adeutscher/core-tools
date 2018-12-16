@@ -315,22 +315,24 @@ def record_var(values, title, colour=COLOUR_BOLD, validator=None, reportOverwrit
     set_var(values, title, temp, colour, reportOverwrite)
 
 def run_command(command_list, sudo_required=False, ctrl_c_error=True):
+    ret = 0
     try:
-        if os.geteuid():
+        if sudo_required and os.geteuid():
             print_notice("We are not %s%s%s, so %s%s%s will be run through %s%s%s." % (COLOUR_RED, "root", COLOUR_OFF, COLOUR_BLUE, command_list[0], COLOUR_OFF, COLOUR_BLUE, "sudo", COLOUR_OFF))
             command_list.insert(0, "sudo")
 
         p = subprocess.Popen(command_list, stdout=sys.stdout, stderr=sys.stderr)
         p.communicate()
-        exit(p.returncode)
+        ret = p.returncode
+        if ret < 0:
+            ret = 1
     except KeyboardInterrupt:
-        ret = 0
         if ctrl_c_error:
             ret = 130
-        exit(ret)
     except OSError as e:
-        print "OSError: %s" % e
-        exit(1)
+        print_error("OSError: %s" % e)
+        ret = 1
+    exit(ret)
 
 def set_var(values, title, value, colour=COLOUR_BOLD, reportOverwrite=True):
     if title in values and value != values[title]:

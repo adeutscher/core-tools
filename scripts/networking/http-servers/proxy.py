@@ -6,50 +6,7 @@ import cookielib, getopt, re, shutil, sys, urllib2, urlparse
 TITLE_TARGET = "proxy target"
 
 # Remove unused arguments
-del common.opts[common.OPT_TYPE_FLAG]["P"]
-
-def process_arguments():
-
-    # Verbose Sharing Arguments
-
-    good = True
-    errors = []
-
-    try:
-        opts, flat_args = getopt.gnu_getopt(sys.argv[1:],common.get_opts(), common.get_opts_long())
-    except getopt.GetoptError as e:
-        print "GetoptError: %s" % str(e)
-        hexit(1)
-    for opt, arg in opts:
-        common_good, processed = common.handle_common_argument(opt, arg)
-        good = common_good and good
-
-        if processed:
-            continue
-    switch_arg = False
-
-    if flat_args:
-        common.args[TITLE_TARGET] = flat_args[len(flat_args)-1]
-
-    if TITLE_TARGET not in common.args:
-        errors.append("No %s defined." % common.colour_text(common.COLOUR_BOLD, TITLE_TARGET))
-    elif not re.match("^https?:\/\/[a-z0-9]+([\-\.]{1}[a-z0-9]+)*(\.[a-z0-9]+([\-\.]{1}[a-z0-9]+)*)*(:[0-9]{1,5})?(\/.*)?$", common.args[TITLE_TARGET]):
-        errors.append("Invalid target URL: %s" % common.colour_text(common.COLOUR_GREEN, common.args[TITLE_TARGET]))
-
-    if len(common.access.errors):
-        good = False
-        errors.extend(common.access.errors)
-
-    errors.extend(common.validate_common_arguments())
-
-    if good and not errors:
-        common.access.announce_filter_actions()
-    else:
-        good = False
-        for e in errors:
-            common.print_error(e)
-
-    return good
+del common.args.opts[common.OPT_TYPE_FLAG]["-P"]
 
 class NoRedirection(urllib2.HTTPErrorProcessor):
 
@@ -154,16 +111,23 @@ class Proxy(common.CoreHttpServer):
         This is called by send_response().
         """
 
+def validate_target(self):
+    target = self.last_operand()
+    if not target:
+        return "No %s defined." % common.colour_text(TITLE_TARGET)
+    elif not re.match("^https?:\/\/[a-z0-9]+([\-\.]{1}[a-z0-9]+)*(\.[a-z0-9]+([\-\.]{1}[a-z0-9]+)*)*(:[0-9]{1,5})?(\/.*)?$", target):
+        return "Invalid target URL: %s" % common.colour_text(target, common.COLOUR_GREEN)
+    self.args[TITLE_TARGET] = target
+
 if __name__ == '__main__':
-    if not process_arguments():
-        exit(1)
+    common.args.process(sys.argv)
 
     bind_address, bind_port, target = common.get_target_information()
     # Directory is moot here.
     # Overwrite with target to make the line afterwards slightly less monstrous.
     target = common.args[TITLE_TARGET]
 
-    common.print_notice("Forwarding requests on %s to target: %s" % (common.colour_text(common.COLOUR_GREEN, "%s:%d" % (bind_address, bind_port)), common.colour_text(common.COLOUR_GREEN, target)))
+    common.print_notice("Forwarding requests on %s to target: %s" % (common.colour_text("%s:%d" % (bind_address, bind_port), common.COLOUR_GREEN), common.colour_text(target, common.COLOUR_GREEN)))
     common.announce_common_arguments(None)
 
     common.serve(Proxy, True)
