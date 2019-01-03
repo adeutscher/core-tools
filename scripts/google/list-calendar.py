@@ -1,8 +1,5 @@
 #!/usr/bin/python
 
-from __future__ import print_function
-import common,getopt,httplib2,os,re,sys,time
-
 ####################################################
 # List calendar events in a format that can be     #
 #   used by conky task display.                    #
@@ -11,26 +8,18 @@ import common,getopt,httplib2,os,re,sys,time
 #   pip install --upgrade google-api-python-client #
 ####################################################
 
-try:
-    from apiclient import discovery
-except ImportError:
-    common.print_error("Could not import apiclient.")
+from __future__ import print_function
+import common,datetime,os,re,sys,time
 
-import datetime
-
-def hexit(exit_code=0):
-    print("./list-calendar.py [-h] [-A account]")
-    exit(exit_code)
-
-def main(tag = None):
+def main():
     """Shows basic usage of the Google Calendar API.
 
     Creates a Google Calendar API service object and outputs a list of
     upcoming events on the user's calendar.
     """
-    credentials = common.get_credentials(tag)
-    http = credentials.authorize(httplib2.Http())
-    service = discovery.build('calendar', 'v3', http=http)
+
+    common.args.process(sys.argv)
+    service = common.get_service('calendar', 'v3')
 
     then = (datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat() + 'Z' # 'Z' indicates UTC time
 
@@ -56,20 +45,4 @@ def main(tag = None):
             print(text)
 
 if __name__ == '__main__':
-
-    tag = None
-
-    try:
-        opts, args = getopt.getopt(sys.argv[1:],"A:h")
-        for opt, arg in opts:
-            if opt in ("-A"):
-                tag = arg
-            elif opt == "-h":
-                hexit()
-    except Exception as e:
-        common.print_error("Argument Parsing Error: %s" % e)
-
-    if common.error_count:
-        hexit(1)
-
-    main(tag)
+    main()

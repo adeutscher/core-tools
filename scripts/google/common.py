@@ -1,16 +1,18 @@
 
 # Common variables for google API scripts.
 
-import os, re, sys
+import httplib2, os, re, sys
 
 #
 # Common Colours and Message Functions
 ###
 
-def __print_message(colour, header, message):
-    print "%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+def _print_message(header_colour, header_text, message):
+    print "%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message)
 
-def colour_text(colour, text):
+def colour_text(text, colour = None):
+    if not colour:
+        colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
@@ -46,24 +48,292 @@ error_count = 0
 def print_error(message):
     global error_count
     error_count += 1
-    __print_message(COLOUR_RED, "Error", message)
+    _print_message(COLOUR_RED, "Error", message)
+
+def print_exception(e, msg=None):
+    # Shorthand wrapper to handle an exception.
+    # msg: Used to provide more context.
+    sub_msg = ""
+    if msg:
+        sub_msg = " (%s)" % msg
+    print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
 
 def print_notice(message):
-    __print_message(COLOUR_BLUE, "Notice", message)
+    _print_message(COLOUR_BLUE, "Notice", message)
 
 def print_warning(message):
-    __print_message(COLOUR_YELLOW, "Warning", message)
+    _print_message(COLOUR_YELLOW, "Warning", message)
+
+###########################################
+
+# Common Argument Handling Structure
+# My own implementation of an argparse-like structure to add args and
+#   build a help menu that I have a bit more control over.
+#
+# Note: These functions assume that my common message functions are also being used.
+#       If this is not the case or if the functions are in a different module:
+#          * Adjust print_foo functions.
+#          * Adjust colour_text() calls.
+#          * Adjust all mentions of COLOUR_* variables.
+
+import getopt, os, re, sys
+
+MASK_OPT_TYPE_LONG = 1
+MASK_OPT_TYPE_ARG = 2
+
+OPT_TYPE_FLAG = 0
+OPT_TYPE_SHORT = MASK_OPT_TYPE_ARG
+OPT_TYPE_LONG_FLAG = MASK_OPT_TYPE_LONG
+OPT_TYPE_LONG = MASK_OPT_TYPE_LONG | MASK_OPT_TYPE_ARG
+
+TITLE_HELP = "help"
+
+class ArgHelper:
+
+    args = {}
+    defaults = {}
+    raw_args = {}
+
+    errors = []
+    validators = []
+
+    opts = {OPT_TYPE_FLAG: {}, OPT_TYPE_SHORT: {}, OPT_TYPE_LONG: {}, OPT_TYPE_LONG_FLAG: {}}
+    opts_by_label = {}
+
+    def __init__(self):
+        self.add_opt(OPT_TYPE_FLAG, "h", TITLE_HELP, description="Display a help menu and then exit.")
+
+    def __contains__(self, arg):
+        return arg in self.args
+
+    def __getitem__(self, arg, default = None):
+        opt = self.opts_by_label.get(arg)
+        if opt and opt.multiple:
+            default = []
+        return self.args.get(arg, self.defaults.get(arg, default))
+
+    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, converter=str, multiple = False, strict_single = False):
+
+        if opt_type not in self.opts:
+            raise Exception("Bad option type: %s" % opt_type)
+
+        has_arg = opt_type & MASK_OPT_TYPE_ARG
+
+        prefix = "-"
+        match_pattern = "^[a-z0-9]$"
+        if opt_type & MASK_OPT_TYPE_LONG:
+            prefix = "--"
+            match_pattern = "^[a-z0-9\-]+$" # ToDo: Improve on this regex?
+
+        arg = prefix + flag
+
+        # Check for errors. Developer errors get intrusive exceptions instead of the error list.
+        if not label:
+            raise Exception("No label defined for flag: %s" % arg)
+        if not flag:
+            raise Exception("No flag defined for label: %s" % label)
+        if not opt_type & MASK_OPT_TYPE_LONG and len(flag) - 1:
+            raise Exception("Short options must be 1-character long.") # A bit redundant, but more informative
+        if not re.match(match_pattern, flag, re.IGNORECASE):
+            raise Exception("Invalid flag value: %s" % flag) # General format check
+        for g in self.opts:
+            if opt_type & MASK_OPT_TYPE_LONG == g & MASK_OPT_TYPE_LONG and arg in self.opts[g]:
+                raise Exception("Flag already defined: %s" % label)
+        if label in self.opts_by_label:
+            raise Exception("Duplicate label (new: %s%s): %s" % (arg, label))
+        if multiple and strict_single:
+            raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
+        # These do not cover harmless checks on arg modifiers with flag values.
+
+        obj = OptArg()
+        obj.opt_type = opt_type
+        obj.label = label
+        obj.required = required and opt_type & MASK_OPT_TYPE_ARG
+        obj.default = default
+        obj.multiple = multiple
+        obj.description = description
+        obj.converter = converter
+        obj.has_arg = has_arg
+        obj.strict_single = strict_single
+
+        self.opts_by_label[label] = self.opts[opt_type][arg] = obj
+        if not has_arg:
+            default = False
+        elif multiple:
+            default = []
+        self.defaults[label] = default
+
+    def add_validator(self, fn):
+        self.validators.append(fn)
+
+    def _get_opts(self):
+        s = "".join([k for k in sorted(self.opts[OPT_TYPE_FLAG])])
+        s += "".join(["%s:" % k for k in sorted(self.opts[OPT_TYPE_SHORT])])
+        return s.replace('-', '')
+
+    def _get_opts_long(self):
+        l = ["%s=" % key for key in sorted(self.opts[OPT_TYPE_LONG].keys())] + sorted(self.opts[OPT_TYPE_LONG_FLAG].keys())
+        return [re.sub("^-+", "", i) for i in l]
+
+    def convert_value(self, raw_value, opt):
+        value = None
+
+        try:
+            value = opt.converter(raw_value)
+        except:
+            pass
+
+        if value is None:
+            self.errors.append("Unable to convert %s to %s: %s" % (colour_text(opt.label), opt.converter.__name__, colour_text(raw_value)))
+
+        return value
+
+    get = __getitem__
+
+    def hexit(self, exit_code = 0):
+
+        s = "./%s" % os.path.basename(sys.argv[0])
+        lines = []
+        for label, section in [("Flags", OPT_TYPE_FLAG), ("Options", OPT_TYPE_SHORT), ("Long Flags", OPT_TYPE_LONG_FLAG), ("Long Options", OPT_TYPE_LONG)]:
+            if not self.opts[section]:
+                continue
+
+            lines.append("%s:" % label)
+            for f in sorted(self.opts[section].keys()):
+                obj = self.opts[section][f]
+                s+= obj.get_printout_usage(f)
+                lines.append(obj.get_printout_help(f))
+
+        _print_message(COLOUR_PURPLE, "Usage", s)
+        for l in lines:
+            print l
+        exit(exit_code)
+
+    def last_operand(self, default = None):
+        if not len(self.operands):
+            return default
+        return self.operands[-1]
+
+    def load_args(self, cli_args = []):
+        if cli_args == sys.argv:
+            cli_args = cli_args[1:]
+
+        if not cli_args:
+            return True
+
+        try:
+            output_options, output_flat_args = getopt.gnu_getopt(cli_args, self._get_opts(), self._get_opts_long())
+        except Exception as e:
+            self.errors.append("Error parsing arguments: %s" % str(e))
+            return False
+
+        for opt, optarg in output_options:
+            found = False
+            for has_arg, opt_type_tuple in [(True, (OPT_TYPE_SHORT, OPT_TYPE_LONG)), (False, (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG))]:
+                if found:
+                    break
+                for opt_key in opt_type_tuple:
+                    if opt in self.opts[opt_key]:
+                        found = True
+                        obj = self.opts[opt_key][opt]
+                        if has_arg:
+                            if obj.label not in self.raw_args:
+                                self.raw_args[obj.label] = []
+                            self.raw_args[obj.label].append(optarg)
+                        else:
+                            # Flag, single-argument
+                            self.args[obj.label] = True
+        return True
+
+    def process(self, args = [], exit_on_error = True, print_errors = True):
+        validate = True
+        if not self.load_args(args):
+            validate = False
+
+        if self.args.get(TITLE_HELP):
+            self.hexit(0)
+
+        if validate:
+            self.validate()
+        if self.errors:
+            if print_errors:
+                for e in self.errors:
+                    print_error(e)
+
+            if exit_on_error:
+                exit(1)
+        return not self.errors
+
+    def validate(self):
+        for key in self.raw_args:
+            obj = self.opts_by_label[key]
+            if not obj.has_arg:
+                self.args[obj.label] = True
+            if not obj.multiple:
+                if obj.strict_single and len(self.raw_args[obj.label]) > 1:
+                    self.errors.append("Cannot have multiple %s values." % colour_text(obj.label))
+                else:
+                    value = self.convert_value(self.raw_args[obj.label][-1], obj)
+                    if value is not None:
+                        self.args[obj.label] = value
+            elif obj.multiple:
+                self.args[obj.label] = []
+                for i in self.raw_args[obj.label]:
+                    value = self.convert_value(i, obj)
+                    if value is not None:
+                        self.args[obj.label].append(value)
+            elif self.raw_args[obj.label]:
+                value = self.convert_value(self.raw_args[obj.label][-1], obj)
+                if value is not None:
+                    self.args[obj.label] = value
+        for m in [self.opts_by_label[o].label for o in self.opts_by_label if self.opts_by_label[o].required and o not in self.raw_args]:
+            self.errors.append("Missing %s value." % colour_text(m))
+        for v in self.validators:
+            r = v(self)
+            if r:
+                if isinstance(r, list):
+                    self.errors.extend(r) # Append all list items
+                else:
+                    self.errors.append(r) # Assume that this is a string.
+
+class OptArg:
+
+    opt_type = 0
+
+    def is_flag(self):
+        return self.opt_type in (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)
+
+    def get_printout_help(self, opt):
+
+        desc = self.description or "No description defined"
+
+        if self.is_flag():
+            return "  %s: %s" % (opt, desc)
+        else:
+            return "  %s <%s>: %s" % (opt, self.label, desc)
+
+    def get_printout_usage(self, opt):
+
+        if self.is_flag():
+            s = opt
+        else:
+            s = "%s <%s>" % (opt, self.label)
+        if self.required:
+            return " %s" % s
+        else:
+            return " [%s]" % s
 
 #
 # Script Functions and Variables
 ###
 
 try:
+    from apiclient import discovery
     from oauth2client.file import Storage
     from oauth2client import client
     from oauth2client import tools
-except ImportError:
-    print_error("Problem importing oauth2client modules. To install: pip install --upgrade google-api-python-client")
+except Exception as e:
+    print_error("Problem importing Python modules (%s). Likely solution: pip install --upgrade google-api-python-client" % str(e))
 
 APPLICATION_NAME = 'adeutscher Tool Scripts'
 
@@ -74,7 +344,7 @@ CLIENT_SECRET_PATH = os.environ.get("GOOGLE_SECRET", os.path.join(os.environ.get
 AUTHORIZATION_DIR = os.environ.get("GOOGLE_AUTH_DIR", os.path.join(os.environ.get("HOME"), ".local/tools/google/authorization"))
 
 if not os.path.isfile(CLIENT_SECRET_PATH):
-    print_error("Client secret file not found: %s" % colour_text(COLOUR_GREEN, CLIENT_SECRET_PATH))
+    print_error("Client secret file not found: %s" % colour_text(CLIENT_SECRET_PATH, COLOUR_GREEN))
 
 try:
     import argparse
@@ -82,7 +352,7 @@ try:
 except ImportError:
     flags = None
 
-def get_credentials(tag = None):
+def get_service(service_name, version='v1'):
     """Gets valid user credentials from storage.
 
     If nothing has been stored, or if the stored credentials are invalid,
@@ -95,12 +365,13 @@ def get_credentials(tag = None):
     if not os.path.exists(AUTHORIZATION_DIR):
       os.makedirs(AUTHORIZATION_DIR)
 
+    tag = args[TITLE_TAG]
     if not tag:
-        tag = "default"
+        tag = DEFAULT_TAG
 
     if not re.match(r"^[0-9\-\+_@-Za-z]+$", tag):
-        print_error("Invalid tag: %s" % colour_text(COLOUR_BOLD, tag))
-        return
+        print_error("Invalid tag: %s" % colour_text(tag))
+        exit(2)
 
     credential_path = os.path.join(AUTHORIZATION_DIR, "authorization.%s.json" % tag)
     store = Storage(credential_path)
@@ -112,6 +383,23 @@ def get_credentials(tag = None):
             credentials = tools.run_flow(flow, store, flags)
         else: # Needed only for compatibility with Python 2.6
             credentials = tools.run(flow, store)
-        print_notice('Storing credentials to %s' % colour_text(COLOUR_GREEN, credential_path))
+        print_notice('Storing credentials to %s' % colour_text(credential_path, COLOUR_GREEN))
 
-    return credentials
+    if not credentials:
+        exit(2)
+
+    http = credentials.authorize(httplib2.Http())
+    try:
+        return discovery.build(service_name, version, http=http)
+    except Exception as e:
+        print_exception(e, "Getting %s service" % service_name)
+        exit(2)
+
+# Initialize arguments
+
+DEFAULT_TAG = "default"
+
+TITLE_TAG = "tag"
+
+args = ArgHelper()
+args.add_opt(OPT_TYPE_SHORT, "A", TITLE_TAG, "Specify Google profile tag.", default = DEFAULT_TAG)

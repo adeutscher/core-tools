@@ -51,19 +51,19 @@ Send an e-mail message through GMail.
 
 The script accepts the following arguments:
 
-| Argument                                              | Description                                                                                                                                               |
-|-------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `-a file`, `--attach=file`, `--attachment=file`       | Attach a file to your e-mail message.                                                                                                                     |
-| `-A profile`                                          | Set the profile that you wish to send with (default: `default`). Selecting a profile that does not exist will trigger an authentication flow with Google. |
-| `-b a@b.com`, `--bcc=a@b.com                          | Add an e-mail address to BCC the e-mail message to.                                                                                                       |
-| `-c a@b.com`, `--cc=a@b.com`                          | Add an e-mail address to CC the e-mail message to.                                                                                                        |
-| `-f from-name`, `--from="from-name"`                  | Set a "From" title.                                                                                                                                       |
-| `-h`, `--help`                                        | Print a help menu and exit.                                                                                                                               |
-| `-H`, `--html`                                        | HTML mode. Message content expected to be HTML-formatted.                                                                                                 |
-| `-m "message-content"`, `--message="message-content"` | Set e-mail message content.                                                                                                                               |
-| `-s subject`, `--subject=subject`                     | Set a message subject.                                                                                                                                    |
-| `-t a@b.com`, `--to a@b.com`                          | Set an address to send the e-mail message to.                                                                                                             |
+| Argument                                              | Description                                                                                                                |
+|-------------------- ---|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `-a file`,             | Attach a file to your e-mail message.                                                                                                                     |
+| `-A profile`           | Set the profile that you wish to send with (default: `default`). Selecting a profile that does not exist will trigger an authentication flow with Google. |
+| `-b a@b.com`           | Add an e-mail address to BCC the e-mail message to.                                                                                                       |
+| `-c a@b.com`           | Add an e-mail address to CC the e-mail message to.                                                                                                        |
+| `-f from-name`,        | Set a "From" title.                                                                                                                                       |
+| `-h`, `--help`         | Print a help menu and exit.                                                                                                                               |
+| `-H`, `--html`         | Enable HTML mode. Message content will be expected to be HTML-formatted.                                                                                                 |
+| `-m "message-content"` | Set e-mail message content.                                                                                                                               |
+| `-s subject`           | Set e-mail message subject.                                                                                                                                    |
+| `-t a@b.com`           | Set an address to send the e-mail message to.                                                                                                             |
 
 Other notes:
 
-* At least one recipient must be given. These can be any combination of direct 'to', 'cc', 'bcc'.                                                                                                                            |
+* At least one recipient must be given. Recipients can be any combination of 'to', 'cc', or 'bcc' addresses.

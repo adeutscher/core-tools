@@ -5,7 +5,7 @@ import os, sys
 # Common Colours and Message Functions
 ###
 
-def __print_message(header_colour, header_text, message):
+def _print_message(header_colour, header_text, message):
     print "%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message)
 
 def colour_text(text, colour = None):
@@ -46,7 +46,7 @@ error_count = 0
 def print_error(message):
     global error_count
     error_count += 1
-    __print_message(COLOUR_RED, "Error", message)
+    _print_message(COLOUR_RED, "Error", message)
 
 def print_exception(e, msg=None):
     # Shorthand wrapper to handle an exception.
@@ -57,7 +57,7 @@ def print_exception(e, msg=None):
     print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
 
 def print_notice(message):
-    __print_message(COLOUR_BLUE, "Notice", message)
+    _print_message(COLOUR_BLUE, "Notice", message)
 
 def print_warning(message):
-    __print_message(COLOUR_YELLOW, "Warning", message)
+    _print_message(COLOUR_YELLOW, "Warning", message)

@@ -1,8 +1,7 @@
 #!/usr/bin/python
 
 from __future__ import print_function
-import common,datetime,getopt,httplib2,os,re,sys,time
-from apiclient import discovery
+import common,os,re,sys
 
 ####################################################
 # List calendar events in a format that can be     #
@@ -12,19 +11,12 @@ from apiclient import discovery
 #   pip install --upgrade google-api-python-client #
 ####################################################
 
-def hexit(exit_code=0):
-    print("./list-inbox.py [-h] [-A account] [-c] [-m max_results]")
-    sys.exit(exit_code)
-
-def main(output_format, max_results, tag = None):
-    credentials = common.get_credentials(tag)
-    if not credentials or common.error_count:
-        hexit(1)
-    http = credentials.authorize(httplib2.Http())
-    service = discovery.build('gmail', 'v1', http=http)
+def main():
+    common.args.process(sys.argv)
+    service = common.get_service("gmail")
 
     # TODO: Add a switch for result count, or at least rethink current value.
-    results = service.users().messages().list(userId='me',maxResults=max_results,labelIds=["INBOX"]).execute()
+    results = service.users().messages().list(userId='me',maxResults=common.args[TITLE_MAX],labelIds=["INBOX"]).execute()
     messages = results.get('messages', [])
 
     if not messages:
@@ -40,33 +32,23 @@ def main(output_format, max_results, tag = None):
         for header in fullMessage['payload']['headers']:
             headers[header['name']] = header
 
-        # TODo: Re-work formatting.
-        if output_format == "csv":
+        # TODO: Re-work formatting.
+        if common.args[TITLE_CSV_FORMAT]:
             print("\"%s\",\"%s\",\"%s\"" % (headers['Date']['value'], headers['From']['value'], headers['Subject']['value']))
         else:
             print(headers['From']['value'],":",headers['Subject']['value'])
 
+# Set up arguments
+
+DEFAULT_MAX = 5
+
+TITLE_CSV_FORMAT = "csv"
+TITLE_MAX = "maximum count"
+
+common.args.add_opt(common.OPT_TYPE_SHORT, "m", TITLE_MAX, "Number of results to return (default: %s)." % common.colour_text(DEFAULT_MAX), converter = int, default = 5)
+common.args.add_opt(common.OPT_TYPE_FLAG, "c", TITLE_CSV_FORMAT, "Toggle to display output in a CSV format.")
+
+# Run script
+
 if __name__ == '__main__':
-    max_results = 5
-    output_format = "cli"
-    tag = None
-
-    if len(sys.argv) > 1:
-        try:
-        # Note: Python will not throw a fit if you call for an invalid slice (will simply be empty).
-            opts, args = getopt.getopt(sys.argv[1:],"A:chm:")
-            for opt, arg in opts:
-                if opt in ("-A"):
-                    tag = arg
-                if opt == "-c":
-                    output_format = "csv"
-                elif opt == "-h":
-                    hexit()
-                elif opt == "-m":
-                    max_results = int(arg)
-        except Exception as e:
-            print_error("Argument Parsing Error: %s" % e)
-
-        if common.error_count:
-            hexit(1)
-    main(output_format, max_results, tag)
+    main()

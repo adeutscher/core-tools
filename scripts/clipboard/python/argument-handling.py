@@ -155,7 +155,7 @@ class ArgHelper:
             cli_args = cli_args[1:]
 
         if not cli_args:
-            return
+            return True
 
         try:
             output_options, output_flat_args = getopt.gnu_getopt(cli_args, self._get_opts(), self._get_opts_long())

@@ -484,7 +484,7 @@ def serve(handler, change_directory = False):
     except KeyboardInterrupt:
         # Ctrl-C
         server.kill_requests()
-        exit(130)
+        print ""
     except ssl.SSLError as e:
         m = "Unexpected %s: " % colour_text(type(e).__name__, COLOUR_RED)
         if re.match("^\[SSL\] PEM lib", str(e)):
