@@ -66,13 +66,29 @@ def print_error(message):
     error_count += 1
     _print_message(COLOUR_RED, "Error", message)
 
+local_files = [__file__]
 def print_exception(e, msg=None):
     # Shorthand wrapper to handle an exception.
     # msg: Used to provide more context.
     sub_msg = ""
     if msg:
-        sub_msg = " (%s)" % msg
-    print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
+        sub_msg = "%s, " % msg
+
+    exc_type, exc_obj, exc_tb = sys.exc_info()
+    stack = []
+
+    while exc_tb is not None:
+        fname = exc_tb.tb_frame.f_code.co_filename
+        lineno = exc_tb.tb_lineno
+        stack.append((fname, lineno))
+        exc_tb = exc_tb.tb_next
+
+    # Get the deepest local file.
+    stack.reverse()
+    fname, lineno = next((t for t in stack if t[0] in local_files), (None, 0))
+
+    fname = os.path.split(fname)[1]
+    print_error("Unexpected %s(%s%s, Line %s): %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, colour_text(fname, COLOUR_GREEN), lineno, str(e)))
 
 def print_notice(message):
     _print_message(COLOUR_BLUE, "Notice", message)
@@ -872,10 +888,11 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         if not user_agent_match:
             # At least one match is present
             user_agent = self.headers.getheader("User-Agent")
-            for p in args[TITLE_USER_AGENT]:
-                user_agent_match = re.search(p, user_agent)
-                if user_agent_match:
-                    break # Avoid redundant checks
+            if user_agent:
+                for p in args[TITLE_USER_AGENT]:
+                    user_agent_match = re.search(p, user_agent)
+                    if user_agent_match:
+                        break # Avoid redundant checks
 
         if not user_agent_match or not access.is_allowed(self.client_address[0]):
             self.send_error(403,"Access Denied")
@@ -1160,14 +1177,15 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
         if not self.alive:
             return
 
-        try:
-            req = self.RequestHandlerClass(request, client_address, self)
-            req.rfile._sock.settimeout(args[TITLE_TIMEOUT])
-            self.requests[client_address] = req
+        req = self.RequestHandlerClass(request, client_address, self)
+        req.rfile._sock.settimeout(args[TITLE_TIMEOUT])
+        self.requests[client_address] = req
 
+        try:
             req.run()
         except Exception as e:
-            print_exception(e)
+            print_exception(e, colour_text(client_address[0], COLOUR_GREEN))
+
         del self.requests[client_address]
 
     def kill_requests(self):

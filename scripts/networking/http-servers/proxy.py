@@ -4,6 +4,7 @@ import CoreHttpServer as common
 import cookielib, getopt, re, shutil, sys, urllib2, urlparse
 
 TITLE_TARGET = "proxy target"
+common.local_files.append(__file__)
 
 # Remove unused arguments
 del common.args.opts[common.OPT_TYPE_FLAG]["-P"]
