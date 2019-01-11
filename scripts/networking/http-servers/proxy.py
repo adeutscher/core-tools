@@ -49,7 +49,13 @@ class Proxy(common.CoreHttpServer):
         req_headers["X-Forwarded-For"] = forward_chain
 
         parsed = urlparse.urlsplit(common.args[TITLE_TARGET])
-        req_headers["Host"] = "%s:%d" % (parsed.hostname, parsed.port)
+        port = parsed.port
+        if port is None:
+            port = 80
+            if parsed.scheme == "https":
+                port = 443
+
+        req_headers["Host"] = "%s:%s" % (parsed.hostname, port)
 
         # Construct request
         req = urllib2.Request(url, headers=req_headers)
