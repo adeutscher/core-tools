@@ -66,7 +66,7 @@ def print_error(message):
     error_count += 1
     _print_message(COLOUR_RED, "Error", message)
 
-local_files = [__file__]
+local_files = [re.sub("\.pyc", ".py", __file__)]
 def print_exception(e, msg=None):
     # Shorthand wrapper to handle an exception.
     # msg: Used to provide more context.
@@ -84,8 +84,7 @@ def print_exception(e, msg=None):
         exc_tb = exc_tb.tb_next
 
     # Get the deepest local file.
-    stack.reverse()
-    fname, lineno = next((t for t in stack if t[0] in local_files), (None, 0))
+    fname, lineno = next((t for t in stack if t[0] in local_files), (stack[-1]))
 
     fname = os.path.split(fname)[1]
     print_error("Unexpected %s(%s%s, Line %s): %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, colour_text(fname, COLOUR_GREEN), lineno, str(e)))
@@ -154,8 +153,10 @@ class ArgHelper:
     raw_args = {}
     operands = []
 
-    validators = []
+    operand_text = None
+
     errors = []
+    validators = []
 
     opts = {OPT_TYPE_FLAG: {}, OPT_TYPE_SHORT: {}, OPT_TYPE_LONG: {}, OPT_TYPE_LONG_FLAG: {}}
     opts_by_label = {}
@@ -168,9 +169,19 @@ class ArgHelper:
 
     def __getitem__(self, arg, default = None):
         opt = self.opts_by_label.get(arg)
+
         if opt and opt.multiple:
             default = []
-        return self.args.get(arg, self.defaults.get(arg, default))
+
+        # Silly note: Doing a get() out of a dictionary when the stored
+        #   value of the key is None will not fall back to default
+        value = self.args.get(arg, self.defaults.get(arg))
+        if value is None:
+            return default
+        return value
+
+    def __setitem__(self, key, value):
+        self.args[key] = value
 
     def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, converter=str, multiple = False, strict_single = False):
 
@@ -264,10 +275,15 @@ class ArgHelper:
                 s+= obj.get_printout_usage(f)
                 lines.append(obj.get_printout_help(f))
 
+        if self.operand_text:
+            s += " %s" % self.operand_text
+
         _print_message(COLOUR_PURPLE, "Usage", s)
         for l in lines:
             print l
-        exit(exit_code)
+
+        if exit_code >= 0:
+            exit(exit_code)
 
     def last_operand(self, default = None):
         if not len(self.operands):
@@ -322,8 +338,11 @@ class ArgHelper:
                     print_error(e)
 
             if exit_on_error:
-                exit(1) # Intentionally doing a plain exit() instead of a hexit().
+                exit(1)
         return not self.errors
+
+    def set_operand_help_text(self, text):
+        self.operand_text = text
 
     def validate(self):
         for key in self.raw_args:

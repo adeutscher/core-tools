@@ -160,9 +160,9 @@ for iface in ${interfaces}; do
         printf " (%d routes)" "$(route -n | grep -w "${iface}" | wc -l)"
         if route -n | grep -w "${iface}" | grep -qm1 "^0\.0"; then
             if [ ${gateway_count} -gt 1 ]; then
-                printf "\n  \${color #${colour_network}}Default Gateway \#%d (VPN Redirected)\${color}" "$(route -n | grep "^0\.0" | grep -wn "${iface}" | cut -d':' -f1)"
+                printf "\n  \${color #${colour_network}}Default Gateway \#%d (VPN)\${color}" "$(route -n | grep "^0\.0" | grep -wn "${iface}" | cut -d':' -f1)"
             else
-                printf "\n  \${color #${colour_network}}Default Gateway (VPN Redirected)\${color}"
+                printf "\n  \${color #${colour_network}}Default Gateway (VPN)\${color}"
             fi
         fi
     elif route -n | grep -w "${iface}" | grep -q "^0\.0"; then

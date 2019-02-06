@@ -29,6 +29,9 @@ class ArgHelper:
     args = {}
     defaults = {}
     raw_args = {}
+    operands = []
+
+    operand_text = None
 
     errors = []
     validators = []
@@ -44,9 +47,19 @@ class ArgHelper:
 
     def __getitem__(self, arg, default = None):
         opt = self.opts_by_label.get(arg)
+
         if opt and opt.multiple:
             default = []
-        return self.args.get(arg, self.defaults.get(arg, default))
+
+        # Silly note: Doing a get() out of a dictionary when the stored
+        #   value of the key is None will not fall back to default
+        value = self.args.get(arg, self.defaults.get(arg))
+        if value is None:
+            return default
+        return value
+
+    def __setitem__(self, key, value):
+        self.args[key] = value
 
     def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, converter=str, multiple = False, strict_single = False):
 
@@ -140,10 +153,15 @@ class ArgHelper:
                 s+= obj.get_printout_usage(f)
                 lines.append(obj.get_printout_help(f))
 
+        if self.operand_text:
+            s += " %s" % self.operand_text
+
         _print_message(COLOUR_PURPLE, "Usage", s)
         for l in lines:
             print l
-        exit(exit_code)
+
+        if exit_code >= 0:
+            exit(exit_code)
 
     def last_operand(self, default = None):
         if not len(self.operands):
@@ -158,7 +176,7 @@ class ArgHelper:
             return True
 
         try:
-            output_options, output_flat_args = getopt.gnu_getopt(cli_args, self._get_opts(), self._get_opts_long())
+            output_options, self.operands = getopt.gnu_getopt(cli_args, self._get_opts(), self._get_opts_long())
         except Exception as e:
             self.errors.append("Error parsing arguments: %s" % str(e))
             return False
@@ -186,7 +204,7 @@ class ArgHelper:
         if not self.load_args(args):
             validate = False
 
-        if self.args.get(TITLE_HELP):
+        if self[TITLE_HELP]:
             self.hexit(0)
 
         if validate:
@@ -200,6 +218,9 @@ class ArgHelper:
             if exit_on_error:
                 exit(1)
         return not self.errors
+
+    def set_operand_help_text(self, text):
+        self.operand_text = text
 
     def validate(self):
         for key in self.raw_args:
@@ -269,9 +290,13 @@ o.add_opt(OPT_TYPE_SHORT, "i", "int-multiple", "An example integer that takes mu
 o.add_opt(OPT_TYPE_SHORT, "s", "string-single", "A short arg that insists on a single argument.", strict_single = True)
 o.add_opt(OPT_TYPE_LONG_FLAG, "b", "long-bool", "A long-arg boolean flag.")
 o.add_opt(OPT_TYPE_LONG, "string", "string", "A long arg that accepts a string.")
+o.set_operand_help_text("manual-arg")
+o.hexit(-1)
 o.process(sys.argv)
 
 # Print some example values.
 # ArgHelper's  __getitem__ method will not explode if an unknown key is found, instead trying defaults and then None as a last resort.
 for t in ["int-value", "int-multiple"]:
     print "%s: %s" % (t, o[t])
+
+print "Operands: %s" % ", ".join(o.operands)

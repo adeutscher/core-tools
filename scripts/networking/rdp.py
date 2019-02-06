@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import getopt, getpass, os, re, subprocess, sys
+import getopt, getpass, os, re, subprocess, sys, time
 
 # Defaults
 
@@ -382,19 +382,22 @@ def set_ec2_info():
                 raw_password = password_data.get("PasswordData", "").strip().decode('base64')
 
                 if not raw_password:
-                    print_error("Unable to get encrypted password data from instance matching %s: %s" % (label, colour_text(COLOUR_BOLD, target)))
-                    break
+                    print_error("Unable to get encrypted password data from instance '%s' matching %s: %s" % (colour_text(COLOUR_BOLD, instance_id), label, colour_text(COLOUR_BOLD, target)))
+                    continue
 
                 # Attempt to get password.
                 cipher = get_ec2_cipher()
                 plain_password = cipher.decrypt(raw_password, None)
                 if not plain_password:
-                    print_error("Unable to decode encrypted password data, decryption key is probably be incorrect. File: %s" % colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE]))
-                    break
+                    print_error("Unable to decode encrypted password data from instance '%s', decryption key is probably be incorrect. File: %s" % (colour_text(COLOUR_BOLD, instance_id), colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE])))
+                    continue
+
+                # If we get past this point, then we have successfully obtained a password for the instance.
 
                 args[TITLE_SERVER] = public_ip
                 args[TITLE_PASSWORD] = plain_password
-                # Note: Username is handled by get_user(). Assumed to always be 'administrator' for EC2 connections.
+                # Note: Username is handled by get_user().
+                # Assumed to always be 'administrator' for EC2 connections using a private key.
                 if TITLE_DOMAIN in args:
                     del args[TITLE_DOMAIN]
 
@@ -407,8 +410,15 @@ def set_ec2_info():
         good = False
 
     if not good:
-        print_error("Unable to resolve target to a running EC2 instance: %s" % colour_text(COLOUR_BOLD, target))
+        print_error("Unable to resolve target to a running EC2 instance secured with key file '%s'. Target: %s" % (colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE]), colour_text(COLOUR_BOLD, target)))
         print_notice("The following properties are checked: %s, %s, %s, and %s" % (label_instance_id, label_public_ip, label_public_dns, label_tag_name))
+    else:
+        if label in (label_public_ip, label_public_dns):
+            label_colour = COLOUR_GREEN
+        else:
+            label_colour = COLOUR_BOLD
+
+        print_notice("Resolved target %s '%s' to EC2 instance '%s'." % (label, colour_text(label_colour, target), colour_text(COLOUR_BOLD, instance_id)))
 
     return good
 
@@ -421,6 +431,41 @@ def set_var(values, title, value, colour=COLOUR_BOLD, reportOverwrite=True):
         else:
             print_warning("More than one %s specified in arguments. Using latest value." % colour_text(COLOUR_BOLD, title))
     values[title] = value
+
+def translate_seconds(duration, add_and = False):
+    modules = [("seconds", 60, None), ("minutes",60,None), ("hours",24,None), ("days",7,None), ("weeks",52,None), ("years",100,None), ("centuries",100,"century")]
+    num = int(duration)
+    i = -1
+    c = -1
+
+    times = []
+    while i < len(modules) - 1:
+        i += 1
+
+        value = modules[i][1]
+        mod_value = num % value
+        num = num / modules[i][1]
+
+        noun = modules[i][0]
+        if mod_value == 1:
+            if modules[i][2]:
+                noun = modules[i][2]
+            else:
+                noun = re.sub("s$", "", noun)
+
+        if mod_value:
+            times.append("%s %s" % (mod_value, noun))
+
+    if len(times) == 1:
+        return " ".join(times)
+    elif len(times) == 2:
+        return ", ".join(reversed(times))
+    else:
+        # Oxford comma
+        d = ", and "
+        s = d.join(reversed(times))
+        sl = s.split(d, len(times) - 2)
+        return ", ".join(sl)
 
 def validate_args(args):
     all_clear = True
@@ -512,6 +557,8 @@ if __name__ == "__main__":
     if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
         print_notice("Command: %s" % " ".join(command))
 
+    time_start = time.time()
+
     try:
         p = subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr)
 
@@ -527,10 +574,21 @@ if __name__ == "__main__":
 
         # Run until the process ends.
         p.communicate()
-        exit(p.returncode)
+        exit_code = p.returncode
     except KeyboardInterrupt:
         p.kill()
-        exit(130)
+        exit_code = 130
     except OSError as e:
         print_error("OSError: %s" % e)
-        exit(1)
+        exit_code = 1
+
+    time_end = time.time()
+    time_diff = time_end - time_start
+
+    if (time_diff) > 60:
+        # Print a summary of time for any session duration over a minute
+        #  (this amount of time implies a connection that didn't just
+        #   die with xfreerdp timing out when trying to connect)
+        print_notice("RDP Session Duration: %s" % colour_text(COLOUR_BOLD, translate_seconds(time_diff)))
+
+    exit(exit_code)

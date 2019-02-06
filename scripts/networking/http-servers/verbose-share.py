@@ -6,7 +6,7 @@
 
 import getopt, os, socket, sys, urllib
 import CoreHttpServer as common
-common.local_files.append(__file__)
+common.local_files.append(os.path.realpath(__file__))
 
 # Specific to browser sharer
 

@@ -45,7 +45,7 @@ wait_for_pids(){
       current="$((${current}+1))"
       (( "${COMPLETED[${current}]:-0}" )) && continue
       if ! pid_exists "${PIDS[${current}]}"; then
-        notice "$(printf "PID Complete: ${BOLD}%s${NC}" "${PIDS[${current}]}")"
+        notice "$(printf "PID Complete: ${BOLD}%s${NC}: %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
         complete="$((${complete}+1))"
         COMPLETED[${current}]=1
       fi
@@ -137,7 +137,8 @@ fi
 current=0
 while [ "${current}" -lt "${COUNT}" ]; do
   current="$((${current}+1))"
-  notice "$(printf "Waiting for PID: ${BOLD}%s${NC}" "${PIDS[${current}]}")"
+  COMMANDS[${current}]="$(ps -eo cmd -q "${PIDS[${current}]}" | tail -n1)"
+  notice "$(printf "Waiting for PID: ${BOLD}%s${NC}: %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
 done
 
 # Announce Options
