@@ -145,7 +145,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         if os.path.exists(path):
             # Symbolic link judgement.
             # Paths with denied symbolic links will pretend to be 404 errors.
-            if common.args[TITLE_LOCAL_LINKS] and not os.path.realpath(path).startswith(os.getcwd() + "/"):
+            if common.args[TITLE_LOCAL_LINKS] and not ("%s/" % os.path.realpath(path)).startswith(os.getcwd() + "/"):
                 return self.send_error(404, "File not found")
             elif common.args[TITLE_NO_LINKS]:
                 # If all symbolic links are banned, then we must trace our
