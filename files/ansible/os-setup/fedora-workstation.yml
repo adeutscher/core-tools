@@ -149,6 +149,7 @@
           - coreutils
           - unzip
           - zip
+          - fuse-exfat
 
       - name: install/update the 'development-tools' package group
         become: yes

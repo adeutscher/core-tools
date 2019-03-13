@@ -360,7 +360,12 @@ except Exception as e:
 APPLICATION_NAME = 'adeutscher Tool Scripts'
 
 # If modifying these scopes, delete your previously saved client credentials.
-SCOPES = ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send']
+SCOPES = [
+    'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/spreadsheets.readonly'
+]
 
 CLIENT_SECRET_PATH = os.environ.get("GOOGLE_SECRET", os.path.join(os.environ.get("HOME"), ".local/tools/google/client_secret.json"))
 AUTHORIZATION_DIR = os.environ.get("GOOGLE_AUTH_DIR", os.path.join(os.environ.get("HOME"), ".local/tools/google/authorization"))
@@ -398,7 +403,13 @@ def get_service(service_name, version='v1'):
     credential_path = os.path.join(AUTHORIZATION_DIR, "authorization.%s.json" % tag)
     store = Storage(credential_path)
     credentials = store.get()
-    if not credentials or credentials.invalid:
+    missing_scopes = False
+    for s in SCOPES:
+        if s not in credentials.scopes:
+            print_warning("Credentials for '%s' profile are missing '%s' scope and must be updated." % (tag, s))
+            missing_scopes = True
+
+    if not credentials or credentials.invalid or missing_scopes:
         flow = client.flow_from_clientsecrets(CLIENT_SECRET_PATH, SCOPES)
         flow.user_agent = APPLICATION_NAME
         if flags:
