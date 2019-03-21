@@ -4,6 +4,14 @@
 - hosts: "{{ variable_host | default('all') }}"
   # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
 
+  vars:
+
+    raspbian_packages:
+      - tmux
+      - vim
+      - git
+      - subversion
+
   remote_user: pi
 
   tasks:
@@ -13,9 +21,5 @@
 
     - name: install packages
       become: yes
-      apt: name="{{ item }}" state="present"
-      with_items:
-        - tmux
-        - vim
-        - git
-        - subversion
+      apt: name="{{ raspbian_packages }}" state="present"
+

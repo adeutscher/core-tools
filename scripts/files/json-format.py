@@ -15,7 +15,7 @@ code = 0
 for path in sys.argv[1:]:
     try:
         with open(path, 'r') as f:
-            print json.dumps(json.loads(f.read()), indent=4)
+            print json.dumps(json.loads(f.read()), indent=2)
     except Exception as e:
         err("Problem reading from '%s': %s" % (path, str(e)))
         code = 1

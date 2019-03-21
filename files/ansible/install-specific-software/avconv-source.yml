@@ -21,8 +21,7 @@
     - name: install dependencies (dnf)
       become: yes
       when: ansible_pkg_mgr == "dnf"
-      dnf: name="{{ item }}" state="latest"
-      with_items: "{{ packages_redhat }}"
+      dnf: name="{{ packages_redhat }}" state="latest"
 
     - name: get libav
       git:

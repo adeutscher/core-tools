@@ -10,7 +10,7 @@
 ############################################################################
 
 from __future__ import print_function
-import common,contextlib,csv,itertools,os,sys,csv
+import common,contextlib,csv,itertools,os,re,sys
 
 def itersheets(service, id):
 
@@ -45,11 +45,18 @@ def write_csv(service, fd, rows, encoding='utf-8', dialect='excel'):
         csvfile.writerow([c.encode(encoding) for c in r])
 
 def export_csv(service, docid, filename_template='%(title)s - %(sheet)s.csv'):
+
     error_count = common.error_count # Note original error count
+
+    if docid and re.match("^https://docs.google.com/spreadsheets/d/", docid, re.IGNORECASE):
+        docid = docid.split("/")[5]
+
     try:
         for (doc, sheet), rows in itersheets(service, docid):
-            filename = os.path.join(common.args[TITLE_DIR], common.args[TITLE_PREFIX] + filename_template % {'title': doc, 'sheet': sheet})
-            with open(filename, 'wb') as fd:
+            file_name = filename_template % {'title': doc, 'sheet': sheet}
+            file_path = os.path.join(common.args[TITLE_DIR], common.args[TITLE_PREFIX], file_name)
+            common.print_notice("Saving \"%s\" sheet to file: %s" % (common.colour_text(sheet), common.colour_text(file_name, common.COLOUR_GREEN)))
+            with open(file_name, 'wb') as fd:
                 write_csv(service, fd, rows)
     except Exception as e:
         common.print_exception(e)

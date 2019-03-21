@@ -55,12 +55,10 @@
     block:
 
       - name: "install system packages (CentOS)"
-        yum: name="{{ item }}" state="latest"
-        with_items: "{{ system_packages_centos }}"
+        yum: name="{{ system_packages_centos }}" state="latest"
 
       - name: "install preferred packages (CentOS)"
-        yum: name="{{ item }}" state="latest"
-        with_items: "{{ preferred_packages }}"
+        yum: name="{{ preferred_packages }}" state="latest"
 
   - name: Fedora packages
     become: yes
@@ -68,12 +66,10 @@
     block:
 
       - name: "install system packages (Fedora)"
-        dnf: name="{{ item }}" state="latest"
-        with_items: "{{ system_packages_fedora }}"
+        dnf: name="{{ system_packages_fedora }}" state="latest"
 
       - name: "install preferred packages (Fedora)"
-        dnf: name="{{ item }}" state="latest"
-        with_items: "{{ preferred_packages }}"
+        dnf: name="{{ preferred_packages }}" state="latest"
 
   - name: Other RedHat Items
     when: (ansible_os_family == "RedHat")
