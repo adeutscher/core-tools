@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import CoreHttpServer as common
-import cookielib, getopt, re, shutil, sys, urllib2, urlparse
+import cookielib, getopt, os, re, shutil, sys, urllib2, urlparse
 
 TITLE_TARGET = "proxy target"
 common.local_files.append(os.path.realpath(__file__))
