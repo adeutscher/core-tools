@@ -84,7 +84,10 @@ def print_exception(e, msg=None):
         exc_tb = exc_tb.tb_next
 
     # Get the deepest local file.
+    stack.reverse()
     fname, lineno = next((t for t in stack if t[0] in local_files), (stack[-1]))
+
+    print stack
 
     fname = os.path.split(fname)[1]
     print_error("Unexpected %s(%s%s, Line %s): %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, colour_text(fname, COLOUR_GREEN), lineno, str(e)))
@@ -557,6 +560,9 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
     # (Kludgy) responses to specific problems without overriding an entire method.
     log_on_send_error = False
 
+    path = None
+    headers = None
+
     error_message_format = DEFAULT_ERROR_MESSAGE
 
     def __init__(self, request, client_address, server):
@@ -786,7 +792,9 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # Trust this value as the true client address if it regexes to an IPv4 address.
         proxy_src = None
         proxy_steps = []
-        forward_spec = self.headers.getheader("X-Forwarded-For", "").strip()
+        forward_spec = None
+        if self.headers:
+            forward_spec = self.headers.getheader("X-Forwarded-For", "").strip()
 
         if forward_spec:
             forward_components = [c.strip() for c in forward_spec.split(",")]
@@ -796,8 +804,9 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                 proxy_steps = forward_components
         else:
             # As a fallback, try the 'Forwarded' header put forward by RFC 7239.
-            forward_spec = self.headers.getheader("Forwarded", "").strip()
+
             try:
+                forward_spec = self.headers.getheader("Forwarded", "").strip()
                 forward_addr = forward_spec.split(";")[2].split("=")[1]
                 if forward_addr and re.match(REGEX_INET4, forward_addr):
                     proxy_src = forward_addr
