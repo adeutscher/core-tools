@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# A quick and dirty 'format JSON' button.
+# A quick and dirty 'minify JSON' button.
 
 import json, os, sys
 
@@ -8,7 +8,7 @@ def err(msg):
     print >> sys.stderr, msg
 
 def process(s):
-    print json.dumps(json.loads(s.read()), indent=2)
+    print json.dumps(json.loads(s.read()), separators=(',', ':'))
 
 if __name__ == "__main__":
     if len(sys.argv) <= 1:
@@ -16,6 +16,7 @@ if __name__ == "__main__":
         exit(1)
 
     code = 0
+
     # Strictly speaking you wouldn't often want to process multiple files
     #   with this script since the resulting file would
     #   not be JSON-parseable itself.
