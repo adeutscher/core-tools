@@ -48,12 +48,15 @@ class ArgHelper:
     def __getitem__(self, arg, default = None):
         opt = self.opts_by_label.get(arg)
 
-        if opt and opt.multiple:
+        if not opt:
+            return None
+        if opt.multiple:
             default = []
 
         # Silly note: Doing a get() out of a dictionary when the stored
         #   value of the key is None will not fall back to default
-        value = self.args.get(arg, self.defaults.get(arg))
+        value = self.args.get(arg, os.environ.get(opt.environment, self.defaults.get(arg)))
+
         if value is None:
             return default
         return value
@@ -61,7 +64,7 @@ class ArgHelper:
     def __setitem__(self, key, value):
         self.args[key] = value
 
-    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, converter=str, multiple = False, strict_single = False):
+    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, default_colour = None, default_announce = False, environment = None, converter=str, multiple = False, strict_single = False):
 
         if opt_type not in self.opts:
             raise Exception("Bad option type: %s" % opt_type)
@@ -89,7 +92,7 @@ class ArgHelper:
             if opt_type & MASK_OPT_TYPE_LONG == g & MASK_OPT_TYPE_LONG and arg in self.opts[g]:
                 raise Exception("Flag already defined: %s" % label)
         if label in self.opts_by_label:
-            raise Exception("Duplicate label (new: %s%s): %s" % (arg, label))
+            raise Exception("Duplicate label (new: %s): %s" % (arg, label))
         if multiple and strict_single:
             raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
         # These do not cover harmless checks on arg modifiers with flag values.
@@ -99,6 +102,9 @@ class ArgHelper:
         obj.label = label
         obj.required = required and opt_type & MASK_OPT_TYPE_ARG
         obj.default = default
+        obj.default_colour = default_colour
+        obj.default_announce = default_announce
+        obj.environment = environment
         obj.multiple = multiple
         obj.description = description
         obj.converter = converter
@@ -266,9 +272,18 @@ class OptArg:
         desc = self.description or "No description defined"
 
         if self.is_flag():
-            return "  %s: %s" % (opt, desc)
+            s = "  %s: %s" % (opt, desc)
         else:
-            return "  %s <%s>: %s" % (opt, self.label, desc)
+            s = "  %s <%s>: %s" % (opt, self.label, desc)
+
+        if self.environment:
+            s += " (Environment Variable: %s)" % colour_text(self.environment)
+
+        if self.default_announce:
+            # Manually going to defaults table allows this core module
+            # to have its help display reflect retroactive changes to defaults.
+            s += " (Default: %s)" % colour_text(args.defaults.get(self.label), self.default_colour)
+        return s
 
     def get_printout_usage(self, opt):
 
@@ -281,22 +296,31 @@ class OptArg:
         else:
             return " [%s]" % s
 
+# Barebones replacement for message functions so that the below examples do not explode.
+# Do not include in an actual script.
+COLOUR_PURPLE = "placeholder"
+def colour_text(m, c):
+    return m
+def _print_message(c, h, m):
+    print "[%s] %s" % (h, m)
+
 # This is an example implementation.
 # See the add_opt and process methods for a listing of arguments.
-o = ArgHelper()
-o.add_opt(OPT_TYPE_SHORT, "a", "int-value", "An example integer that takes an argument.", converter=int, default = 0)
-o.add_opt(OPT_TYPE_FLAG, "b", "bool", "A boolean flag.")
-o.add_opt(OPT_TYPE_SHORT, "i", "int-multiple", "An example integer that takes multiple values.", converter=int, multiple = True)
-o.add_opt(OPT_TYPE_SHORT, "s", "string-single", "A short arg that insists on a single argument.", strict_single = True)
-o.add_opt(OPT_TYPE_LONG_FLAG, "b", "long-bool", "A long-arg boolean flag.")
-o.add_opt(OPT_TYPE_LONG, "string", "string", "A long arg that accepts a string.")
-o.set_operand_help_text("manual-arg")
-o.hexit(-1)
-o.process(sys.argv)
+args = ArgHelper()
+args.add_opt(OPT_TYPE_SHORT, "a", "int-value", "An example integer that takes an argument.", converter=int, default = 0)
+args.add_opt(OPT_TYPE_FLAG, "b", "bool", "A boolean flag.")
+args.add_opt(OPT_TYPE_SHORT, "i", "int-multiple", "An example integer that takes multiple values.", converter=int, multiple = True)
+args.add_opt(OPT_TYPE_SHORT, "s", "string-single", "A short arg that insists on a single argument.", strict_single = True)
+args.add_opt(OPT_TYPE_LONG_FLAG, "b", "long-bool", "A long-arg boolean flag.")
+args.add_opt(OPT_TYPE_LONG, "string", "string", "A long arg that accepts a string.")
+args.add_opt(OPT_TYPE_LONG, "default", "int-value-long", "An long-arg integer that takes an argument (with an announced default)", converter=int, default = 5, default_announce = True)
+args.set_operand_help_text("manual-arg")
+args.hexit(-1)
+args.process(sys.argv)
 
 # Print some example values.
 # ArgHelper's  __getitem__ method will not explode if an unknown key is found, instead trying defaults and then None as a last resort.
-for t in ["int-value", "int-multiple"]:
-    print "%s: %s" % (t, o[t])
+for t in ["int-value", "int-multiple", "int-value-long"]:
+    print "%s: %s" % (t, args[t])
 
-print "Operands: %s" % ", ".join(o.operands)
+print "Operands: %s" % ", ".join(args.operands)

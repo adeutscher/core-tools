@@ -84,10 +84,7 @@ def print_exception(e, msg=None):
         exc_tb = exc_tb.tb_next
 
     # Get the deepest local file.
-    stack.reverse()
-    fname, lineno = next((t for t in stack if t[0] in local_files), (stack[-1]))
-
-    print stack
+    fname, lineno = next((t for t in reversed(stack) if os.path.realpath(t[0]) in local_files), (stack[-1]))
 
     fname = os.path.split(fname)[1]
     print_error("Unexpected %s(%s%s, Line %s): %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, colour_text(fname, COLOUR_GREEN), lineno, str(e)))
@@ -979,18 +976,24 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             message = short
         explain = long
         self.log_error("code %d, message %s", code, message)
+
         # using _quote_html to prevent Cross Site Scripting attacks (see bug #1100201)
         content = (self.error_message_format % {'code': code, 'message': self.quote_html(message), 'explain': explain})
-        self.send_response(code, self.path)
-        self.send_header("Content-Type", self.error_content_type)
-        self.send_header('Connection', 'close')
-        if code == 401:
-            self.send_header('WWW-Authenticate', 'Basic realm="%s"' % message)
-        self.end_headers()
-        if self.command != 'HEAD' and code >= 200 and code not in (204, 304):
-            self.wfile.write(content)
+        try:
+            self.send_response(code, self.path)
+            self.send_header("Content-Type", self.error_content_type)
+            self.send_header('Connection', 'close')
+            if code == 401:
+                self.send_header('WWW-Authenticate', 'Basic realm="%s"' % message)
+            self.end_headers()
+            if self.command != 'HEAD' and code >= 200 and code not in (204, 304):
+                self.wfile.write(content)
+        except:
+            # Don't shed too many tears for an error that fails
+            #   to send. The connection is about to be closed anyways.
+            pass
         if self.log_on_send_error:
-            self.log_message('"%s" %s %s', self.requestline, code, None)
+            self.log_message('"%s" %s %s', self.requestline, code, message)
 
     def send_redirect(self, target):
         # redirect browser - doing basically what apache does

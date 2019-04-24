@@ -1,17 +1,48 @@
+# Create Bare Reponsitory
+
+To create a new 'bare' repo meant only for cloning from:
+
+    git init --bare [directory]
+
+# Remote Access to Clones
+
+`git` being `git`, it is possible to host a repository in any location
+    that you can access over SSH. You can even clone from another clone
+    on another machine.
+
+However, by default you may not push up to the clone. Because the clone
+    is a non-bare repository, access must be allowed:
+
+* From the root of the remote clone that you wish to be able to push to,
+    open `.git/config` for editing.
+* Under the `[receive]` header, add `denyCurrentBranch = warn`.
+   You may alternately specify 'ignore' instead of 'warm'
+
+Pushing to a non-bare repo makes the checked out version on the server look a bit strange.
+In order to get the latest version (assuming that your current directory contains all changed files):
+```bash
+git reset HEAD
+git checkout .
+```
 
 # Squashing Branches
 
-Front-end conveniences such as GitLab or GitHub offer the option to
-  conveniently squash branches that are the subjects of pull requests
-  so that development trial-and-error commits don't clutter up the
-  commit log of a project's main branch (and possibly to keep sensitive
-  data accidentally commited to a development branch don't end up in the
-  history of the min branch).
+Front-end services such as GitLab or GitHub offer the option to
+  conveniently squash branches that are the subjects of pull requests.
+  This has a few benefits, such as:
 
-As handy as these services are, it seems like a useful thing to note how
-  to do manually in case it ever comes up. After learning how to do this,
-  the technique was much simpler than I thought. However, like other
-  reminders I'm still documenting it here in case I forget in the future.
+* Prevents trial-and-error, end-of-session-checkpoint, or immediate-hindsight commits
+    from cluttering the main branch.
+* Could potentially keep sensitive data information that was accidentally committed
+    to a development branch out of the main branch's history.
+* In tools such as GitLab, GitHub, or similar, this allows the main branch to be locked down
+    in order for enforce code review or continuous integration via pull requests.
+    This is especially useful for multi-user projects, but could be set up
+    for single-user projects as well.
+
+As handy as these services are, squashing branches seems like a useful thing to note how
+  to do manually. After learning how to do this, the technique was much simpler than I thought.
+  However, like other reminders I'm still documenting it here in case I forget in the future.
 
 For example, say we had the following situation:
 

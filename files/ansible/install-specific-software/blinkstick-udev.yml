@@ -1,0 +1,22 @@
+---
+
+- hosts: all
+
+  vars:
+
+    src: "../../../files/etc/udev/rules.d/85-blinkstick.rules"
+    dest: "/etc/udev/rules.d/85-blinkstick.rules"
+
+  tasks:
+    - name: Copy Blinkstick udev file
+      become: yes
+      copy:
+        src: "{{ src }}"
+        dest: "{{ dest }}"
+      notify: Reboot Warning
+
+  handlers:
+
+    - name: Reboot Warning
+      debug:
+        msg: To make use of an updated udev rule, the machine must be restarted.
