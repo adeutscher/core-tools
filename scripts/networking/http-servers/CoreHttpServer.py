@@ -535,8 +535,7 @@ def serve(handler, change_directory = False):
         exit(1)
 
 # Default error message template
-DEFAULT_ERROR_MESSAGE = """
-<html>
+DEFAULT_ERROR_MESSAGE = """<html>
     <head>
         <title>Error Response: %(code)d</title>
     </head>
@@ -549,6 +548,9 @@ DEFAULT_ERROR_MESSAGE = """
 </html>
 """
 
+ATTR_PATH = 'path'
+ATTR_HEADERS = 'headers'
+
 class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
     server_version = "CoreHttpServer"
@@ -556,9 +558,6 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
     # (Kludgy) responses to specific problems without overriding an entire method.
     log_on_send_error = False
-
-    path = None
-    headers = None
 
     error_message_format = DEFAULT_ERROR_MESSAGE
 
@@ -572,38 +571,28 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # Check for authorization (by default with the Authorization header),
         #  then pass to check_credentials to confirm them against a password back-end.
 
-        if not self.check_authorization_required():
+        if not TITLE_USER in args or TITLE_PASSWORD in args:
             return True
 
         verbose = args[TITLE_VERBOSE]
 
-        raw_creds = self.headers.getheader("Authorization", "").split()
+        raw_creds = getattr(self, ATTR_HEADERS, {}).get("Authorization", "").split()
         if not raw_creds or len(raw_creds) < 2:
             return False
 
         # Decode
-        creds_list = []
         try:
             creds_list = base64.b64decode(raw_creds[1]).split(":")
         except TypeError:
-            pass
+            return False
 
         if len(creds_list) < 2:
             # Creds message invalid, too few fields within.
             return False
 
-        # User and password from the user.
-        user = creds_list[0]
-        password = ":".join(creds_list[1:])
-        return self.check_credentials(user, password)
-
-    def check_authorization_required(self):
-        return TITLE_USER in args or TITLE_PASSWORD in args
-
-    def check_credentials(self, user, password):
-        wanted_user = args[TITLE_USER]
-        wanted_password = args[TITLE_PASSWORD]
-        return wanted_user == user and wanted_password == password
+        # Check username/password from the user.
+        self.user = creds_list[0]
+        return self.user == args[TITLE_USER] and ":".join(creds_list[1:]) == args[TITLE_PASSWORD]
 
     def copyobj(self, src, dst):
         while self.alive:
@@ -633,16 +622,6 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         if self.command == "POST" and args[TITLE_POST]:
             command = "GET"
         return command
-
-    def get_header_dict(self, header_str):
-        d = {}
-        for l in str(header_str).split("\r\n"):
-            if not l:
-                continue
-            items = l.split(":")
-            if items[1:]:
-                d[items[0]] = ":".join(items[1:]).strip()
-        return d
 
     def guess_type(self, path):
         """Guess the type of a file.
@@ -758,6 +737,10 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         elif response_code == 502:
             extra_info = '[%s]' % colour_text("Bad Gateway", COLOUR_RED)
 
+        user = getattr(self, 'user', None)
+        if user:
+            extra_info = "[User: %s]%s" % (colour_text(user), extra_info)
+
         # Does address string match the client address? If not, print both.
         s = self.address_string()
         footer = ""
@@ -773,7 +756,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             values = (" ".join([request_items[0], colour_text(request_items[1], COLOUR_GREEN), request_items[2]]), values[1], values[2])
 
             if args[TITLE_VERBOSE]:
-                user_agent = self.headers.getheader("User-Agent")
+                user_agent = self.headers.get("User-Agent")
                 if user_agent:
                     footer=" (User Agent: %s)" % colour_text(user_agent.strip())
 
@@ -789,9 +772,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # Trust this value as the true client address if it regexes to an IPv4 address.
         proxy_src = None
         proxy_steps = []
-        forward_spec = None
-        if self.headers:
-            forward_spec = self.headers.getheader("X-Forwarded-For", "").strip()
+        forward_spec = getattr(self, ATTR_HEADERS, {}).get("X-Forwarded-For", "").strip()
 
         if forward_spec:
             forward_components = [c.strip() for c in forward_spec.split(",")]
@@ -803,7 +784,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             # As a fallback, try the 'Forwarded' header put forward by RFC 7239.
 
             try:
-                forward_spec = self.headers.getheader("Forwarded", "").strip()
+                forward_spec = getattr(self, ATTR_HEADERS, {}).get("Forwarded", "").strip()
                 forward_addr = forward_spec.split(";")[2].split("=")[1]
                 if forward_addr and re.match(REGEX_INET4, forward_addr):
                     proxy_src = forward_addr
@@ -853,7 +834,6 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         requestline = self.raw_requestline
         requestline = requestline.rstrip('\r\n')
         self.requestline = requestline
-        self.headers_dict = {}
         words = requestline.split()
 
         if len(words) == 3:
@@ -904,15 +884,20 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         self.command, self.path, self.request_version = command, path, version
 
         # Examine the headers and look for a Connection directive
-        self.headers = self.MessageClass(self.rfile, 0)
-        # I was not able to successfully use the MIMEMessage object, so parsing it into a dictionary instead.
-        self.headers_dict = self.get_header_dict(self.headers)
+        # Parsing into a dictionary for simplicity.
+        self.headers = {}
+        for l in str(self.MessageClass(self.rfile, 0)).split("\r\n"):
+            if not l:
+                continue
+            items = l.split(":")
+            if items[1:]:
+                self.headers[items[0]] = ":".join(items[1:]).strip()
 
         # Access control checks
         user_agent_match = not args[TITLE_USER_AGENT]
         if not user_agent_match:
             # At least one match is present
-            user_agent = self.headers.getheader("User-Agent")
+            user_agent = self.headers.get("User-Agent")
             if user_agent:
                 for p in args[TITLE_USER_AGENT]:
                     user_agent_match = re.search(p, user_agent)
@@ -923,7 +908,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_error(403,"Access Denied")
             return False
 
-        conntype = self.headers.get('Connection', "")
+        conntype = self.headers.get('Connection', '')
         if conntype.lower() == 'close':
             self.close_connection = 1
         elif (conntype.lower() == 'keep-alive' and
@@ -980,7 +965,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # using _quote_html to prevent Cross Site Scripting attacks (see bug #1100201)
         content = (self.error_message_format % {'code': code, 'message': self.quote_html(message), 'explain': explain})
         try:
-            self.send_response(code, self.path)
+            self.send_response(code, getattr(self, ATTR_HEADERS, None))
             self.send_header("Content-Type", self.error_content_type)
             self.send_header('Connection', 'close')
             if code == 401:
