@@ -29,25 +29,27 @@ class Proxy(common.CoreHttpServer):
     def do_PROXY(self):
         url = "%s%s" % (common.args[TITLE_TARGET], self.path)
 
+        # Set headers locally for convenient short-hand.
+        headers = getattr(self, common.ATTR_HEADERS, common.CaselessDict())
         # Copy request headers.
-        req_headers = dict(self.headers_dict)
+        req_headers = common.CaselessDict(headers)
 
         # The X-Forwarded-Host (XFH) header is a de-facto standard header for identifying the
         #   original host requested by the client in the Host HTTP request header.
-        host = self.headers.getheader("host", None)
-        if host:
-            req_headers["X-Forwarded-Host"] = host
+        if req_headers["host"]:
+            req_headers["X-Forwarded-Host"] = req_headers["host"]
         proto = "http"
         if common.args.get(common.TITLE_SSL_CERT):
             proto = "https"
         req_headers["X-Forwarded-Proto"] = proto
 
-        forward_chain = self.headers.getheader("X-Forwarded-For", "")
+        forward_chain = headers.get("X-Forwarded-For")
         if forward_chain:
             forward_chain += ", "
         forward_chain += self.client_address[0]
         req_headers["X-Forwarded-For"] = forward_chain
 
+        # Todo: Do this just once in some initialization instead.
         parsed = urlparse.urlsplit(common.args[TITLE_TARGET])
         port = parsed.port
         if port is None:
@@ -59,7 +61,7 @@ class Proxy(common.CoreHttpServer):
 
         # Construct request
         req = urllib2.Request(url, headers=req_headers)
-        req.get_method = lambda: self.command
+        req.get_method = lambda: getattr(self, common.ATTR_COMMAND, "GET")
 
         data = None
         try:
@@ -74,7 +76,7 @@ class Proxy(common.CoreHttpServer):
 
                 # Use the content-length header, though being user-defined input it's not really trustworthy.
                 # Someone fudging this data is the main reason for my worrying over a timeout value.
-                l = int(self.headers.getheader('content-length', 0))
+                l = int(self.headers.get('content-length', 0))
 
                 if l < 0:
                     # Parsed properly, but some joker put in a negative number.
@@ -83,7 +85,7 @@ class Proxy(common.CoreHttpServer):
                     data = self.rfile.read(l)
             # Intentionally not bothering to catch socket.timeout exception. Let it bubble up.
         except ValueError:
-            return self.send_error(500, "Illegal content-length header value: %s" % self.headers.getheader('content-length'))
+            return self.send_error(500, "Illegal content-length header value: %s" % self.headers.get('content-length', 0))
 
         if data:
             req.add_data(data)
@@ -97,17 +99,19 @@ class Proxy(common.CoreHttpServer):
         except urllib2.URLError as e:
             return self.send_error(502, "Error relaying request.")
 
-        # TODO: This is the place to modify headers before they're written.
+        # TODO: This is the place to modify response headers in the resp_headers dictionary before
+        #       they're written back to the client.
+        #       At this time, I can't think of any that need re-writing, though.
 
-        if self.request_version != 'HTTP/0.9':
-            self.wfile.write("%s %s %s\r\n" % (self.protocol_version, code, self.path))
+        if getattr(self, common.ATTR_REQUEST_VERSION, self.default_request_version) != 'HTTP/0.9':
+            self.wfile.write("%s %s %s\r\n" % (self.protocol_version, code, getattr(self,common.ATTR_PATH, "/")))
         for key in resp_headers:
             # Write response headers
             if resp_headers[key]:
                 self.send_header(key, resp_headers[key])
         self.end_headers()
 
-        self.log_message('"%s" %s %s', self.requestline, code, None)
+        self.log_message('"%s" %s %s', getattr(self, common.ATTR_REQUEST_LINE, ""), code, None)
         self.copyobj(resp, self.wfile)
 
     def get_command(self):

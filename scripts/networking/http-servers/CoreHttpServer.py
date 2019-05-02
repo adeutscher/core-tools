@@ -548,8 +548,12 @@ DEFAULT_ERROR_MESSAGE = """<html>
 </html>
 """
 
+ATTR_REQUEST_LINE = 'requestline'
+ATTR_REQUEST_VERSION = 'request_version'
+ATTR_RAW_RLINE = 'raw_requestline'
 ATTR_PATH = 'path'
 ATTR_HEADERS = 'headers'
+ATTR_COMMAND = 'command'
 
 class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
@@ -576,7 +580,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
         verbose = args[TITLE_VERBOSE]
 
-        raw_creds = getattr(self, ATTR_HEADERS, {}).get("Authorization", "").split()
+        raw_creds = getattr(self, ATTR_HEADERS, CaselessDict()).get("Authorization").split()
         if not raw_creds or len(raw_creds) < 2:
             return False
 
@@ -618,10 +622,20 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         })
 
     def get_command(self):
-        command = self.command
-        if self.command == "POST" and args[TITLE_POST]:
+        command = getattr(self, ATTR_COMMAND, "GET")
+        if command.upper() == "POST" and args[TITLE_POST]:
             command = "GET"
         return command
+
+    def get_header_dict(self, src):
+        d = CaselessDict()
+        for l in str(src).split("\r\n"):
+            if not l:
+                continue
+            items = l.split(":")
+            if items[1:]:
+                d[items[0]] = ":".join(items[1:]).strip()
+        return d
 
     def guess_type(self, path):
         """Guess the type of a file.
@@ -637,11 +651,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         base, ext = posixpath.splitext(path)
         if ext in self.extensions_map:
             return self.extensions_map[ext]
-        ext = ext.lower()
-        if ext in self.extensions_map:
-            return self.extensions_map[ext]
-        else:
-            return self.extensions_map['']
+        return self.extensions_map.get(ext.lower(), '')
 
     def handle_one_request(self):
         """Handle a single HTTP request.
@@ -656,11 +666,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         try:
             self.raw_requestline = self.rfile.readline(65537)
             if len(self.raw_requestline) > 65536:
-                self.requestline = ''
-                self.request_version = ''
-                self.command = ''
-                self.send_error(414)
-                return
+                return self.send_error(414)
             if not self.raw_requestline:
                 self.close_connection = 1
                 return
@@ -715,7 +721,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             return
         else:
             words = values[0].split()
-            if values[1] == '404' and len(words) > 1 and words[1].endswith("favicon.ico"):
+            if values[1] == '404' and len(words) > 1 and words[1].lower().endswith("favicon.ico"):
                 # Do not bother printing not-found information on favicon.ico.
                 return
 
@@ -752,6 +758,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             values = (colour_text("BAD REQUEST", COLOUR_RED), response_code, values[2])
         else:
             # Non-400 response.
+            # ToDo: account for possible index error here...
             request_items = values[0].split(" ")
             values = (" ".join([request_items[0], colour_text(request_items[1], COLOUR_GREEN), request_items[2]]), values[1], values[2])
 
@@ -772,7 +779,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # Trust this value as the true client address if it regexes to an IPv4 address.
         proxy_src = None
         proxy_steps = []
-        forward_spec = getattr(self, ATTR_HEADERS, {}).get("X-Forwarded-For", "").strip()
+        forward_spec = getattr(self, ATTR_HEADERS, CaselessDict()).get("X-Forwarded-For")
 
         if forward_spec:
             forward_components = [c.strip() for c in forward_spec.split(",")]
@@ -784,7 +791,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             # As a fallback, try the 'Forwarded' header put forward by RFC 7239.
 
             try:
-                forward_spec = getattr(self, ATTR_HEADERS, {}).get("Forwarded", "").strip()
+                forward_spec = getattr(self, ATTR_HEADERS, CaselessDict()).get("Forwarded")
                 forward_addr = forward_spec.split(";")[2].split("=")[1]
                 if forward_addr and re.match(REGEX_INET4, forward_addr):
                     proxy_src = forward_addr
@@ -822,19 +829,14 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def parse_request(self):
         """Parse a request (internal).
-        The request should be stored in self.raw_requestline; the results
+        The request should be stored in self.raw_rline; the results
         are in self.command, self.path, self.request_version and
         self.headers.
         Return True for success, False for failure; on failure, an
         error is sent back.
         """
-        self.command = None  # set in case of error on the first line
-        self.request_version = version = self.default_request_version
-        self.close_connection = 1
-        requestline = self.raw_requestline
-        requestline = requestline.rstrip('\r\n')
-        self.requestline = requestline
-        words = requestline.split()
+        self.requestline = (getattr(self, ATTR_RAW_RLINE, None) or "").rstrip('\r\n')
+        words = self.requestline.split()
 
         if len(words) == 3:
             command, path, version = words
@@ -867,31 +869,22 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                 return False
         elif len(words) == 2:
             command, path = words
+            version = "HTTP/0.9" # Assume 0.9
             self.close_connection = 1
             if command != 'GET':
-                self.send_error(400,
-                                "Bad HTTP/0.9 request type (%s)" % command)
+                self.send_error(400, "Bad HTTP/0.9 request type (%s)" % command)
                 return False
         elif not words:
-            # TODO: Confirm why this check is as it is...
-            return False
-        else:
             m = "Bad request syntax"
-            if len(requestline) < 30:
-                m += " (%s)" % requestline
+            if len(getattr(self, ATTR_REQUEST_LINE, "")) < 30:
+                m += " (%s)" % getattr(self, ATTR_REQUEST_LINE, "")
             self.send_error(400, m)
             return False
         self.command, self.path, self.request_version = command, path, version
 
         # Examine the headers and look for a Connection directive
         # Parsing into a dictionary for simplicity.
-        self.headers = {}
-        for l in str(self.MessageClass(self.rfile, 0)).split("\r\n"):
-            if not l:
-                continue
-            items = l.split(":")
-            if items[1:]:
-                self.headers[items[0]] = ":".join(items[1:]).strip()
+        self.headers = self.get_header_dict(self.MessageClass(self.rfile, 0))
 
         # Access control checks
         user_agent_match = not args[TITLE_USER_AGENT]
@@ -911,8 +904,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         conntype = self.headers.get('Connection', '')
         if conntype.lower() == 'close':
             self.close_connection = 1
-        elif (conntype.lower() == 'keep-alive' and
-              self.protocol_version >= "HTTP/1.1"):
+        elif (conntype.lower() == 'keep-alive' and self.protocol_version >= "HTTP/1.1"):
             self.close_connection = 0
         return True
 
@@ -1050,6 +1042,37 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             if word in (os.curdir, os.pardir): continue
             path = os.path.join(path, word)
         return path
+
+class CaselessDict(dict):
+    # Case-insensitive dictionary.
+    # Inspired by: https://stackoverflow.com/questions/2082152/case-insensitive-dictionary
+    # Made some extra adjustments to the original concept because I wanted to
+    #   have my cake and eat it too by not modifying any stored keys.
+    # This particular version also makes the assumption all stored values will be strings.
+    def __init__(s, src = None):
+        if src:
+            for k in src.keys():
+                s[k] = src[k]
+        super(CaselessDict, s).__init__()
+
+    def __contains__(s, key):
+        return key.lower() in [k.lower() for k in s.keys()]
+
+    # Credit for __getitem__/__setitem__:
+    def __setitem__(s, key, val):
+        if s.__contains__(key):
+            for old in [k for k in s.keys() if k.lower() == key.lower()]:
+                del s[old]
+        super(CaselessDict, s).__setitem__(key, val.strip())
+
+    def get(s, key, default = ""):
+        # Get the first (and hopefully only) key match.
+        keys = [k for k in s.keys() if k.lower() == key.lower()]
+        if not keys:
+            return default
+        return super(CaselessDict, s).get(keys[0])
+
+    __getitem__ = get
 
 class NetAccess:
     # Basic IPv4 CIDR syntax check

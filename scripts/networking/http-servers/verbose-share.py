@@ -65,7 +65,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         else:
             itemlist.sort(key=lambda a: a.lower(), reverse = reverse_order)
 
-        displaypath = cgi.escape(urllib.unquote(self.path))
+        displaypath = cgi.escape(urllib.unquote(getattr(self, common.ATTR_PATH, "/")))
         htmlContent = """<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
 <html>
     <head>
@@ -82,7 +82,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         os.getcwd(), displaypath, # Full path
         self.render_breadcrumbs(displaypath)) # Breadcrumbs
 
-        if self.path != "/":
+        if getattr(self, common.ATTR_PATH, "/") != "/":
             htmlContent += '        <li><a href="..">%s</a></li>\n' % cgi.escape("<UP ONE LEVEL>")
         for name in itemlist:
             fullname = os.path.join(path, name)
@@ -141,7 +141,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         and must be closed by the caller under all circumstances), or
         None, in which case the caller has nothing further to do.
         """
-        path = self.translate_path(self.path)
+        path = self.translate_path(getattr(self, common.ATTR_PATH, ""))
         if os.path.exists(path):
             # Symbolic link judgement.
             # Paths with denied symbolic links will pretend to be 404 errors.
@@ -160,8 +160,8 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
 
         f = None
         if os.path.isdir(path):
-            if not self.path.endswith('/'):
-                return self.send_redirect(self.path + "/")
+            if not getattr(self, common.ATTR_PATH, "").endswith("/"):
+                return self.send_redirect("%s/" % getattr(self, common.ATTR_PATH, ""))
             for index in "index.html", "index.htm":
                 index = os.path.join(path, index)
                 if os.path.exists(index):

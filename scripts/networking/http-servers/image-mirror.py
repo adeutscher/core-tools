@@ -33,7 +33,6 @@ image_extensions = ('.png','.jpg', '.jpeg', '.gif')
 class BrowseController:
 
     def __init__(self,basePath,path):
-
         self.path = path
         if not path:
             self.path = ''
@@ -469,10 +468,9 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
 
         # Get the full path, getting rid of any symbolic links.
         # Reminder: translate_path omits the first "word" in the URL, assuming it to be a keyword such as "browse" or view
-        mode, realPath, relativePath, arguments = self.translate_path(self.path)
+        mode, realPath, relativePath, arguments = self.translate_path(getattr(self, common.ATTR_PATH, "/"))
 
         if mode == "image":
-
             target_path = "%s/%s" % (common.get_target(), relativePath)
             print "HEY"
             return self.serve_file(target_path)
@@ -493,8 +491,8 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
 
         elif mode == "browse" or not relativePath:
             if os.path.isdir(realPath):
-                if not self.path.endswith('/'):
-                    return self.send_redirect(self.path + "/")
+                if not getattr(self, common.ATTR_PATH, "").endswith("/"):
+                    return self.send_redirect(getattr(self, common.ATTR_PATH, ""))
                 else:
                     return self.handle_path(relativePath, realPath)
             else:
