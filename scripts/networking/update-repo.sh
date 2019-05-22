@@ -223,7 +223,7 @@ function update-git-repo(){
     local newCommitCount="$(git log | grep "^commit" | wc -l)"
 
     if [[ "${oldCommit}" != "${newCommit}" ]]; then
-      success "$(printf "Repository updated (${BOLD}%s${NC} to ${BOLD}r%s${NC}). New commits: ${BOLD}%d${NC}" "${oldCommit}" "${newCommit}" "$((${newCommitCount} - ${oldCommitCount}))")"
+      success "$(printf "Repository updated (${BOLD}%s${NC} to ${BOLD}%s${NC}). New commits: ${BOLD}%d${NC}" "${oldCommit}" "${newCommit}" "$((${newCommitCount} - ${oldCommitCount}))")"
     else
       success "$(printf "Branch \"${BOLD}%s${NC}\" already up to date (or checked out to a specific revision). Revision: ${BOLD}%s${NC}." "${branch}" "${oldCommit}")"
     fi

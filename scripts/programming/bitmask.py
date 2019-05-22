@@ -2,44 +2,10 @@
 
 import sys,re
 
-def getValue(inString):
-    if re.search(r'^0x',inString):
-        # Hex value
-        return int(inString,16)
-    else:
-        # Treat as base-10
-        return int(inString)
-
-def usage():
-    print "Usage: %s number [mask]"
-    exit(1)
-
-power = 0
-num = 0
-
-value = getValue(sys.argv[1])
-if not value or value < 0:
-    print "Number value must be greater than zero."
-    usage()
-
-if len(sys.argv) == 3:
-    mask = getValue(sys.argv[2])
-    print "Testing a value of %d (%#08x) against a mask of %d (%#08x)." % tuple([value,value,mask,mask])
-
-    print "Result: ",
-    result = value & mask
-    print "%d (" % result,
-    if result:
-        if (value & mask) == value:
-            print "Yes, Full Match)"
-        else:
-            print "Yes, Partial Match)"
-    else:
-        print "No Match)"
-
-elif len(sys.argv) == 2:
-
-    print "Getting the bitmask flags stored in %d (%#08x)" % tuple([value,value])
+def displayFlags(value):
+    print "Getting the bitmask flags in value of %d (%#08x)" % tuple([value,value])
+    power = 0
+    num = 0
     while True:
         num = pow(2,power)
 
@@ -52,6 +18,57 @@ elif len(sys.argv) == 2:
         else:
             print "0 (No)"
 
-        power = power + 1
-else:
+        power += 1
+
+def getValue(index, label):
+    ret = None
+    if len(sys.argv) <= index:
+        print "No %s provided." % label
+        return None
+    try:
+        val = sys.argv[index]
+        if re.search(r'^0x',val):
+            # Hex value
+            ret = int(val,16)
+        else:
+            # Treat as base-10
+            ret = int(val)
+    except Exception as e:
+        pass
+
+    if ret is None or ret <= 0:
+        print "Invalid %s: %s (%s)" % (val, label, str(e))
+        return None
+    return ret
+
+def usage():
+    print "Usage: %s number [mask]"
+    exit(1)
+
+
+value = getValue(1, "value")
+if value is None:
+    print "Number value must be greater than zero."
     usage()
+
+if len(sys.argv) >= 3:
+    mask = getValue(2, "mask")
+    if mask is None:
+        usage()
+    print "Testing a value of %d (%#08x) against a mask of %d (%#08x)." % tuple([value,value,mask,mask])
+
+    result = value & mask
+    s = "Result: %d & %d = %d (" % (value, mask, result)
+    if result:
+        if (value & mask) == value:
+            s += "Yes, Full Match)"
+        else:
+            s += "Yes, Partial Match)"
+    else:
+        s += "No Match)"
+    print s
+    if result:
+        displayFlags(result)
+
+else:
+    displayFlags(value)

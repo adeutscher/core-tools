@@ -30,6 +30,7 @@
       - nmap # Debian packages nmap-ncat with nmap.
       - zip
       - unzip
+      - iperf3
 
   environment:
     ANSIBLE: 1

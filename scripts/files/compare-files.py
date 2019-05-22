@@ -130,7 +130,7 @@ def compare(file_a, file_b, block_size):
 
     marker = 0
     first = None
-    iteration = 0
+    iterations = 0
 
     size_max = max(size_a, size_b)
     size_min = min(size_a, size_b)
@@ -141,24 +141,25 @@ def compare(file_a, file_b, block_size):
         b_contents = b.read(block_size)
 
         if a_contents == b_contents:
-            match = match + block_size
+            match += 1
         else:
+
             if first is None:
-                first = (marker, iteration)
-        marker = marker + block_size
-        iteration = iteration + 1
+                first = (marker, iterations)
+        marker += block_size
+        iterations += 1
 
     match = min(match, size_max)
 
     if first is not None:
         print_notice("First non-matching block starting at %d, iteration #%d" % first)
     if size_min != size_max:
-        print_notice("Reached the end of the smaller file (%d iterations)" % iteration)
+        print_notice("Reached the end of the smaller file (%d iterations)" % iterations)
         # Print statistics in terms of the smaller file.
         # This helps us if a file has been cut off mid-transfer.
         print_notice("%d / %d identical blocks within smaller file: %.04f%% match" % (min(match, size_min), size_min, float(match)/float(size_min)*100))
         print_notice("Reminder: High match percentage within smaller file could be from\n\t\tthe smaller file being indivisible with block size.")
-    print_notice("%d / %d identical blocks: %.04f%% match" % (match, size_max, float(match)/float(size_max)*100))
+    print_notice("%d / %d identical blocks: %.04f%% match" % (match, iterations, float(match)/float(iterations)*100))
     a.close()
     b.close()
 

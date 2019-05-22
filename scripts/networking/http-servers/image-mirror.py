@@ -466,13 +466,16 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         None, in which case the caller has nothing further to do.
         """
 
+        path = getattr(self, common.ATTR_PATH, "/")
+        if path.lower() == "/favicon.ico":
+            return self.send_error(404, "File not found.")
+
         # Get the full path, getting rid of any symbolic links.
         # Reminder: translate_path omits the first "word" in the URL, assuming it to be a keyword such as "browse" or view
-        mode, realPath, relativePath, arguments = self.translate_path(getattr(self, common.ATTR_PATH, "/"))
+        mode, realPath, relativePath, arguments = self.translate_path(path)
 
         if mode == "image":
             target_path = "%s/%s" % (common.get_target(), relativePath)
-            print "HEY"
             return self.serve_file(target_path)
         elif mode == "random":
             # If nothing is specified, boot them back to root browsing...

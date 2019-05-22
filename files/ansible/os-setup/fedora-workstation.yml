@@ -179,6 +179,7 @@
           - openssh-clients  # SSH Client
           - openssh-server   # SSH Server
           - openssl          # OpenSSL
+          - iperf3           # iperf3 Network Benchmarking
 
       ## Desktop Items
 
