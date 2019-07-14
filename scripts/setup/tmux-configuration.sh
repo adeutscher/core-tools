@@ -78,7 +78,22 @@ build_tmux(){
     notice "$(printf "Applying ${BOLD}\"%s\"${NC} style...\n" "$style")"
 
   # Note: Stretching command output across multiple lines makes geany colour formatting act strangely, but BASH has no problems with running it.
-  CONTENT="$(cat << EOF
+
+  COMMON_CONTENT="$(cat << EOF
+## Hotkeys
+
+# Toggle the window's panes between syncing and non-syncing.
+bind M setw synchronize-panes
+
+# Reload
+bind R source-file ~/.tmux.conf
+##
+EOF
+)"
+
+  # Possible brain fart: shouldn't '-m1' account for the second number value in the version, making head unnecessary?
+  if [ "$(tmux -V 2> /dev/null | grep -oPm1 "\d+" | head -n1)" -eq 1 ]; then
+    CONTENT="$(cat << EOF
 ## "${style}" Theming
 
 set-window-option -g status-bg $bg
@@ -91,20 +106,29 @@ set-window-option -g window-status-fg ${status_fg:-$fg}
 set-window-option -g window-status-bg ${status_bg:-$bg}
 set-window-option -g window-status-attr dim
 
-set-window-option -g window-status-current-fg ${active_fg:-$bg}
-set-window-option -g window-status-current-bg ${active_bg:-$fg}
+set-window-option -g window-status-current-fg ${active_bg:-$bg}
+set-window-option -g window-status-current-bg ${active_fg:-$fg}
 set-window-option -g window-status-current-attr bright
 
-## Hotkeys
-
-# Toggle the window's panes between syncing and non-syncing.
-bind M setw synchronize-panes
-
-# Reload
-bind R source-file ~/.tmux.conf
-##
+${COMMON_CONTENT}
 EOF
 )"
+  else
+    CONTENT="$(cat << EOF
+## "${style}" Theming
+
+set -g status-style bg=$bg,fg=$fg
+
+set -g pane-border-style fg=${border_bg:-$bg}
+set -g pane-active-border-style fg=${border_fg:-$fg}
+
+set -g window-status-style fg=${status_fg:-$fg},bg=${status_bg:-$bg},dim
+set -g window-status-current-style fg=${status_bg:-$bg},bg=${status_fg:-$fg}
+
+${COMMON_CONTENT}
+EOF
+)"
+  fi
 
   "${DOTFILE_SCRIPT}" "${HOME}/.tmux.conf" core-tools-tmux - <<< "${CONTENT}"
 }

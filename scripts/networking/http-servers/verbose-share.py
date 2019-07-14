@@ -6,6 +6,7 @@
 
 import getopt, os, socket, sys, urllib
 import CoreHttpServer as common
+from CoreHttpServer import args, print_notice
 common.local_files.append(os.path.realpath(__file__))
 
 # Specific to browser sharer
@@ -25,11 +26,11 @@ TITLE_LOCAL_LINKS = "locallinks"
 # Define arguments
 
 # Flags
-common.args.add_opt(common.OPT_TYPE_FLAG, "l", TITLE_LOCAL_LINKS, "Only show local links (symbolic links that point to within the shared directory).")
-common.args.add_opt(common.OPT_TYPE_FLAG, "n", TITLE_NO_LINKS, "Do not allow symbolic links. Overrides local links.")
-common.args.add_opt(common.OPT_TYPE_FLAG, "r", TITLE_REVERSE, "Display listings in reverse order.")
-common.args.add_opt(common.OPT_TYPE_FLAG, "t", TITLE_TIMESORT, "Display listings sorted by time (as opposed to alphabetically).")
-common.args.add_validator(common.validate_common_directory)
+args.add_opt(common.OPT_TYPE_FLAG, "l", TITLE_LOCAL_LINKS, "Only show local links (symbolic links that point to within the shared directory).")
+args.add_opt(common.OPT_TYPE_FLAG, "n", TITLE_NO_LINKS, "Do not allow symbolic links. Overrides local links.")
+args.add_opt(common.OPT_TYPE_FLAG, "r", TITLE_REVERSE, "Display listings in reverse order.")
+args.add_opt(common.OPT_TYPE_FLAG, "t", TITLE_TIMESORT, "Display listings sorted by time (as opposed to alphabetically).")
+args.add_validator(common.validate_common_directory)
 
 class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
 
@@ -58,9 +59,9 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
             self.send_error(404, "No permission to list directory")
             return None
 
-        reverse_order = common.args[TITLE_REVERSE]
+        reverse_order = args[TITLE_REVERSE]
 
-        if common.args[TITLE_TIMESORT]:
+        if args[TITLE_TIMESORT]:
             itemlist.sort(key=lambda a: os.path.getmtime(os.path.join(path, a)), reverse = reverse_order)
         else:
             itemlist.sort(key=lambda a: a.lower(), reverse = reverse_order)
@@ -93,11 +94,11 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
             if os.path.islink(fullname):
                 # Note: a link to a directory displays with @ and links with /
                 displayname = name + "@"
-                reachable = not (common.args[TITLE_NO_LINKS] or (common.args[TITLE_LOCAL_LINKS] and not os.path.realpath(fullname).startswith(os.getcwd() + "/")))
+                reachable = not (args[TITLE_NO_LINKS] or (args[TITLE_LOCAL_LINKS] and not os.path.realpath(fullname).startswith(os.getcwd() + "/")))
 
                 if not reachable:
                     # Symbolic link is inaccessible. Override extra info to plainly say 'symlink'.
-                    if common.args[TITLE_NO_LINKS]:
+                    if args[TITLE_NO_LINKS]:
                         extrainfo = "(Symlink)"
                     else:
                         # Implies local links only, meaning an unreachable link is external.
@@ -145,9 +146,9 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         if os.path.exists(path):
             # Symbolic link judgement.
             # Paths with denied symbolic links will pretend to be 404 errors.
-            if common.args[TITLE_LOCAL_LINKS] and not ("%s/" % os.path.realpath(path)).startswith(os.getcwd() + "/"):
+            if args[TITLE_LOCAL_LINKS] and not ("%s/" % os.path.realpath(path)).startswith(os.getcwd() + "/"):
                 return self.send_error(404, "File not found")
-            elif common.args[TITLE_NO_LINKS]:
+            elif args[TITLE_NO_LINKS]:
                 # If all symbolic links are banned, then we must trace our
                 #   way down an existing path to make sure that no symbolic link exists
                 curr = path
@@ -172,14 +173,30 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         return self.serve_file(path)
 
 if __name__ == '__main__':
-    common.args.process(sys.argv)
+    args.process(sys.argv)
 
     common.announce_common_arguments("Serving files")
 
-    if common.args[TITLE_NO_LINKS]:
-        common.print_notice("Ignoring all symbolic links.")
+    label = "alphabetically"
 
-    if common.args[TITLE_LOCAL_LINKS]:
-        common.print_notice("Serving only local symbolic links.")
+    order_label = None
+    if args[TITLE_TIMESORT]:
+        label = "by modification time"
+
+        if args[TITLE_REVERSE]:
+            order_label = "oldest to newest"
+        else:
+            order_label = "newest to oldest"
+    elif args[TITLE_REVERSE]:
+        order_label = "Z-A"
+
+    if order_label:
+        print_notice("Ordering content %s (%s)" % (label, common.colour_text(order_label)))
+
+    if args[TITLE_NO_LINKS]:
+        print_notice("Ignoring all symbolic links.")
+
+    if args[TITLE_LOCAL_LINKS]:
+        print_notice("Serving only local symbolic links.")
 
     common.serve(SimpleHTTPVerboseReqeustHandler, True)

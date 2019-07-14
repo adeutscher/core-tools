@@ -30,7 +30,7 @@ def main():
     upcoming events on the user's calendar.
     """
 
-    common.args.process(sys.argv)
+    common.process()
     service = common.get_service('sheets', 'v4')
 
     exit_code = 0

@@ -355,7 +355,7 @@ try:
     from oauth2client import client
     from oauth2client import tools
 except Exception as e:
-    print_error("Problem importing Python modules (%s). Likely solution: pip install --upgrade google-api-python-client" % str(e))
+    print_error("Problem importing Python modules (%s). Likely solution: pip install --upgrade google-api-python-client oauth2client" % str(e))
 
 APPLICATION_NAME = 'adeutscher Tool Scripts'
 
@@ -436,3 +436,7 @@ TITLE_TAG = "tag"
 
 args = ArgHelper()
 args.add_opt(OPT_TYPE_SHORT, "A", TITLE_TAG, "Specify Google profile tag.", default = DEFAULT_TAG)
+
+def process():
+    if not args.process(sys.argv, exit_on_error = False) or error_count:
+        exit(1)

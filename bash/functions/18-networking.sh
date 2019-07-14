@@ -22,6 +22,13 @@ alias ping6-all-eth0='ping6 ff02::2%eth0'
 # default switches for iftop
 alias iftop="iftop -nNp"
 
+#########
+# Pings #
+#########
+
+alias ping-reliably='ping-stats -r'
+alias ping-unreliably='ping-stats -u'
+
 ###########
 # Ansible #
 ###########
@@ -82,21 +89,39 @@ alias umount-all-cifs='sudo umount -a -t cifs -f || sudo umount -a -t cifs -l'
 # Try to determine our public IP
 public-ip-short(){
     local ip_url=https://wgetip.com
-    curl -s $ip_url 2> /dev/null | egrep --color=none '^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
+    curl -s4 $ip_url 2> /dev/null | egrep --color=none '^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
+}
+
+public-ip6-short(){
+    local ip_url=https://icanhazip.com
+    curl -s6 $ip_url
 }
 
 public-ip(){
     local ip=$(public-ip-short)
-    if [ -n "$ip" ]; then
-        notice "Public IP: $ip"
-        if qtype geoiplookup-city; then
-            notice "$(printf "Location: %s" "$(geoiplookup-city $ip)")"
-        elif qtype geoiplookup; then
-            notice "$(printf "Location: %s" "$(geoiplookup $ip)")"
-        fi
-    else
-        error "Public IP is currently unknown."
+    local ip6=$(public-ip6-short)
+
+    if [ -z "$ip" ] && [ -z "${ip6}" ]; then
+        error "Public IP addresses are currently unknown."
         return 1
+    fi
+
+    if [ -n "${ip}" ]; then
+        notice "$(printf "Public IPv4 address: ${Colour_BIGreen}%s${Colour_Off}" "${ip}")"
+    fi
+
+    if [ -n "${ip6}" ]; then
+        notice "$(printf "Public IPv6 address: ${Colour_BIGreen}%s${Colour_Off}" "${ip6}")"
+    fi
+
+    if [ -z "${ip}" ]; then
+        return # Unable to check without an IPv4 address.
+    fi
+
+    if qtype geoiplookup-city; then
+        notice "$(printf "Location: %s" "$(geoiplookup-city $ip)")"
+    elif qtype geoiplookup; then
+        notice "$(printf "Location: %s" "$(geoiplookup $ip)")"
     fi
 }
 

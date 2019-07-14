@@ -87,7 +87,7 @@ common.args.add_opt(common.OPT_TYPE_LONG_FLAG, "html", TITLE_HTML_FORMAT, "Enabl
 
 def main():
 
-    common.args.process(sys.argv)
+    common.process()
     service = common.get_service('gmail')
 
     msg = MIMEMultipart('mixed')

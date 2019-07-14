@@ -18,7 +18,7 @@ def main():
     upcoming events on the user's calendar.
     """
 
-    common.args.process(sys.argv)
+    common.process()
     service = common.get_service('calendar', 'v3')
 
     then = (datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat() + 'Z' # 'Z' indicates UTC time

@@ -12,7 +12,7 @@ import common,os,re,sys
 ####################################################
 
 def main():
-    common.args.process(sys.argv)
+    common.process()
     service = common.get_service("gmail")
 
     # TODO: Add a switch for result count, or at least rethink current value.
