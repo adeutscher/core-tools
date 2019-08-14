@@ -11,6 +11,7 @@
       - vim
       - git
       - subversion
+      - openvpn
 
   remote_user: pi
 

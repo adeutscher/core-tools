@@ -21,16 +21,21 @@ for __BAT_NUM in $(seq 0 2); do
 done
 unset __BAT_NUM
 
-if [ -n "$__BATTERY_DIR" ]; then
-    alias battery='echo "Battery status: $(cat "$__BATTERY_DIR/capacity")% ($(cat "$__BATTERY_DIR/status"))"'
+if [ -n "${__BATTERY_DIR}" ] || [ -n "${FORCE_LAPTOP_MODE}" ]; then
+  if [ -n "${__BATTERY_DIR}" ]; then
+    alias battery='echo "Battery status: $(cat "{$__BATTERY_DIR}/capacity")% ($(cat "$__BATTERY_DIR/status"))"'
     alias battery-short="cat $__BATTERY_DIR/capacity"
-    alias __is_laptop="(( 1 ))"
-else
-    # For desktop machines.
-    alias battery='echo "No battery detected..."'
-    # Add a command so that getting the short battery is not just "not found".
+  else
+    alias battery='echo "Laptop status was faked, no battery detected..."'
     alias battery-short="echo 0"
-    alias __is_laptop="(( 0 ))"
+  fi
+  alias __is_laptop="(( 1 ))"
+else
+  # For desktop machines.
+  alias battery='echo "No battery detected..."'
+  # Add a command so that getting the short battery is not just "not found".
+  alias battery-short="echo 0"
+  alias __is_laptop="(( 0 ))"
 fi
 
 # Make default memory display more verbose.

@@ -19,20 +19,20 @@ elif [ -d "/etc/bind9" ]; then
 fi
 
 if [ -z "$service" ]; then
-    echo -e "${BLUE}Notice${NC}: This machine does have a DNS server installed on it. No DNS to fix."
-    exit 0
+  echo -e "${BLUE}Notice${NC}: This machine does have a DNS server installed on it. No DNS to fix."
+  exit 0
 fi
 
 if [ "$EUID" -gt 0 ]; then
-    echo -e "${BLUE}Notice${NC}: Must be root to restart DNS server and write to ${GREEN}/etc/resolv.conf${NC}"
-    sudo sh $0
-    exit $?
+  echo -e "${BLUE}Notice${NC}: Must be root to restart DNS server and write to ${GREEN}/etc/resolv.conf${NC}"
+  sudo sh $0
+  exit $?
 fi
 
 service $service restart
 if [ "$?" -gt 0 ]; then
-    echo -e "${RED}Error${NC}: There was an error restarting the $service DNS server."
-    exit 1
+  echo -e "${RED}Error${NC}: There was an error restarting the $service DNS server."
+  exit 1
 fi
 
 cp -f /etc/resolv.conf /etc/resolv.conf.bak

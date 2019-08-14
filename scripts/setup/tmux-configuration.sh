@@ -134,10 +134,8 @@ EOF
 }
 
 check_commands(){
-  # No harm in setting up a tmux config with no tmux command,
-  #   but we will give a quick reminder.
   if ! type tmux 2> /dev/null >&2; then
-    warning "$(printf "Reminder: ${BLUE}%s${NC} is not yet installed on this machine. Configuration will still be written.\n" "tmux")"
+    error "$(printf "The ${BLUE}%s${NC} command is not yet installed on this machine.\n" "tmux")"
   fi
 
   (( ${__error_count:-0} )) && return 1
