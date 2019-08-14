@@ -575,7 +575,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         # Check for authorization (by default with the Authorization header),
         #  then pass to check_credentials to confirm them against a password back-end.
 
-        if not TITLE_USER in args or TITLE_PASSWORD in args:
+        if not ( TITLE_USER in args or TITLE_PASSWORD in args ):
             return True
 
         verbose = args[TITLE_VERBOSE]
