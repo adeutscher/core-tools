@@ -14,6 +14,7 @@ def colour_text(text, colour = None):
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
 def colour_green(text):
+    # Lazy shorthand for the common habit of using green to highlight paths and network addresses.
     return colour_text(text, COLOUR_GREEN)
 
 def enable_colours(force = False):
@@ -42,27 +43,49 @@ MODE_NORMAL = 1
 MODE_RELIABLE = 2
 MODE_UNRELIABLE = 3
 
+DEFAULT_STREAK_COUNT = 60
+
+def hexit(exit_code):
+
+    print "Usage: %s address [-c count] [-r] [-u] [streak_count]" % colour_green("./ping-stats.py")
+    print " -r: Exit when a streak of successful pings reaches the streak count."
+    print " -u: Exit when a streak of failed pings reaches the streak count."
+    print " -c count: Limit the total number of packets sent."
+    print "           Will exit with a non-zero exit code if limit is reached"
+    print "           while attempting a streak."
+    print "Set streak count as an optional second argument. Default: %s" % colour_text(DEFAULT_STREAK_COUNT)
+
+    exit(exit_code)
+
 def main(cli_args):
 
     if cli_args == sys.argv:
         cli_args = cli_args[1:]
 
     try:
-        opts, operands = getopt.gnu_getopt(cli_args, "ru")
+        opts, operands = getopt.gnu_getopt(cli_args, "c:hru")
     except Exception as e:
         print "Error parsing arguments: %s" % str(e)
         exit(1)
 
     mode = MODE_NORMAL
     reliable = unreliable = False
+    count = 0
+    count_raw = None
+    count_have = False
 
-    flags = [f for f,v in opts]
-    if '-r' in flags:
-        reliable = True
-        mode = MODE_RELIABLE
-    if '-u' in flags:
-        unreliable = True
-        mode = MODE_UNRELIABLE
+    for f, v in opts:
+        if f == "-h":
+            hexit(0)
+        if f == '-r':
+            reliable = True
+            mode = MODE_RELIABLE
+        elif f == '-u':
+            unreliable = True
+            mode = MODE_UNRELIABLE
+        elif f == '-c':
+            count_raw = v
+            count_have = True
 
     # Error check
     error = False
@@ -77,28 +100,48 @@ def main(cli_args):
     else:
         addr = operands[0]
 
-    number = 60
+        try:
+            ip = socket.gethostbyname(addr)
+        except socket.gaierror:
+            print "Unable to resolve address: %s" % colour_green(addr)
+            error = True
+
+    if count_have:
+        try:
+            count = int(count_raw)
+            if count < 0:
+                raise Exception()
+        except:
+            print "Bad number of packets to transmit. Must be a positive number (0 for unlimited)"
+            count = 0
+            error = True
+
+    streak_count = DEFAULT_STREAK_COUNT
     if len(operands) > 1:
         try:
-            number = int(operands[1])
+            streak_count = int(operands[1])
             if number <= 0:
                 # Without mods to getopts a negative operand actually can't even be used, but anyhow...
-                print "Attempt number must be greater than zero. Provided: %s" % colour_text(number)
+                print "Attempt number must be greater than zero. Provided: %s" % colour_text(streak_count)
                 error = True
         except ValueError:
             print "Invalid attempt number: %s" % colour_text(operands[1])
             error = True
 
+    if (reliable or unreliable) and count and streak_count > count:
+
+        if reliable:
+            wording = "successful"
+        else:
+            wording = "unsuccessful"
+
+        print "Ping limit of %s is less than desired streak of %s %s pings." % (colour_text(count), colour_text(streak_count), wording)
+        error = True
+
     if error:
-        exit(1)
+        hexit(1)
 
-    try:
-        ip = socket.gethostbyname(addr)
-    except socket.gaierror:
-        print "Unable to resolve address: %s" % colour_green(addr)
-        exit(2)
-
-    stats(addr, ip, mode, number)
+    return stats(addr, ip, mode, streak_count, count)
 
 def ping(server):
     r = {}
@@ -121,7 +164,7 @@ def ping(server):
 
     return r
 
-def stats(server, ip, mode, number):
+def stats(server, ip, mode, number, limit = 0):
 
     total_pings = 0
     total_success = 0
@@ -142,8 +185,12 @@ def stats(server, ip, mode, number):
     streak_fail = 0
     streak_success = 0
 
+    # Store desired exit code.
+    exit_code = 0
+
     # Announce
-    if mode in (MODE_RELIABLE, MODE_UNRELIABLE):
+    reliability_check = mode in (MODE_RELIABLE, MODE_UNRELIABLE)
+    if reliability_check:
         if mode == MODE_RELIABLE:
             word = colour_green("can")
         else:
@@ -154,6 +201,10 @@ def stats(server, ip, mode, number):
             saddr += ' (%s)' % colour_green(ip)
 
         print "Waiting until %s %s be pinged %s times in a row." % (saddr, word, colour_text(number))
+        if limit:
+            print "Will terminate unsuccessfully if we cannot do so after %s ping attempts." % colour_text(limit)
+    elif limit:
+        print "Ping count: %s" % colour_text(limit)
 
     try:
         continue_loop = True
@@ -236,19 +287,30 @@ def stats(server, ip, mode, number):
             # Padding the count digits to avoid a bunch of relatively rapid format jumps.
             print "[%03d/%03d %s][%s]: %s" % (total_success, total_pings, colour_text(percentage_text, percentage_colour), display_chart, line)
 
-            continue_loop = mode == MODE_NORMAL or (
-                (mode == MODE_RELIABLE and streak_success < number)
-                or (mode == MODE_UNRELIABLE and streak_fail < number)
-            )
+            # This was originally one big assignment statement, but it was a pain to read.
+            continue_loop = (not limit or total_pings < limit)
+            if mode == MODE_RELIABLE and streak_success >= number:
+                continue_loop = False
+            elif mode == MODE_UNRELIABLE and streak_fail >= number:
+                continue_loop = False
 
             if continue_loop:
                 # If there is another loop upcoming, sleep for the remainder of a second that's left.
                 time.sleep(max(0, 1-r["time"]))
 
     except KeyboardInterrupt:
-        pass
+        exit_code = 130
 
     if total_pings:
+
+        if not exit_code and reliability_check and total_pings == limit and (
+            (mode == MODE_RELIABLE and streak_success < number)
+            or (mode == MODE_UNRELIABLE and streak_fail < number)
+        ):
+            # Set an exit code if we weren't able to get the required number of successful/failed pings within the limit.
+            # (Do not override the exit code of a keyboard interrupt)
+            exit_code = 1
+
         if server != ip:
             display_server = "%s (%s)" % (server, ip)
         else:
@@ -260,5 +322,8 @@ def stats(server, ip, mode, number):
         # rtt stats. I don't worry about this as much as success percentage.
         print "rtt min/avg/max %.03f/%.03f/%.03f" % (time_min, time_avg, time_max)
 
+    return exit_code
+
 if __name__ == "__main__":
-    main(sys.argv)
+    exit_code = main(sys.argv)
+    exit(exit_code)

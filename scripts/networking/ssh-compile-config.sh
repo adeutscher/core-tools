@@ -99,9 +99,7 @@ ssh_compile_config(){
 
       local moduleSSHMarker="$toolDir-marker"
       # Get a checksum from all loaded files.
-      # README files in config.d/ are actually skipped by this function,
-      #   but skipping them AND not putting in a required file extension would be a pain.
-      checksum="$(md5sum "${moduleSSHConfig}" "${moduleSSHDir}/config.d/"* "${moduleSSHDir}/fluid" "${moduleSSHDir}/fluid.d/"* "${moduleSSHDir}/hosts/config-${HOSTNAME%-*}" 2> /dev/null | md5sum | cut -d' ' -f1)"
+      checksum="$(checksum "${moduleSSHConfig}" "${moduleSSHDir}/config.d/" "${moduleSSHDir}/fluid" "${moduleSSHDir}/fluid.d/" "${moduleSSHDir}/hosts/config-${HOSTNAME%-*}")"
 
       if [ -f "$sshConfig" ]; then
         # SSH Configuration exist, probe for existing versions.
@@ -223,20 +221,12 @@ append_config_d(){
   local target="${1}"
 
   # Print divided configurations
-  if [ -d "${moduleSSHDir}/config.d" ]; then
-    for subConfigFile in "$moduleSSHDir/config.d/"*; do
+  while read subConfigFile; do
+    [ -z "${subConfigFile}" ] && continue
 
-      if grep -qi "README" <<< "${subConfigFile##*/}"; then
-          # Silently skip any file with "README" anywhere in its name.
-          continue
-      fi
-
-      if [ -f "${subConfigFile}" ]; then
-        printf "\n###\n# Sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "${moduleSSHDir}"
-        cat "${subConfigFile}" 2> /dev/null;
-      fi
-    done
-  fi >> "${target}"
+    printf "\n###\n# Sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "${moduleSSHDir}"
+    cat "$subConfigFile" 2> /dev/null;
+  done <<< "$(get_files "${moduleSSHDir}/config.d")" >> "${target}"
 }
 
 append_fluid(){
@@ -251,20 +241,12 @@ append_fluid_d(){
   local target="${1}"
 
   # Print divided unversioned configurations
-  if [ -d "${moduleSSHDir}/fluid.d" ]; then
-    for subConfigFile in "$moduleSSHDir/fluid.d/"*; do
+  while read subConfigFile; do
+    [ -z "${subConfigFile}" ] && continue
 
-      if grep -qi "README" <<< "${subConfigFile##*/}"; then
-        # Silently skip any file with "README" anywhere in its name.
-        continue
-      fi
-
-      if [ -f "$subConfigFile" ]; then
-        printf "###\n# Non-versioned sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "$moduleSSHDir"
-        cat "$subConfigFile" 2> /dev/null;
-      fi
-    done
-  fi >> "${target}"
+    printf "###\n# Non-versioned sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "$moduleSSHDir"
+    cat "$subConfigFile" 2> /dev/null;
+  done <<< "$(get_files "${moduleSSHDir}/fluid.d")" >> "${target}"
 }
 
 append_host_config(){
@@ -278,8 +260,39 @@ append_host_config(){
     else
       printf "###\n# Host-specific config for $HOSTNAME\n###\n\n"
     fi
-  cat "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null;
+    cat "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null;
   fi >> "${target}"
+}
+
+checksum(){
+  while [ -n "${1}" ]; do
+    local i="${1}"
+    shift
+
+    [ -z "${i}" ] && continue
+
+    if [ -d "${i}" ]; then
+      while read f; do
+        [ -z "${f}" ] && continue
+
+        cat "${f}" 2> /dev/null
+      done <<< "$(get_files "${i}")"
+    elif [ -f "${i}" ]; then
+      cat "${i}"
+    fi
+  done | md5sum | cut -d' ' -f1
+}
+
+get_files(){
+  while read _possible_file; do
+    [ -z "${_possible_file}" ] && continue
+
+    if grep -qi "README" <<< "${_possible_file##*/}"; then
+      # Silently skip any file with "README" anywhere in its name.
+      continue
+    fi
+    echo "${_possible_file}"
+  done <<< "$(find "${1}" -type f 2> /dev/null)"
 }
 
 ssh_compile_config $@

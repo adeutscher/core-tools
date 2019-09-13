@@ -49,7 +49,7 @@
 
   tasks:
 
-  - name: CentOS packages
+  - name: CentOS Tasks
     become: yes
     when: (ansible_distribution == "CentOS")
     block:
@@ -57,10 +57,7 @@
       - name: "install system packages (CentOS)"
         yum: name="{{ system_packages_centos }}" state="latest"
 
-      - name: "install preferred packages (CentOS)"
-        yum: name="{{ preferred_packages }}" state="latest"
-
-  - name: Fedora packages
+  - name: Fedora Tasks
     become: yes
     when: (ansible_distribution == "Fedora")
     block:
@@ -68,8 +65,10 @@
       - name: "install system packages (Fedora)"
         dnf: name="{{ system_packages_fedora }}" state="latest"
 
-      - name: "install preferred packages (Fedora)"
-        dnf: name="{{ preferred_packages }}" state="latest"
+  - name: install preferred packages
+    become: yes
+    action: >
+      {{ ansible_pkg_mgr }} name="{{ preferred_packages }}" state=latest
 
   - name: Other RedHat Items
     when: (ansible_os_family == "RedHat")

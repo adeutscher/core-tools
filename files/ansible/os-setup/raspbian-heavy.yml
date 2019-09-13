@@ -1,6 +1,7 @@
 ---
-# Setup playbook for playing on a fresh Raspbian system.
-# Includes commonly used packages and some light utilities.
+# Setup playbook.
+# Contains additional packages for a Raspbian system meant more as a dev staging area.
+# Meant to be used on top of standard Raspbian playbook.
 
 - hosts: "{{ variable_host | default('all') }}"
   # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
@@ -8,14 +9,7 @@
   vars:
 
     raspbian_packages:
-      - tmux
-      - vim
-      - git
-      - subversion
-      - openvpn
-      - nmap
-      - unzip
-      - zip
+      - ansible
 
   remote_user: pi
 
@@ -28,13 +22,3 @@
       become: yes
       apt: name="{{ raspbian_packages }}" state="present"
 
-    - name: apt update
-      become: yes
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: apt upgrade
-      become: yes
-      apt:
-        upgrade: safe

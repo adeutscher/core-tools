@@ -1,0 +1,30 @@
+---
+
+# Disable firewalld on a RHEL-based system
+# Made for and tested on CentOS 7 Minimal and Fedora Server 28.
+# Note: This playbook wipes all currently present firewall rules.
+#       DO NOT do this on a server that you consider to be remotely at risk,
+#       unless you plan to IMMEDIATELY install custom rules on it.
+# This playbook was created because I often prefer to apply my own firewall configurations instead of firewalld.
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  environment:
+    ANSIBLE: 1
+
+  vars:
+    time_server: "{{ variable_server | default('time.google.com') }}"
+
+  tasks:
+
+    - name: run time update
+      become: yes
+      block:
+
+        - name: install package
+          action: >
+            {{ ansible_pkg_mgr }} name=ntpdate state=latest
+
+        - name: run ntpdate
+          shell: ntpdate {{ time_server }}
