@@ -15,7 +15,6 @@ except ImportError:
 # Used specifically by the image mirror
 import getpass, posixpath, re
 from random import randint
-from urlparse import parse_qs
 
 # Remove unused arguments
 del common.args.opts[common.OPT_TYPE_FLAG]["-P"]
@@ -302,26 +301,26 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
             title = "."
         return self.serve_content(self.render_page("Image Directory: %s" % os.path.realpath(common.get_target()+"/"+relativePath), self.render_breadcrumbs(relativePath), contents))
 
-    def handle_random(self, realPath, arguments):
+    def handle_random(self, realPath):
 
         # Time-saver shorthand
-        path = arguments["path"][0]
+        path = self.get["path"][0]
 
-        vc = ViewController(realPath, path, forceRefresh=('action' in arguments and arguments['action'][0] == "refresh"))
+        vc = ViewController(realPath, path, forceRefresh=(next(iter(self.get.get('action', [])), None) == "refresh"))
         return self.send_redirect("/view?path=%s&page=%d&source=random" % (path, vc.getRandomIndex()))
 
-    def handle_view(self, realPath, arguments):
+    def handle_view(self, realPath):
 
         # Time-saver shorthand
-        path = arguments["path"][0]
+        path = self.get["path"][0]
 
         # Get path information
         bc = BrowseController(realPath, path)
 
         # Confirm our index
-        vc = ViewController(realPath, path, forceRefresh=('action' in arguments and arguments['action'][0] == "refresh"))
+        vc = ViewController(realPath, path, forceRefresh=(next(iter(self.get.get('action', [])), None) == "refresh"))
         try:
-            page = max(int(arguments["page"][0]), 1)
+            page = max(int(self.get["page"][0]), 1)
             # If an exception is thrown, then default our page to 1
         except TypeError:
             # If TypeError, fallback in case the value was not a string or number (e.g. None)
@@ -360,7 +359,7 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         nav_html += "<strong>(%d / %d)</strong></div>\n" % (page, tally)
 
         image_html = '<div class="largeImageWrapper">'
-        if 'source' in arguments and arguments['source'][0] == "random":
+        if next(iter(self.get.get('source', [])), None) == "random":
             # From a random page
             image_html += """<a href="/random?path=%s&path&origin=%d">
                                 <img class="largeImage" src="/image%s"/>
@@ -472,25 +471,25 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
 
         # Get the full path, getting rid of any symbolic links.
         # Reminder: translate_path omits the first "word" in the URL, assuming it to be a keyword such as "browse" or view
-        mode, realPath, relativePath, arguments = self.translate_path(path)
+        mode, realPath, relativePath = self.translate_path(path)
 
         if mode == "image":
             target_path = "%s/%s" % (common.get_target(), relativePath)
             return self.serve_file(target_path)
         elif mode == "random":
             # If nothing is specified, boot them back to root browsing...
-            if 'path' not in arguments:
+            if 'path' not in self.get:
                 return self.send_redirect("/browse/")
-            return self.handle_random(realPath, arguments)
+            return self.handle_random(realPath)
 
         elif mode == "view":
             # We are in view mode, now where do we want to view?
 
             # If nothing is specified, boot them back to root browsing...
-            if 'path' not in arguments:
+            if 'path' not in self.get:
                 return self.send_redirect("/browse/")
 
-            return self.handle_view(realPath, arguments)
+            return self.handle_view(realPath)
 
         elif mode == "browse" or not relativePath:
             if os.path.isdir(realPath):
@@ -509,11 +508,6 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         (e.g. drive or directory names) are ignored.  (XXX They should
         probably be diagnosed.)
         """
-
-        try:
-            args = parse_qs(path.split('?')[1])
-        except IndexError:
-            args = {}
 
         # abandon query parameters
         path = path.split('?')[0]
@@ -534,14 +528,11 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         except IndexError:
             dir_path = "/"
             word = "browse"
-        return word, path, dir_path, args
+        return word, path, dir_path
 
 if __name__ == '__main__':
     common.args.process(sys.argv)
 
     common.announce_common_arguments("Sharing images")
-
-    if common.args.get(common.TITLE_USER):
-        print "Basic authentication enabled (User: %s)" % common.colour_text(common.args.get(common.TITLE_USER, "<EMPTY>"))
 
     common.serve(ImageMirrorRequestHandler)

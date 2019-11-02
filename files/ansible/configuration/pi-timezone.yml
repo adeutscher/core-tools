@@ -1,0 +1,26 @@
+---
+# Author Credit: Peter Meszaros (https://gist.github.com/pmeszaros/3c6ca2a3a08f5bfb2579)
+- name: Set Time Zone
+  hosts: "{{ variable_host | default('all') }}"
+  become: yes
+  become_method: sudo
+  gather_facts: false
+
+  vars:
+  - timezone: "America/Vancouver"
+  tasks:
+  - name: Check timezone
+    shell: cat /etc/timezone
+    register: current_timezone
+
+  - name: Set timezone
+    copy: content="{{timezone}}\n"
+          dest=/etc/timezone
+          owner=root
+          group=root
+          mode=0644
+          backup=no
+    when: current_timezone.stdout != timezone
+
+  - name: timezone module
+    timezone: name="{{timezone}}"

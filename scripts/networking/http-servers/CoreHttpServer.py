@@ -12,6 +12,7 @@ from SocketServer import ThreadingMixIn
 from BaseHTTPServer import HTTPServer
 from SimpleHTTPServer import SimpleHTTPRequestHandler
 from SocketServer import ThreadingMixIn
+from urlparse import parse_qs
 import getopt, os, re, socket, struct, sys
 
 try:
@@ -121,6 +122,10 @@ TITLE_DENY = "deny address/range"
 TITLE_DENY_FILE = "deny address/range file"
 
 TITLE_USER_AGENT = "user-agent pattern"
+
+AUTH_BAD_NOT_FOUND = 0
+AUTH_BAD_PASSWORD = 1
+AUTH_GOOD_CREDS = 2
 
 ###########################################
 
@@ -443,6 +448,9 @@ def validate_common_arguments(self):
     if TITLE_SSL_KEY in self.args and not TITLE_SSL_CERT in self.args:
         errors.append("%s path provided, but no %s path was provided." % (TITLE_SSL_KEY, TITLE_SSL_CERT))
 
+    if TITLE_USER in self.args or TITLE_PASSWORD in self.args:
+        authentication_stores.append(SimpleAuthStore(self[TITLE_USER], self[TITLE_PASSWORD]))
+
     return errors
 
 args.add_validator(validate_common_arguments)
@@ -506,6 +514,7 @@ def get_target_information():
 
 def serve(handler, change_directory = False):
     bind_address, bind_port, directory = get_target_information()
+    server = None
     try:
         if change_directory:
             os.chdir(directory)
@@ -518,7 +527,8 @@ def serve(handler, change_directory = False):
         server.serve_forever()
     except KeyboardInterrupt:
         # Ctrl-C
-        server.kill_requests()
+        if server:
+            server.kill_requests()
         print ""
     except ssl.SSLError as e:
         m = "Unexpected %s: " % colour_text(type(e).__name__, COLOUR_RED)
@@ -552,6 +562,7 @@ ATTR_REQUEST_LINE = 'requestline'
 ATTR_REQUEST_VERSION = 'request_version'
 ATTR_RAW_RLINE = 'raw_requestline'
 ATTR_PATH = 'path'
+ATTR_FILE_PATH = 'file_path'
 ATTR_HEADERS = 'headers'
 ATTR_COMMAND = 'command'
 
@@ -571,14 +582,14 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         self.server = server
         self.setup()
 
-    def check_authorization(self):
+    def check_authentication(self):
         # Check for authorization (by default with the Authorization header),
         #  then pass to check_credentials to confirm them against a password back-end.
 
-        if not ( TITLE_USER in args or TITLE_PASSWORD in args ):
+        if not authentication_stores:
             return True
 
-        verbose = args[TITLE_VERBOSE]
+        verbose = args[TITLE_VERBOSE] # Shorthand
 
         raw_creds = getattr(self, ATTR_HEADERS, CaselessDict()).get("Authorization").split()
         if not raw_creds or len(raw_creds) < 2:
@@ -596,7 +607,15 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
         # Check username/password from the user.
         self.user = creds_list[0]
-        return self.user == args[TITLE_USER] and ":".join(creds_list[1:]) == args[TITLE_PASSWORD]
+        password = ":".join(creds_list[1:])
+
+        success = False
+        for store in authentication_stores:
+            result = store.authenticate(self.user, password)
+            success = result == AUTH_GOOD_CREDS
+            if result >= AUTH_BAD_PASSWORD:
+                break
+        return success
 
     def copyobj(self, src, dst):
         while self.alive:
@@ -675,7 +694,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
                 # An error code has been sent, just exit
                 return
 
-            if not self.check_authorization():
+            if not self.check_authentication():
                 return self.send_error(401, args[TITLE_AUTH_PROMPT])
 
             command = self.get_command()
@@ -827,6 +846,48 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
     def quote_html(self, html):
         return html.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
+    def parse_path(self, raw_path):
+        """Translate a /-separated PATH to the local filename syntax.
+        Components that mean special things to the local file system
+        (e.g. drive or directory names) are ignored.  (XXX They should
+        probably be diagnosed.)
+        """
+        # abandon query parameters
+
+        items = raw_path.split('?',1)
+
+        get = {}
+        if len(items) > 1:
+            get = parse_qs(items[1])
+
+        items = items[0].split('#',1)
+
+        section = ''
+        if len(items) > 1:
+            section = items[1]
+
+        path = posixpath.normpath(urllib.unquote(items[0]))
+
+        words = path.split('/')
+        words = filter(None, words)
+        file_path = os.getcwd()
+        path = '/'
+
+        for word in words:
+            drive, word = os.path.splitdrive(word)
+            head, word = os.path.split(word)
+            if word in (os.curdir, os.pardir): continue
+
+            file_path = os.path.join(file_path, word)
+            path = os.path.join(path, word)
+
+        if items[0].endswith('/'):
+            file_path = '%s/' % file_path
+            if not path.endswith('/'):
+                path = '%s/' % path
+
+        return (path, section, file_path, get)
+
     def parse_request(self):
         """Parse a request (internal).
         The request should be stored in self.raw_rline; the results
@@ -874,13 +935,16 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             if command != 'GET':
                 self.send_error(400, "Bad HTTP/0.9 request type (%s)" % command)
                 return False
-        elif not words:
+        else:
             m = "Bad request syntax"
             if len(getattr(self, ATTR_REQUEST_LINE, "")) < 30:
                 m += " (%s)" % getattr(self, ATTR_REQUEST_LINE, "")
             self.send_error(400, m)
             return False
-        self.command, self.path, self.request_version = command, path, version
+
+        self.command, self.request_version = command, version
+        self.path, self.section, self.file_path, self.get = self.parse_path(path)
+
 
         # Examine the headers and look for a Connection directive
         # Parsing into a dictionary for simplicity.
@@ -1204,6 +1268,18 @@ class NetAccess:
     def load_whitelist_file(self, path):
         return self.load_access_file(self.add_whitelist, path, "whitelist")
 
+class SimpleAuthStore:
+    def __init__(self, user, password):
+        self.user = user
+        self.password = password
+
+    def authenticate(self, user, password):
+        if user == self.user:
+            if self.password == password:
+                return AUTH_GOOD_CREDS
+            return AUTH_BAD_PASSWORD
+        return AUTH_BAD_NOT_FOUND
+
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
 
@@ -1233,3 +1309,4 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
             self.requests[client_address].alive = False
 
 access = NetAccess()
+authentication_stores = []

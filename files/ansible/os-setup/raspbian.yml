@@ -16,6 +16,7 @@
       - nmap
       - unzip
       - zip
+      - lm-sensors
 
   remote_user: pi
 

@@ -17,7 +17,7 @@ if __name__ == "__main__":
     paths = [i for i in sys.argv[1:] if i != "-i"]
 
     if not paths:
-        err("No path provided.\nUsage: ./json-format.py [-i] json-path ...")
+        err("No paths provided.\nUsage: ./json-format.py [-i] json-path ...")
         exit(1)
 
     code = 0

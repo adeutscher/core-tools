@@ -16,8 +16,8 @@ if __name__ == "__main__":
     inline = [i for i in sys.argv[1:] if i == "-i"]
     paths = [i for i in sys.argv[1:] if i != "-i"]
 
-    if len(sys.argv) <= 1:
-        err("No path provided.\nUsage: ./json-format.py json-path")
+    if not paths:
+        err("No paths provided.\nUsage: ./json-minify.py [-i] json-path ...")
         exit(1)
 
     code = 0

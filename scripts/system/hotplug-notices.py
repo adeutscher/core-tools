@@ -138,6 +138,7 @@ def network_notice(contents):
             s.connect((server, port))
             s.settimeout(2)
             s.send(contents)
+            s.close()
     except Exception as e:
         print_error('Error sending network notice to %s: %s' % (colour_text('%s:%d' % (server, port), COLOUR_GREEN), str(e)))
 

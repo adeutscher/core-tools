@@ -813,26 +813,34 @@ while [ -n "${1}" ]; do
   while [ -n "${1}" ]; do
     # Break if an option.
     grep -q "^\-" <<< "${1}" && break
-    targets="${targets} ${1}"
+
+    if [[ "${1}" == "all" ]]; then
+      do_all=1
+    else
+      targets="${targets} ${1}"
+    fi
+
     shift
   done
 done
 
-for _a in ${targets}; do
-  if [[ "$1" == "all" ]]; then
-    if [ -z "$WINDIR" ]; then
-      getlabel_all
-    else
-      error "Cannot cycle through all interfaces in a Windows-y environment."
-    fi
-  elif ip a s "$_a" 2> /dev/null >&2; then
-    # Specific interface
-    getlabel_if "$_a"
+if (( "${do_all:-0}" )); then
+  if [ -z "$WINDIR" ]; then
+    getlabel_all
   else
-    # Network range.
-    getlabel "$_a"
+    error "Cannot cycle through all interfaces in a Windows-y environment."
   fi
-done
+else
+  for _a in ${targets}; do
+    if ip a s "$_a" 2> /dev/null >&2; then
+      # Specific interface
+      getlabel_if "$_a"
+    else
+      # Network address or address range.
+      getlabel "$_a"
+    fi
+  done
+fi
 
 if ! (( "${lazy:-0}" )); then
   (( "${__record_count:-0}" )) && summary "$(printf "Records retrieved: ${BOLD}%s${NC}" "${__record_count}")"
