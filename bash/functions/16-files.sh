@@ -96,21 +96,3 @@ partsize(){
 
     return ${return_num:-0}
 }
-
-deadlinks(){
-    if [ -z "$1" ]; then
-        error "No directories provided."
-        return 1
-    fi
-
-    while [ -n "$1" ]; do
-        if [ -d "$1" ]; then
-            notice "$(printf "Checking in $Colour_FilePath%s$Colour_Off for dead symbolic links..."  "$1")"
-            find "$1" -xtype l | xargs-i printf "    {}\n"
-        else
-            error "$(printf "$Colour_FilePath%s$Colour_Off does not seem to be a directory..." "$1")"
-        fi
-
-        shift
-    done
-}
