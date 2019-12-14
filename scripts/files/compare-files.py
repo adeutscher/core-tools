@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 # Compares two files, and reports on the number of differences between them.
 # I originally made this script to troubleshoot a from-scratch file transfer program.
@@ -10,16 +10,22 @@
 #      Reports on how match statistics as a percentage of the smaller file.
 #  - Reports match statistics as a percentage of the larger file.
 
+from __future__ import print_function
 import getopt, os, sys
 
 #
 # Common Colours and Message Functions
 ###
 
-def __print_message(colour, header, message):
-    print "%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+def _print_message(header_colour, header_text, message, stderr=False):
+    f=sys.stdout
+    if stderr:
+        f=sys.stderr
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
 
-def colour_text(colour, text):
+def colour_text(text, colour = None):
+    if not colour:
+        colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
@@ -55,16 +61,24 @@ error_count = 0
 def print_error(message):
     global error_count
     error_count += 1
-    __print_message(COLOUR_RED, "Error", message)
+    _print_message(COLOUR_RED, "Error", message)
+
+def print_exception(e, msg=None):
+    # Shorthand wrapper to handle an exception.
+    # msg: Used to provide more context.
+    sub_msg = ""
+    if msg:
+        sub_msg = " (%s)" % msg
+    print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
 
 def print_notice(message):
-    __print_message(COLOUR_BLUE, "Notice", message)
+    _print_message(COLOUR_BLUE, "Notice", message)
 
 def print_usage(message):
-    __print_message(COLOUR_PURPLE, "Usage", message)
+    _print_message(COLOUR_PURPLE, "Usage", message)
 
 def print_warning(message):
-    __print_message(COLOUR_YELLOW, "Warning", message)
+    _print_message(COLOUR_YELLOW, "Warning", message)
 
 def hexit(exit_code = 0):
     print_usage("Usage: ./compare-files.py file-a file-b [-s block-size]")
@@ -94,16 +108,16 @@ def main(argv):
     try:
         file_a = operands[0]
         if not os.path.isfile(file_a):
-            errors.append("File A does not exist: %s" % colour_text(COLOUR_GREEN, file_a))
+            errors.append("File A does not exist: %s" % colour_text(file_a, COLOUR_GREEN))
 
         file_b = operands[1]
         if not os.path.isfile(file_b):
-            errors.append("File B does not exist: %s" % colour_text(COLOUR_GREEN, file_b))
+            errors.append("File B does not exist: %s" % colour_text(file_b, COLOUR_GREEN))
     except IndexError:
-        errors.append("Must provide two files for comparison (%s provided)." % colour_text(COLOUR_BOLD, len(operands)))
+        errors.append("Must provide two files for comparison (%s provided)." % colour_text(len(operands)))
 
     if len(operands) > 2:
-        print_warning("Only the first two paths provided will be compared (%s provided)." % colour_text(COLOUR_BOLD, len(operands)))
+        print_warning("Only the first two paths provided will be compared (%s provided)." % colour_text(len(operands)))
 
     if raw_size:
         try:
@@ -112,14 +126,14 @@ def main(argv):
             errors.append("Invalid block size: %s" % colour_text(COLOUR_BOLD, block_size))
 
     if block_size <= 0:
-        errors.append("Block size must be greater than 0 (was set to %s)." % colour_text(COLOUR_BOLD, block_size))
+        errors.append("Block size must be greater than 0 (was set to %s)." % colour_text(block_size))
 
     if len(errors):
         for e in errors:
             print_error(e)
         hexit(1)
 
-    print_notice("Comparing %s to %s, %s bytes at a time." % (colour_text(COLOUR_GREEN, file_a), colour_text(COLOUR_GREEN, file_b), colour_text(COLOUR_BOLD, block_size)))
+    print_notice("Comparing %s to %s, %s bytes at a time." % (colour_text(COLOUR_GREEN, file_a), colour_text(file_b, COLOUR_GREEN), colour_text(block_size)))
     compare(file_a, file_b, block_size)
 
 def compare(file_a, file_b, block_size):

@@ -1,11 +1,18 @@
-import getopt, json, os, re, socket, struct, sys, thread, time
+#!/usr/bin/env
+
+from __future__ import print_function
+import getopt, json, os, re, socket, struct, sys, time
+if sys.version_info[0] == 2:
+    from thread import start_new_thread
+else:
+    from _thread import start_new_thread
 
 #
 # Common Colours and Message Functions
 ###
 
 def _print_message(header_colour, header_text, message):
-    print "%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message)
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message))
 
 def colour_text(text, colour = None):
     colour = colour or COLOUR_BOLD
@@ -93,6 +100,8 @@ DEFAULT_TIMEOUT = 5
 
 REGEX_INET4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 
+ENCODING = 'utf-8'
+
 TITLE_BIND = "bind"
 TITLE_FORCE_COLOURS = "colours"
 TITLE_MODE = "mode"
@@ -154,8 +163,8 @@ class NetAccess:
     # Credit for initial IP functions: http://code.activestate.com/recipes/66517/
 
     def ip_make_mask(self, n):
-        # Return a mask of n bits as a long integer
-        return (2L<<n-1)-1
+        # Return a mask of n bits as an integer
+        return (2<<n-1)-1
 
     def ip_strton(self, ip):
         # Convert decimal dotted quad string to long integer
@@ -258,6 +267,7 @@ OPT_TYPE_LONG = MASK_OPT_TYPE_LONG | MASK_OPT_TYPE_ARG
 TITLE_HELP = "help"
 
 class ArgHelper:
+
     args = {}
     defaults = {}
     raw_args = {}
@@ -281,13 +291,21 @@ class ArgHelper:
         opt = self.opts_by_label.get(arg)
 
         if not opt:
-            return None
+            # There was no registered option.
+            #   Giving give the args dictionary an attempt in case
+            #   something like a validator went and added to it.
+            return self.args.get(arg)
         if opt.multiple:
             default = []
 
         # Silly note: Doing a get() out of a dictionary when the stored
         #   value of the key is None will not fall back to default
-        value = self.args.get(arg, os.environ.get(opt.environment, self.defaults.get(arg)))
+        value = self.args.get(arg)
+        if value is None:
+            if opt.environment:
+                value = os.environ.get(opt.environment, self.defaults.get(arg))
+            else:
+                value = self.defaults.get(arg)
 
         if value is None:
             return default
@@ -372,11 +390,13 @@ class ArgHelper:
 
         if value is None:
             self.errors.append("Unable to convert %s to %s: %s" % (colour_text(opt.label), opt.converter.__name__, colour_text(raw_value)))
+
         return value
 
     get = __getitem__
 
     def hexit(self, exit_code = 0):
+
         s = "./%s" % os.path.basename(sys.argv[0])
         lines = []
         for label, section in [("Flags", OPT_TYPE_FLAG), ("Options", OPT_TYPE_SHORT), ("Long Flags", OPT_TYPE_LONG_FLAG), ("Long Options", OPT_TYPE_LONG)]:
@@ -394,7 +414,7 @@ class ArgHelper:
 
         _print_message(COLOUR_PURPLE, "Usage", s)
         for l in lines:
-            print l
+            print(l)
 
         if exit_code >= 0:
             exit(exit_code)
@@ -436,6 +456,7 @@ class ArgHelper:
         return True
 
     def process(self, args = [], exit_on_error = True, print_errors = True):
+
         # Special logic for SimpleMessages
         global CURRENT_MODE
         if CURRENT_MODE in (MODE_TCP_DEFAULT, MODE_TCP_ONLY):
@@ -508,6 +529,7 @@ class ArgHelper:
                     self.errors.append(r) # Assume that this is a string.
 
 class OptArg:
+
     opt_type = 0
 
     def is_flag(self):
@@ -522,6 +544,9 @@ class OptArg:
         else:
             s = "  %s <%s>: %s" % (opt, self.label, desc)
 
+        if self.environment:
+            s += " (Environment Variable: %s)" % colour_text(self.environment)
+
         if self.default_announce:
             # Manually going to defaults table allows this core module
             # to have its help display reflect retroactive changes to defaults.
@@ -529,6 +554,7 @@ class OptArg:
         return s
 
     def get_printout_usage(self, opt):
+
         if self.is_flag():
             s = opt
         else:
@@ -628,6 +654,9 @@ class SimpleMessageSession:
         log_header = "%s[%s]" % (colour_text(self.addr[0], COLOUR_GREEN), colour_text(time.strftime("%Y-%m-%d %k:%M:%S")))
         msg = None
         try:
+            if isinstance(data, bytes) and sys.version_info[0] >= 3:
+                data = str(data, ENCODING)
+
             if getattr(self.handler, ATTR_JSON, DEFAULT_ATTR_JSON):
                 have_json = False
                 try:
@@ -648,6 +677,10 @@ class SimpleMessageSession:
             self.send(msg)
 
     def send(self, data):
+
+        if not isinstance(data, bytes) and sys.version_info[0] >= 3:
+            data = bytes(data, ENCODING)
+
         if self.udp:
             self.sock.sendto(data, self.addr) # UDP
         else:
@@ -727,7 +760,7 @@ def serve(handler_class):
                     del sessions[addr]
             else:
                 # TCP
-                thread.start_new_thread(tcpclientthread, (conn, addr,  handler_class))
+                start_new_thread(tcpclientthread, (conn, addr,  handler_class))
     except KeyboardInterrupt:
         pass
 

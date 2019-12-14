@@ -21,6 +21,7 @@ class DesktopNotifyHandler:
     def handle(self, header, data):
         # Strip out everything including  after the first newline.
         # Ignore unprintable characters.
+
         message = re.sub(r"\n.*", "", data)
 
         if not message or re.match(r"[^ -~]", message):
@@ -54,7 +55,7 @@ class DesktopNotifyHandler:
             p = subprocess.Popen([COMMAND_NOTIFY, "--icon", icon, "Message from %s" % self.session.addr[0], message])
             p.communicate()
         except OSError as e:
-            print_error(sys.stderr, "OSError: %s" % str(e))
+            sm.print_exception(e, "Error running %s" % colour_text(COMMAND_NOTIFY, sm.COLOUR_BLUE))
             return "os-error\n"
         return "printed\n"
 

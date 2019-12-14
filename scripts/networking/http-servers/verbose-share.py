@@ -13,6 +13,12 @@ common.local_files.append(os.path.realpath(__file__))
 
 import cgi
 
+if sys.version_info[0] == 2:
+    from urllib import quote
+    from urlparse import unquote
+else:
+    from urllib.parse import quote, unquote
+
 # Script Content
 
 DEFAULT_REVERSE = False
@@ -163,7 +169,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         else:
             items.sort(key=lambda a: a['rawname'].lower(), reverse = reverse)
 
-        displaypath = cgi.escape(urllib.unquote(getattr(self, common.ATTR_PATH, "/")))
+        displaypath = cgi.escape(unquote(getattr(self, common.ATTR_PATH, "/")))
         htmlContent = """<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
 <html>
   <head>
@@ -206,7 +212,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                 mtime_display = datetime.datetime.fromtimestamp(item.get('mtime')).strftime('%Y-%m-%d %H:%M:%S')
 
             if item.get('linkname') and item.get('reachable', False):
-                htmlContent += '      <tr><td class="c_name"><a href="%s">%s</a></td><td class="c_mod">%s</td><td class="c_size">%s</td><td class="c_info">%s</td></tr>\n' % (urllib.quote(item.get('linkname')), cgi.escape(item.get('displayname')), mtime_display, item.get('size_display'), item.get('extrainfo'))
+                htmlContent += '      <tr><td class="c_name"><a href="%s">%s</a></td><td class="c_mod">%s</td><td class="c_size">%s</td><td class="c_info">%s</td></tr>\n' % (quote(item.get('linkname')), cgi.escape(item.get('displayname')), mtime_display, item.get('size_display'), item.get('extrainfo'))
             else:
                 # Not reachable - dead symlink
                 htmlContent += '      <tr><td class="c_name s_dead">%s</td><td class="c_mod">%s</td><td class="c_size">%s</td><td class="c_info">%s</td></tr>\n' % (cgi.escape(item.get('displayname')), mtime_display, item.get('size_display'), item.get('extrainfo'))
@@ -224,7 +230,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                 flip_order = LABEL_ORDER_ASCENDING
             get = '%s&%s=%s' % (get, LABEL_GET_ORDER, flip_order)
 
-        return '<a href="%s%s">%s</a>' % (urllib.quote(self.path), get, label)
+        return '<a href="%s%s">%s</a>' % (quote(self.path), get, label)
 
     def send_head(self):
         """Common code for GET and HEAD commands.

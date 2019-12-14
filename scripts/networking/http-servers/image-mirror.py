@@ -3,18 +3,20 @@
 # "Scudder" Image Sharing
 # This is a more independent version of a Django application that I kludged together for quickly browsing images from another machine.
 
+from __future__ import print_function
 import getopt, os, socket, sys, urllib
 import CoreHttpServer as common
 common.local_files.append(os.path.realpath(__file__))
 
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
-
 # Used specifically by the image mirror
 import getpass, posixpath, re
 from random import randint
+
+if sys.version_info[0] == 2:
+    from urlparse import unquote
+else:
+    from urllib.parse import unquote
+
 
 # Remove unused arguments
 del common.args.opts[common.OPT_TYPE_FLAG]["-P"]
@@ -157,8 +159,7 @@ class ViewController:
                         images.append(candidate)
             except OSError as e:
                 # Ignore OS Errors for the moment.
-                print "OSError"
-                print e
+                common.print_exception(e)
                 pass
         return images
 
@@ -512,9 +513,9 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         # abandon query parameters
         path = path.split('?')[0]
         path = path.split('#',1)[0]
-        path = posixpath.normpath(urllib.unquote(path))
+        path = posixpath.normpath(unquote(path))
         words = path.split('/')
-        words = filter(None, words)
+        words = [_f for _f in words if _f]
         path = common.get_target()
 
         for word in words[1:]:

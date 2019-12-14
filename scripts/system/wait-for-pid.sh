@@ -41,6 +41,10 @@ print_wait(){
   printf "${PURPLE}"'Waiting'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
 }
 
+warning(){
+  printf "${YELLOW}"'Warning'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
+}
+
 # Time-related Functions
 ####
 
@@ -141,6 +145,10 @@ __translate_seconds(){
 
 # Script Functions
 
+if type lsof 2> /dev/null >&2; then
+  HAVE_LSOF=1
+fi
+
 add_pid(){
   [ -z "${1}" ] && return 0
   COUNT="$((${COUNT:-0}+1))"
@@ -176,6 +184,8 @@ wait_for_pids(){
 
 # Confirm that valid PIDs were given and that they existed at the start of the script's running.
 
+PGREP_THRESHOLD=16
+
 while [ -n "${1}" ]; do
   while getopts ":hs:" OPT $@; do
     # Handle switches up until we encounter a non-switch option.
@@ -207,48 +217,104 @@ while [ -n "${1}" ]; do
     # Mark that there was an attempt to give a PID.
     # If the attempt failed, then there will be a more specific error message down the chain.
     ATTEMPT=1
+    LSOF_PROCESS=0
+    IS_FILE=0
+    PATTERN_COLOUR="${BOLD}"
 
-    if ! grep -Pq "^\d+$" <<< "${1}"; then
-      # If the argument is not a number, then assume that we want to pgrep for matcing entries.
-      notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${1}")"
+    if [ -f "${1}" ]; then
+      # Argument is a file path. Attempt to use lsof to get a path.
 
-      if [ "$(wc -c <<< "${1}")" -ge "16" ]; then
-        error "$(printf "Pattern length is ${BOLD}%d${NC} characters or greater. ${BLUE}%s${NC} will not be able to match pattern: ${BOLD}%s${NC}" "16" "pgrep" "${1}")"
-        # Not leaving the loop to drive the point home with the "No matching processes" error.
-      fi
+      IS_FILE=1
+      PATTERN_COLOUR="${GREEN}"
 
-      # Get results, sanitizing options beginning in '-'.
-      # Strip out PID of script and the subshell that collects input to respectively
-      # avoid infinite waiting when waiting for other invocations of this script and
-      #  to cut down on output on account of insta-done processes.
+      if (( "${HAVE_LSOF:-0}" )); then
+        lsof_processes="$(lsof -t "${1}" | sort | uniq)"
 
-      # The BASHPID SHOULD be stuck to the PID of the current BASH process.
-      # However, it seems that piped output is itself its own PID. TIL.
-      # Our options in this case are:
-      #  A: Store BASHPID in a separate variable before piping. I went with this option.
-      #  B: Use mktemp to avoid subshells altogether. Seems like a bit of a waste.
-
-      results="$(bpid="${BASHPID}"; pgrep "$(sed "s/-/\\\\-/g" <<< "${1}")" | sed -e "/^${$}$/d" -e "/^${bpid}$/d")"
-
-      if [ -z "${results}" ]; then
-        error "$(printf "No matching processes: ${BOLD}%s${NC}" "${1}")"
+        if [ -n "${lsof_processes}" ]; then
+          LSOF_PROCESS=1
+          for p in ${lsof_processes}; do
+            notice "$(printf "File ${GREEN}%s${NC} is open in process: ${BOLD}%s${NC}" "${1}" "${p}")"
+            add_pid "${p}"
+          done
+        else
+          # Print a notice that an attempt was made to use lsof on a path.
+          # Explicitly choosing not to count this as an error.
+          notice "$(printf "File ${GREEN}%s${NC} is not being used by any processes. Attempting the file name through ${BLUE}%s${NC}" "${1}" "pgrep")"
+        fi
       else
-        for result in ${results}; do
-          add_pid "${result}"
-        done
+        # Was given a file path, but could not follow up because lsof was not available.
+        # Make this mark to print a specific error message down the chain.
+        TRIED_LSOF=1
       fi
-    elif ! pid_exists "${1}"; then
-      # PID must exist at start.
-      error "$(printf "PID does not exist: ${BOLD}%s${NC}" "${1}")"
-    else
-      add_pid "${1}"
     fi
+
+    if ! (( "${LSOF_PROCESS:-0}" )); then
+
+      # If lsof did not match any processes, then attempt to use pgrep or a direct PID.
+
+      if ! grep -Pq "^\d+$" <<< "${1}"; then
+        # If the argument is not a number, then assume that we want to pgrep for matcing process entries.
+
+        file_pattern="${1}"
+        original_file_pattern=""
+
+        if [ "$(wc -c <<< "${1}")" -ge "16" ]; then
+
+          # Pattern as given is too long. Print a warning and then attempt a clipped-down version.
+
+          if (( "${IS_FILE}" )); then
+            file_pattern="$(basename "${file_pattern}")"
+            original_file_pattern="${file_pattern}"
+          fi
+          file_pattern="${file_pattern:0:$((${PGREP_THRESHOLD}-1))}"
+
+          notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${original_file_pattern}")"
+          warning "$(printf "Pattern length is ${BOLD}%d${NC} characters or greater. ${BLUE}%s${NC} cannot match this many characters." "${PGREP_THRESHOLD}" "pgrep")"
+          warning "$(printf "Attempting to clip down to ${BOLD}%d${NC} characters for ${BLUE}%s${NC}: ${PATTERN_COLOUR}%s${NC} -> ${PATTERN_COLOUR}%s${NC}" "$((${PGREP_THRESHOLD}-1))" "pgrep" "${original_file_pattern}" "${file_pattern}")"
+
+        else
+          notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${file_pattern}")"
+        fi
+
+        # Get results, sanitizing options beginning in '-'.
+        # Strip out PID of script and the subshell that collects input to respectively
+        # avoid infinite waiting when waiting for other invocations of this script and
+        #  to cut down on output on account of insta-done processes.
+
+        # The BASHPID SHOULD be stuck to the PID of the current BASH process.
+        # However, it seems that piped output is itself its own PID. TIL.
+        # Our options in this case are:
+        #  A: Store BASHPID in a separate variable before piping. I went with this option.
+        #  B: Use mktemp to avoid subshells altogether. Seems like a bit of a waste.
+
+        results="$(bpid="${BASHPID}"; pgrep "$(sed "s/-/\\\\-/g" <<< "${file_pattern}")" | sed -e "/^${$}$/d" -e "/^${bpid}$/d")"
+
+        if [ -z "${results}" ]; then
+          error "$(printf "No processes matched pattern: ${PATTERN_COLOUR}%s${NC}" "${file_pattern}")"
+        else
+          for result in ${results}; do
+            add_pid "${result}"
+          done
+        fi
+      elif ! pid_exists "${1}"; then
+        # PID must exist at start.
+        error "$(printf "PID does not exist: ${BOLD}%s${NC}" "${1}")"
+      else
+        # Argument is a number
+        add_pid "${1}"
+      fi
+
+    fi
+
     shift
   done # Operand ${1} loop.
 done # Outer ${1} loop.
 
 if ! (( "${ATTEMPT:-0}" )); then
   error "No PIDs provided."
+elif ! (( "${COUNT:-0}" )); then
+  # Drive the point home that no matches happened.
+  error "No matched PIDs."
 fi
 
 (( "${__error_count:-0}" )) && exit 1

@@ -5,27 +5,40 @@
 #   * https://docs.python.org/2/library/simplehttpserver.html
 
 # Basic includes
-import base64, getopt, getpass, os, mimetypes, posixpath, re, shutil, ssl, socket, struct, sys, time, urllib, BaseHTTPServer
+import base64, getopt, getpass, os, mimetypes, posixpath, re, shutil, ssl, socket, struct, sys, time, urllib
 from random import randint
-from SocketServer import ThreadingMixIn
 
-from BaseHTTPServer import HTTPServer
-from SimpleHTTPServer import SimpleHTTPRequestHandler
-from SocketServer import ThreadingMixIn
-from urlparse import parse_qs
-import getopt, os, re, socket, struct, sys
+if sys.version_info[0] == 2:
+    from BaseHTTPServer import HTTPServer
+    from BaseHTTPServer import BaseHTTPRequestHandler
 
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
+    from SocketServer import ThreadingMixIn
+
+    from urllib import unquote
+    from urlparse import parse_qs
+
+    try:
+        from cStringIO import StringIO
+    except ImportError:
+        from StringIO import StringIO
+else:
+    import http.client
+    from http.server import HTTPServer
+    from http.server import BaseHTTPRequestHandler
+
+    from socketserver import ThreadingMixIn
+
+    from urllib.parse import unquote
+    from urllib.parse import parse_qs
+
+    from io import StringIO
 
 #
 # Common Colours and Message Functions
 ###
 
 def _print_message(header_colour, header_text, message):
-    print "%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message)
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message))
 
 def colour_text(text, colour = None):
     if not colour:
@@ -175,12 +188,23 @@ class ArgHelper:
     def __getitem__(self, arg, default = None):
         opt = self.opts_by_label.get(arg)
 
-        if opt and opt.multiple:
+        if not opt:
+            # There was no registered option.
+            #   Giving give the args dictionary an attempt in case
+            #   something like a validator went and added to it.
+            return self.args.get(arg)
+        if opt.multiple:
             default = []
 
         # Silly note: Doing a get() out of a dictionary when the stored
         #   value of the key is None will not fall back to default
-        value = self.args.get(arg, self.defaults.get(arg))
+        value = self.args.get(arg)
+        if value is None:
+            if opt.environment:
+                value = os.environ.get(opt.environment, self.defaults.get(arg))
+            else:
+                value = self.defaults.get(arg)
+
         if value is None:
             return default
         return value
@@ -188,7 +212,7 @@ class ArgHelper:
     def __setitem__(self, key, value):
         self.args[key] = value
 
-    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, converter=str, multiple = False, strict_single = False):
+    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, default_colour = None, default_announce = False, environment = None, converter=str, multiple = False, strict_single = False):
 
         if opt_type not in self.opts:
             raise Exception("Bad option type: %s" % opt_type)
@@ -216,7 +240,7 @@ class ArgHelper:
             if opt_type & MASK_OPT_TYPE_LONG == g & MASK_OPT_TYPE_LONG and arg in self.opts[g]:
                 raise Exception("Flag already defined: %s" % label)
         if label in self.opts_by_label:
-            raise Exception("Duplicate label (new: %s%s): %s" % (arg, label))
+            raise Exception("Duplicate label (new: %s): %s" % (arg, label))
         if multiple and strict_single:
             raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
         # These do not cover harmless checks on arg modifiers with flag values.
@@ -226,6 +250,9 @@ class ArgHelper:
         obj.label = label
         obj.required = required and opt_type & MASK_OPT_TYPE_ARG
         obj.default = default
+        obj.default_colour = default_colour
+        obj.default_announce = default_announce
+        obj.environment = environment
         obj.multiple = multiple
         obj.description = description
         obj.converter = converter
@@ -285,7 +312,7 @@ class ArgHelper:
 
         _print_message(COLOUR_PURPLE, "Usage", s)
         for l in lines:
-            print l
+            print(l)
 
         if exit_code >= 0:
             exit(exit_code)
@@ -393,9 +420,18 @@ class OptArg:
         desc = self.description or "No description defined"
 
         if self.is_flag():
-            return "  %s: %s" % (opt, desc)
+            s = "  %s: %s" % (opt, desc)
         else:
-            return "  %s <%s>: %s" % (opt, self.label, desc)
+            s = "  %s <%s>: %s" % (opt, self.label, desc)
+
+        if self.environment:
+            s += " (Environment Variable: %s)" % colour_text(self.environment)
+
+        if self.default_announce:
+            # Manually going to defaults table allows this core module
+            # to have its help display reflect retroactive changes to defaults.
+            s += " (Default: %s)" % colour_text(args.defaults.get(self.label), self.default_colour)
+        return s
 
     def get_printout_usage(self, opt):
 
@@ -505,6 +541,30 @@ def announce_common_arguments(verb = "Hosting content"):
     for ua in args[TITLE_USER_AGENT]:
         print_notice("Whitelisted user agent pattern: %s" % colour_text(ua))
 
+ENCODING = 'utf-8'
+
+def convert_bytes(string_data):
+
+    if isinstance(string_data, bytes):
+        return string_data # Already bytes
+    if isinstance(string_data, list):
+        return [convert_bytes(i) for i in data]
+
+    if sys.version_info[0] >= 3:
+        return bytes(string_data, ENCODING)
+    return bytes(string_data)
+
+def convert_str(data):
+
+    if isinstance(data, str):
+        return data # Already a string
+    if isinstance(data, list):
+        return [convert_str(i) for i in data]
+
+    if sys.version_info[0] >= 3:
+        return str(data, ENCODING)
+    return str(data)
+
 DEFAULT_TARGET = os.getcwd() # Most implementations consider the target to be the current directory. Override if this is not the case.
 def get_target():
     return args.last_operand(DEFAULT_TARGET)
@@ -529,7 +589,7 @@ def serve(handler, change_directory = False):
         # Ctrl-C
         if server:
             server.kill_requests()
-        print ""
+        print("")
     except ssl.SSLError as e:
         m = "Unexpected %s: " % colour_text(type(e).__name__, COLOUR_RED)
         if re.match("^\[SSL\] PEM lib", str(e)):
@@ -566,7 +626,7 @@ ATTR_FILE_PATH = 'file_path'
 ATTR_HEADERS = 'headers'
 ATTR_COMMAND = 'command'
 
-class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
+class CoreHttpServer(BaseHTTPRequestHandler):
 
     server_version = "CoreHttpServer"
     alive = True
@@ -589,16 +649,14 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         if not authentication_stores:
             return True
 
-        verbose = args[TITLE_VERBOSE] # Shorthand
-
         raw_creds = getattr(self, ATTR_HEADERS, CaselessDict()).get("Authorization").split()
         if not raw_creds or len(raw_creds) < 2:
             return False
 
         # Decode
         try:
-            creds_list = base64.b64decode(raw_creds[1]).split(":")
-        except TypeError:
+            creds_list = convert_str(convert_bytes(base64.b64decode(raw_creds[1])).split(convert_bytes(":")))
+        except TypeError as e:
             return False
 
         if len(creds_list) < 2:
@@ -622,7 +680,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
             buf = src.read(16*1024)
             if not (buf and self.alive):
                 break
-            dst.write(buf)
+            dst.write(convert_bytes(buf))
         self.alive = False
         src.close()
 
@@ -648,7 +706,8 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def get_header_dict(self, src):
         d = CaselessDict()
-        for l in str(src).split("\r\n"):
+
+        for l in re.split("\r?\n", str(src)):
             if not l:
                 continue
             items = l.split(":")
@@ -866,10 +925,9 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         if len(items) > 1:
             section = items[1]
 
-        path = posixpath.normpath(urllib.unquote(items[0]))
+        path = posixpath.normpath(unquote(items[0]))
 
-        words = path.split('/')
-        words = filter(None, words)
+        words = [_f for _f in path.split('/') if _f]
         file_path = os.getcwd()
         path = '/'
 
@@ -896,7 +954,8 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         Return True for success, False for failure; on failure, an
         error is sent back.
         """
-        self.requestline = (getattr(self, ATTR_RAW_RLINE, None) or "").rstrip('\r\n')
+
+        self.requestline = convert_str((getattr(self, ATTR_RAW_RLINE, None) or "").rstrip(convert_bytes('\r\n')))
         words = self.requestline.split()
 
         if len(words) == 3:
@@ -945,10 +1004,14 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         self.command, self.request_version = command, version
         self.path, self.section, self.file_path, self.get = self.parse_path(path)
 
-
         # Examine the headers and look for a Connection directive
         # Parsing into a dictionary for simplicity.
-        self.headers = self.get_header_dict(self.MessageClass(self.rfile, 0))
+
+        if sys.version_info[0] == 2:
+            self.headers = self.get_header_dict(self.MessageClass(self.rfile, 0))
+        else:
+            mc = http.client.parse_headers(self.rfile, _class=self.MessageClass).__str__()
+            self.headers = self.get_header_dict(mc)
 
         # Access control checks
         user_agent_match = not args[TITLE_USER_AGENT]
@@ -1010,16 +1073,16 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         a piece of HTML explaining the error to the user.
         """
         try:
-            short, long = self.responses[code]
+            short_msg, long_msg = self.responses[code]
         except KeyError:
-            short, long = '???', '???'
+            short_msg, long_msg = '???', '???'
         if message is None:
-            message = short
-        explain = long
+            message = short_msg
+
         self.log_error("code %d, message %s", code, message)
 
         # using _quote_html to prevent Cross Site Scripting attacks (see bug #1100201)
-        content = (self.error_message_format % {'code': code, 'message': self.quote_html(message), 'explain': explain})
+        content = (self.error_message_format % {'code': code, 'message': self.quote_html(message), 'explain': long_msg})
         try:
             self.send_response(code, getattr(self, ATTR_HEADERS, None))
             self.send_header("Content-Type", self.error_content_type)
@@ -1048,6 +1111,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         f.write(content)
         length = f.tell()
         f.seek(0)
+
         self.send_response(200)
         encoding = sys.getfilesystemencoding()
         self.send_header("Content-type", "text/html; charset=%s" % encoding)
@@ -1090,7 +1154,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
         path = path.split('#',1)[0]
         # Reminder: The use of posixpath.normpath accounts for
         # potential malicious crafted request paths.
-        path = posixpath.normpath(urllib.unquote(path))
+        path = posixpath.normpath(unquote(path))
 
         if not include_cwd:
             # Return path as-is
@@ -1098,7 +1162,7 @@ class CoreHttpServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
         # Prepare to tack on current working directory.
         words = path.split('/')
-        words = filter(None, words)
+        words = [_f for _f in words if _f]
         path = os.getcwd()
         for word in words:
             drive, word = os.path.splitdrive(word)
@@ -1115,23 +1179,23 @@ class CaselessDict(dict):
     # This particular version also makes the assumption all stored values will be strings.
     def __init__(s, src = None):
         if src:
-            for k in src.keys():
+            for k in list(src.keys()):
                 s[k] = src[k]
         super(CaselessDict, s).__init__()
 
     def __contains__(s, key):
-        return key.lower() in [k.lower() for k in s.keys()]
+        return key.lower() in [k.lower() for k in list(s.keys())]
 
     # Credit for __getitem__/__setitem__:
     def __setitem__(s, key, val):
         if s.__contains__(key):
-            for old in [k for k in s.keys() if k.lower() == key.lower()]:
+            for old in [k for k in list(s.keys()) if k.lower() == key.lower()]:
                 del s[old]
         super(CaselessDict, s).__setitem__(key, val.strip())
 
     def get(s, key, default = ""):
         # Get the first (and hopefully only) key match.
-        keys = [k for k in s.keys() if k.lower() == key.lower()]
+        keys = [k for k in list(s.keys()) if k.lower() == key.lower()]
         if not keys:
             return default
         return super(CaselessDict, s).get(keys[0])
@@ -1188,7 +1252,7 @@ class NetAccess:
 
     def ip_make_mask(self, n):
         # Return a mask of n bits as a long integer
-        return (2L<<n-1)-1
+        return (2<<n-1)-1
 
     def ip_strton(self, ip):
         # Convert decimal dotted quad string to long integer
@@ -1293,7 +1357,9 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
             return
 
         req = self.RequestHandlerClass(request, client_address, self)
-        req.rfile._sock.settimeout(args[TITLE_TIMEOUT])
+        if sys.version_info[0] == 2:
+            req.rfile._sock.settimeout(args[TITLE_TIMEOUT])
+
         self.requests[client_address] = req
 
         try:
@@ -1305,7 +1371,7 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
     def kill_requests(self):
         self.alive = False
-        for client_address in self.requests.keys():
+        for client_address in list(self.requests.keys()):
             self.requests[client_address].alive = False
 
 access = NetAccess()

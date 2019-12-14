@@ -6,7 +6,8 @@
 #   at the same time.
 # In particular, I want to know my percentage of dropped pings per-ping.
 
-import getopt, re, socket, string, subprocess, sys, time
+from __future__ import print_function
+import getopt, re, platform, socket, string, subprocess, sys, time
 
 def colour_text(text, colour = None):
     colour = colour or COLOUR_BOLD
@@ -47,13 +48,15 @@ DEFAULT_STREAK_COUNT = 60
 
 def hexit(exit_code):
 
-    print "Usage: %s address [-c count] [-r] [-u] [streak_count]" % colour_green("./ping-stats.py")
-    print " -r: Exit when a streak of successful pings reaches the streak count."
-    print " -u: Exit when a streak of failed pings reaches the streak count."
-    print " -c count: Limit the total number of packets sent."
-    print "           Will exit with a non-zero exit code if limit is reached"
-    print "           while attempting a streak."
-    print "Set streak count as an optional second argument. Default: %s" % colour_text(DEFAULT_STREAK_COUNT)
+    print("Usage: %s address [-c count] [-r] [-u] [streak_count]" % colour_green("./ping-stats.py"))
+    print(" -r: Exit when a streak of successful pings reaches the streak count.")
+    print(" -u: Exit when a streak of failed pings reaches the streak count.")
+    print(" -c count: Limit the total number of packets sent.")
+    print("           Will exit with a non-zero exit code if limit is reached")
+    print("           while attempting a streak.")
+    print(" -d: Debug mode. Print the raw output of ping command.")
+    print(" -t: Tally mode. Always display a tally of successful pings.")
+    print("Set streak count as an optional second argument. Default: %s" % colour_text(DEFAULT_STREAK_COUNT))
 
     exit(exit_code)
 
@@ -62,17 +65,19 @@ def main(cli_args):
     if cli_args == sys.argv:
         cli_args = cli_args[1:]
 
-    try:
-        opts, operands = getopt.gnu_getopt(cli_args, "c:hru")
-    except Exception as e:
-        print "Error parsing arguments: %s" % str(e)
-        exit(1)
-
     mode = MODE_NORMAL
     reliable = unreliable = False
     count = 0
     count_raw = None
     count_have = False
+    debug = False
+    tally = False
+
+    try:
+        opts, operands = getopt.gnu_getopt(cli_args, "c:dhrtu")
+    except Exception as e:
+        print("Error parsing arguments: %s" % str(e))
+        exit(1)
 
     for f, v in opts:
         if f == "-h":
@@ -83,6 +88,10 @@ def main(cli_args):
         elif f == '-u':
             unreliable = True
             mode = MODE_UNRELIABLE
+	elif f == '-t':
+	    tally = True
+	elif f == '-d':
+	    debug = True
         elif f == '-c':
             count_raw = v
             count_have = True
@@ -91,11 +100,11 @@ def main(cli_args):
     error = False
 
     if reliable and unreliable:
-        print "Cannot wait for reliable and unreliable pings at the same time."
+        print("Cannot wait for reliable and unreliable pings at the same time.")
         error = True
 
     if not operands:
-        print "No server specified."
+        print("No server specified.")
         error = True
     else:
         addr = operands[0]
@@ -103,7 +112,7 @@ def main(cli_args):
         try:
             ip = socket.gethostbyname(addr)
         except socket.gaierror:
-            print "Unable to resolve address: %s" % colour_green(addr)
+            print("Unable to resolve address: %s" % colour_green(addr))
             error = True
 
     if count_have:
@@ -112,7 +121,7 @@ def main(cli_args):
             if count < 0:
                 raise Exception()
         except:
-            print "Bad number of packets to transmit. Must be a positive number (0 for unlimited)"
+            print("Bad number of packets to transmit. Must be a positive number (0 for unlimited)")
             count = 0
             error = True
 
@@ -120,12 +129,12 @@ def main(cli_args):
     if len(operands) > 1:
         try:
             streak_count = int(operands[1])
-            if number <= 0:
+            if streak_count <= 0:
                 # Without mods to getopts a negative operand actually can't even be used, but anyhow...
-                print "Attempt number must be greater than zero. Provided: %s" % colour_text(streak_count)
+                print("Attempt number must be greater than zero. Provided: %s" % colour_text(streak_count))
                 error = True
         except ValueError:
-            print "Invalid attempt number: %s" % colour_text(operands[1])
+            print("Invalid attempt number: %s" % colour_text(operands[1]))
             error = True
 
     if (reliable or unreliable) and count and streak_count > count:
@@ -135,36 +144,59 @@ def main(cli_args):
         else:
             wording = "unsuccessful"
 
-        print "Ping limit of %s is less than desired streak of %s %s pings." % (colour_text(count), colour_text(streak_count), wording)
+        print("Ping limit of %s is less than desired streak of %s %s pings." % (colour_text(count), colour_text(streak_count), wording))
         error = True
 
     if error:
         hexit(1)
 
-    return stats(addr, ip, mode, streak_count, count)
+    return stats(addr, ip,
+        mode=mode,
+        streak=streak_count,
+        limit=count,
+        debug=debug,
+        tally=tally
+    )
 
-def ping(server):
+def ping(server, debug = False):
     r = {}
     t = time.time()
-    p = subprocess.Popen(["ping", "-W1", "-c1", server], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if platform.system() in ["Linux", "Darwin"]:
+        # Unix platform
+	# ToDo: Improve this check
+        cmd=["ping", "-W1", "-c1", server]
+    else:
+        # Windows Environment (assumed)
+        cmd=["ping", "-w", "1", "-n", "1", server]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
 
     # Calculate time lazily using python time rather than the time from ping.
     # This might result in some inaccurate numbers, but I think it's minor enough to let slide
     r["time"] = time.time() - t
 
-    l = re.search("^\d+ bytes from.+$", out, re.MULTILINE)
+    if debug:
+        print(out)
+
+    pattern="(Reply from [^:]+: bytes|\d+ bytes from)[^\n]+"
+    l = re.search(pattern, str(out))
     if l and not p.returncode:
         r["success"] = True
         # Strip out the icmp_seq value because our implementation invokes a new
         #   ping process. icmp_seq will always be '1'.
-        r["line"] = re.sub("(\d+ bytes from [^:]+:|\s+icmp_seq=\d+)", "", l.group(0))
+        r["line"] = re.sub("((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)", "", l.group(0))
     else:
         r["success"] = False
 
     return r
 
-def stats(server, ip, mode, number, limit = 0):
+def stats(server, ip, **kwargs):
+
+    mode = kwargs.get("mode", MODE_NORMAL)
+    number = kwargs.get("streak", DEFAULT_STREAK_COUNT)
+    limit = kwargs.get("limit", 0)
+    debug = kwargs.get("debug", False)
+    tally = kwargs.get("tally", False)
 
     total_pings = 0
     total_success = 0
@@ -200,16 +232,16 @@ def stats(server, ip, mode, number, limit = 0):
         if server != ip:
             saddr += ' (%s)' % colour_green(ip)
 
-        print "Waiting until %s %s be pinged %s times in a row." % (saddr, word, colour_text(number))
+        print("Waiting until %s %s be pinged %s times in a row." % (saddr, word, colour_text(number)))
         if limit:
-            print "Will terminate unsuccessfully if we cannot do so after %s ping attempts." % colour_text(limit)
+            print("Will terminate unsuccessfully if we cannot do so after %s ping attempts." % colour_text(limit))
     elif limit:
-        print "Ping count: %s" % colour_text(limit)
+        print("Ping count: %s" % colour_text(limit))
 
     try:
         continue_loop = True
         while continue_loop:
-            r = ping(ip)
+            r = ping(ip, debug)
 
             total_pings += 1
             if r.get("success", False):
@@ -233,7 +265,12 @@ def stats(server, ip, mode, number, limit = 0):
                 if mode == MODE_RELIABLE:
                     extra += ' (%s succeeded)' % colour_text("%d/%d" % (streak_success, number))
                 elif mode == MODE_UNRELIABLE:
-                    extra += ' (%s failed)' % colour_text("%d/%d" % (streak_fail, number))
+                    if tally:
+                        extra += ' (%s failed, %s succeeded in a row)' % (colour_text("%d/%d" % (streak_fail, number)), colour_text(streak_success))
+                    else:
+                        extra += ' (%s failed)' % colour_text("%d/%d" % (streak_fail, number))
+                elif tally:
+                    extra += ' (%s succeeded in a row)' % colour_text(streak_success)
 
             else:
                 streak_fail += 1
@@ -248,7 +285,7 @@ def stats(server, ip, mode, number, limit = 0):
                 elif mode == MODE_UNRELIABLE:
                     extra = ' (%s failed)' % colour_text("%d/%d" % (streak_fail, number))
                 else:
-                    extra = ' (%s in a row)' % colour_text(streak_fail)
+                    extra = ' (%s failed in a row)' % colour_text(streak_fail)
 
             line = '%s %s%s' % (colour_green(ip), colour_text(verb, colour), extra)
             chart = chart[max(0, len(chart)-recent_limit):] # Trim chart
@@ -285,7 +322,7 @@ def stats(server, ip, mode, number, limit = 0):
             percentage_text = "%6.02f%%" % percentage
 
             # Padding the count digits to avoid a bunch of relatively rapid format jumps.
-            print "[%03d/%03d %s][%s]: %s" % (total_success, total_pings, colour_text(percentage_text, percentage_colour), display_chart, line)
+            print("[%03d/%03d %s][%s]: %s" % (total_success, total_pings, colour_text(percentage_text, percentage_colour), display_chart, line))
 
             # This was originally one big assignment statement, but it was a pain to read.
             continue_loop = (not limit or total_pings < limit)
@@ -316,11 +353,11 @@ def stats(server, ip, mode, number, limit = 0):
         else:
             display_server = ip
 
-        print "\n--- %s ping statistics ---" % display_server
+        print("\n--- %s ping statistics ---" % display_server)
         # ping numbers in ping-like format
-        print "%s packets transmitted, %d received, %.02f%% packet loss" % (total_pings, total_success, 100 - float(total_success) / total_pings * 100)
+        print("%s packets transmitted, %d received, %.02f%% packet loss" % (total_pings, total_success, 100 - float(total_success) / total_pings * 100))
         # rtt stats. I don't worry about this as much as success percentage.
-        print "rtt min/avg/max %.03f/%.03f/%.03f" % (time_min, time_avg, time_max)
+        print("rtt min/avg/max %.03f/%.03f/%.03f" % (time_min, time_avg, time_max))
 
     return exit_code
 

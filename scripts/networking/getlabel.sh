@@ -781,11 +781,6 @@ EOF
   exit "${1:-0}"
 }
 
-if [ -z "${1}" ]; then
-  error "No arguments provided."
-  exit 1
-fi
-
 while [ -n "${1}" ]; do
   while getopts ":chlv" OPT $@; do
     case "$OPT" in
@@ -845,6 +840,10 @@ fi
 if ! (( "${lazy:-0}" )); then
   (( "${__record_count:-0}" )) && summary "$(printf "Records retrieved: ${BOLD}%s${NC}" "${__record_count}")"
   (( "${__unknown_count:-0}" )) && summary "$(printf "Unknown entries: ${BOLD}%s${NC}" "${__unknown_count}")"
+fi
+
+if ! (( "${do_all:-0}" )) && [ -z "${targets}" ]; then
+  error "No targets defined."
 fi
 
 (( "${__error_count:-0}" )) && ret=1

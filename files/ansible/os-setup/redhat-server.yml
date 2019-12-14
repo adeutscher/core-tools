@@ -32,7 +32,8 @@
       - svn
       - git
       - wget
-      - python
+      - python2
+      - python3
       - vim
       - curl
       - nmap-ncat
@@ -53,6 +54,11 @@
     become: yes
     when: (ansible_distribution == "CentOS")
     block:
+
+      - name: Python path (CentOS)
+        when: (ansible_distribution_major_version >= 8)
+        set_fact:
+          ansible_python_interpreter: /usr/bin/python3
 
       - name: "install system packages (CentOS)"
         yum: name="{{ system_packages_centos }}" state="latest"

@@ -16,7 +16,8 @@
 #
 #####################################################
 
-import getopt, re, socket, sys
+from __future__ import print_function
+import getopt, os, re, socket, sys
 
 # Static variables
 ####
@@ -29,6 +30,18 @@ REGEX_INET4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 
 # Basic syntax check for IPv4 address.
 REGEX_INET4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
+
+def _print_message(header_colour, header_text, message, stderr=False):
+    f=sys.stdout
+    if stderr:
+        f=sys.stderr
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
+
+def colour_text(text, colour = None):
+    if not colour:
+        colour = COLOUR_BOLD
+    # A useful shorthand for applying a colour to a string.
+    return "%s%s%s" % (colour, text, COLOUR_OFF)
 
 def enable_colours(force = False):
     global COLOUR_PURPLE
@@ -73,24 +86,27 @@ WOL_PORT = DEFAULT_WOL_PORT
 TARGET_ADDRESS = DEFAULT_TARGET_ADDRESS
 
 def hexit(exit_code=0):
-  print "./wol-manual.py [-a target_address] [-h] ... MAC-ADDRESS ..."
-  print "  -a target_address: Send to specific broadcast address"
-  print "                     This is necessary when waking up a device on"
-  print "                     a different collision domain than your default"
-  print "                     gateway interface."
-  print "                     Example value: 192.168.100.0"
-  print "  -h: Display this help menu and exit."
-  print "  -p port: Select UDP port"
+  print("./wol-manual.py [-a target_address] [-h] ... MAC-ADDRESS ...")
+  print("  -a target_address: Send to specific broadcast address")
+  print("                     This is necessary when waking up a device on")
+  print("                     a different collision domain than your default")
+  print("                     gateway interface.")
+  print("                     Example value: 192.168.100.0")
+  print("  -h: Display this help menu and exit.")
+  print("  -p port: Select UDP port")
   exit(exit_code)
 
+error_count = 0
 def print_error(message):
-    print "%sError%s: %s" % (COLOUR_RED, COLOUR_OFF, message)
+    global error_count
+    error_count += 1
+    _print_message(COLOUR_RED, "Error", message)
 
 def print_notice(message):
-    print "%sNotice%s: %s" % (COLOUR_BLUE, COLOUR_OFF, message)
+    _print_message(COLOUR_BLUE, "Notice", message)
 
 def print_warning(message):
-    print "%sWarning%s: %s" % (COLOUR_YELLOW, COLOUR_OFF, message)
+    _print_message(COLOUR_YELLOW, "Warning", message)
 
 def send_magic_packet(mac):
 
@@ -152,9 +168,9 @@ def run():
         else:
           raise ValueError("Invalid port")
       except ValueError:
-        errors.append("Invalid port number: %s%s%s" % (COLOUR_BOLD, arg, COLOUR_OFF))
+        errors.append("Invalid port number: %s" % colour_text(arg))
     else:
-      errors.append("Unhandled option: %s%s%s" % (COLOUR_BOLD, opt, COLOUR_OFF))
+      errors.append("Unhandled option: %s%s%s" % colour_text(opt))
 
   if not len(errors) and len(args) == 0:
     errors.append("No MAC addresses provided.")
@@ -164,7 +180,7 @@ def run():
       print_error(error)
     hexit(1)
 
-  print_notice("Sending WoL magic packet(s) to %s%s%s on %sUDP/%d%s" % (COLOUR_GREEN, TARGET_ADDRESS, COLOUR_OFF, COLOUR_GREEN, WOL_PORT, COLOUR_OFF))
+  print_notice("Sending WoL magic packet(s) to %s on %s" % (colour_text(TARGET_ADDRESS, COLOUR_GREEN), colour_text("UDP/%d" % WOL_PORT, COLOUR_GREEN)))
 
   for candidate in args:
     # May as well squash candidate MAC to lowercase immediately

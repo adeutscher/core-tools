@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 # Experimental script for creating manual routes for different websites by domain.
 # The intent is to exempt particular domains from VPN redirection.

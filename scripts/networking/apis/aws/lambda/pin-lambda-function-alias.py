@@ -1,12 +1,13 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import datetime, getopt, os, re, sys
 
 # Common Colours and Message Functions
 ###
 
 def _print_message(header_colour, header_text, message):
-    print "%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message)
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message))
 
 def colour_text(text, colour = None):
     if not colour:
@@ -111,10 +112,23 @@ class ArgHelper:
     def __getitem__(self, arg, default = None):
         opt = self.opts_by_label.get(arg)
 
-        if opt and opt.multiple:
+        if not opt:
+            # There was no registered option.
+            #   Giving give the args dictionary an attempt in case
+            #   something like a validator went and added to it.
+            return self.args.get(arg)
+        if opt.multiple:
             default = []
 
-        value = self.args.get(arg, self.defaults.get(arg))
+        # Silly note: Doing a get() out of a dictionary when the stored
+        #   value of the key is None will not fall back to default
+        value = self.args.get(arg)
+        if value is None:
+            if opt.environment:
+                value = os.environ.get(opt.environment, self.defaults.get(arg))
+            else:
+                value = self.defaults.get(arg)
+
         if value is None:
             return default
         return value
@@ -122,7 +136,7 @@ class ArgHelper:
     def __setitem__(self, key, value):
         self.args[key] = value
 
-    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, converter=str, multiple = False, strict_single = False):
+    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, default_colour = None, default_announce = False, environment = None, converter=str, multiple = False, strict_single = False):
 
         if opt_type not in self.opts:
             raise Exception("Bad option type: %s" % opt_type)
@@ -150,7 +164,7 @@ class ArgHelper:
             if opt_type & MASK_OPT_TYPE_LONG == g & MASK_OPT_TYPE_LONG and arg in self.opts[g]:
                 raise Exception("Flag already defined: %s" % label)
         if label in self.opts_by_label:
-            raise Exception("Duplicate label (new: %s%s): %s" % (arg, label))
+            raise Exception("Duplicate label (new: %s): %s" % (arg, label))
         if multiple and strict_single:
             raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
         # These do not cover harmless checks on arg modifiers with flag values.
@@ -160,6 +174,9 @@ class ArgHelper:
         obj.label = label
         obj.required = required and opt_type & MASK_OPT_TYPE_ARG
         obj.default = default
+        obj.default_colour = default_colour
+        obj.default_announce = default_announce
+        obj.environment = environment
         obj.multiple = multiple
         obj.description = description
         obj.converter = converter
@@ -219,7 +236,7 @@ class ArgHelper:
 
         _print_message(COLOUR_PURPLE, "Usage", s)
         for l in lines:
-            print l
+            print(l)
 
         if exit_code >= 0:
             exit(exit_code)
@@ -327,9 +344,18 @@ class OptArg:
         desc = self.description or "No description defined"
 
         if self.is_flag():
-            return "  %s: %s" % (opt, desc)
+            s = "  %s: %s" % (opt, desc)
         else:
-            return "  %s <%s>: %s" % (opt, self.label, desc)
+            s = "  %s <%s>: %s" % (opt, self.label, desc)
+
+        if self.environment:
+            s += " (Environment Variable: %s)" % colour_text(self.environment)
+
+        if self.default_announce:
+            # Manually going to defaults table allows this core module
+            # to have its help display reflect retroactive changes to defaults.
+            s += " (Default: %s)" % colour_text(args.defaults.get(self.label), self.default_colour)
+        return s
 
     def get_printout_usage(self, opt):
 

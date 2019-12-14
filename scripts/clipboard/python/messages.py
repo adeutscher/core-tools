@@ -1,12 +1,16 @@
 
+from __future__ import print_function
 import os, sys
 
 #
 # Common Colours and Message Functions
 ###
 
-def _print_message(header_colour, header_text, message):
-    print "%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message)
+def _print_message(header_colour, header_text, message, stderr=False):
+    f=sys.stdout
+    if stderr:
+        f=sys.stderr
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
 
 def colour_text(text, colour = None):
     if not colour:

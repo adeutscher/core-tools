@@ -279,11 +279,13 @@ Switches:
   -a: All-mode. When using conntrack, do not restrict to just our device's addresses. Address checks will look at both ends of connection for a match.
   -c: Conntrack-mode. Use conntrack instead of netstat to detect connections. Must be root to use.
   -C: Force colours, even if output is not a terminal.
+  -D: Debug mode. Explicitply print out malformed output lines.
   -h: Help. Print this help menu and exit.
   -l: Show loopback connections, which are ignored by default. Will only work with netstat.
   -L: LAN-only mode. Only show incoming connections from LAN addresses (or to LAN addresses for outgoing mode).
   -m: Monitor mode. Constantly re-poll and print out connection information.
   -o: Outgoing mode. Display outgoing connections instead of incoming connections. Address checks will look at destination for a match.
+  -p: Parseable mode. Display output in CSV format.
   -q: "Quiet"-ish mode: Print information in barebones format (probably for future parsing).
   -r: Range mode. When specifying interfaces as a filter, use local CIDR ranges instead of just IPv4 addresses.
   -R: Remote-only mode: Only show incoming connections from non-LAN addresses (or to non-LAN addresses for outgoing mode).
@@ -319,7 +321,9 @@ print_line(){
   # Note from development: This cannot be placed in a sub-shell.
   [ -n "${last_from}${QUIET}" ] || return 0
 
-  if (( "${SUMMARIZE:-0}" )); then
+  if (( "${DO_CSV:-0}" )); then
+    printf "%s,%s,%s,%d,%d\n" "${last_from}" "${last_to}" "${last_proto}" "${last_to_p}" "${count:-1}"
+  elif (( "${SUMMARIZE:-0}" )); then
     message="$(printf "${GREEN}%s${NC} -> ${GREEN}%s${NC} (%s/%d" "${last_from}" "${last_to}" "${last_proto}" "${last_to_p}")"
     [ ${count:-0} -gt 1 ] && message="${message}, ${count} connections"
     message="${message})"
@@ -353,7 +357,7 @@ INCOMING=1
 STDIN=0
 
 while [ -n "${1}" ]; do
-  while getopts ":acChlLmoqrRsSv" OPT $@; do
+  while getopts ":acCDhlLmoPqrRsSv" OPT $@; do
     case "${OPT}" in
       a)
         SHOW_ALL=1
@@ -363,6 +367,9 @@ while [ -n "${1}" ]; do
         ;;
       C)
         set_colours
+        ;;
+      D)
+        DEBUG=1
         ;;
       h)
         hexit 0
@@ -378,6 +385,9 @@ while [ -n "${1}" ]; do
         ;;
       o)
         INCOMING=0
+        ;;
+      P)
+        DO_CSV=1
         ;;
       q)
         QUIET=1
@@ -529,8 +539,11 @@ while (( 1 )); do
       # Expected format of a connection line: proto src dst sport dport state
       # Content example of a connection line: tcp 10.20.30.40 20.30.40.50 43149 443 ESTABLISHED
       # Credit for advanced IPv4 Regex: https://www.regular-expressions.info/ip.html
-      if ! grep -qP "tcp( (25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){2}( \d+){2} [A-Z_]+$" <<< "${connection}"; then
+      if ! grep -qP "tcp( (25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){2}( \d+){2} [A-Z_0-9]+$" <<< "${connection}"; then
         illegal_format="$((${illegal_format:-0}+1))"
+        if (( "${DEBUG:-0}" )); then
+          error "$(printf "Illegally-formatted connection data from ${BLUE}%s${NC}: ${BOLD}%s${NC}" "${METHOD}" "${connection}")"
+        fi
         continue
       fi
 
@@ -647,32 +660,33 @@ while (( 1 )); do
     CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line "${print_verbose}")")"
     destinations="${destinations} ${last_to}"
   fi
-
-  if (( "${VERBOSE:-0}" )); then
-    # In verbose mode, track remaining unlabeled destinations to see if they can be labeled.
-    for dst in ${destinations}; do
-      if [ -n "${dst}" ] && needs_label "${dst}"; then
-        LABEL_CONTENT="$(getlabel -${label_switches}l "${dst}")"
-        if [ -n "${LABEL_CONTENT}" ]; then
-          trailers="${trailers} ${dst}"
-          TRAILER_CONTENT="$(printf "%s\n%s" "${TRAILER_CONTENT}" "${LABEL_CONTENT}")"
+  if ! (( "${DO_CSV:-0}" )); then
+    if (( "${VERBOSE:-0}" )); then
+      # In verbose mode, track remaining unlabeled destinations to see if they can be labeled.
+      for dst in ${destinations}; do
+        if [ -n "${dst}" ] && needs_label "${dst}"; then
+          LABEL_CONTENT="$(getlabel -${label_switches}l "${dst}")"
+          if [ -n "${LABEL_CONTENT}" ]; then
+            trailers="${trailers} ${dst}"
+            TRAILER_CONTENT="$(printf "%s\n%s" "${TRAILER_CONTENT}" "${LABEL_CONTENT}")"
+          fi
         fi
+      done
+      trailer_count="$(wc -w <<< "${trailers}")"
+      if (( "${trailer_count}" )); then
+        CONTENT="$(printf "%s\n%s\n%s" "${CONTENT}" "$(notice "$(printf "Additional labels for destinations: ${BOLD}%d${NC}" "${trailer_count}")")" "${TRAILER_CONTENT}")"
       fi
-    done
-    trailer_count="$(wc -w <<< "${trailers}")"
-    if (( "${trailer_count}" )); then
-      CONTENT="$(printf "%s\n%s\n%s" "${CONTENT}" "$(notice "$(printf "Additional labels for destinations: ${BOLD}%d${NC}" "${trailer_count}")")" "${TRAILER_CONTENT}")"
     fi
-  fi
 
-  if (( "${illegal_format:-0}" )); then
-    CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(error "$(printf "Lines of malformed ${BLUE}%s${NC} data: ${BOLD}%d${NC}" "${METHOD}" "${illegal_format}")")")"
-    if (( "${STDIN:-0}" )); then
-      # Standard input with bad data is the most likely suspect for bad formatting.
-      # If we are using standard input, then give a more specific reminder.
-      CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(error "$(printf "Are you certain that the data from standard input is ${BLUE}%s${NC} output?" "${METHOD}")")")"
+    if (( "${illegal_format:-0}" )); then
+      CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(error "$(printf "Lines of malformed ${BLUE}%s${NC} data: ${BOLD}%d${NC}" "${METHOD}" "${illegal_format}")")")"
+      if (( "${STDIN:-0}" )); then
+        # Standard input with bad data is the most likely suspect for bad formatting.
+        # If we are using standard input, then give a more specific reminder.
+        CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(error "$(printf "Are you certain that the data from standard input is ${BLUE}%s${NC} output?" "${METHOD}")")")"
+      fi
     fi
-  fi
+  fi # End DO_CSV check
 
   # Clear after we have built our output in monitor mode to reduce flicker.
   (( "${MONITOR:-0}" )) && clear

@@ -1,14 +1,23 @@
 #!/usr/bin/python
 
+from __future__ import print_function
+import json, os, sys
+
 # Setting format title as a variable to make it to
 #   to copy content between yaml2json.py and json2yaml.py
 # The only thing other than this that should need to be adjusted
 #   is the convert() function.
 format_name = "JSON"
 
-import json, os, sys
+def _print_message(header_colour, header_text, message, stderr=False):
+    f=sys.stdout
+    if stderr:
+        f=sys.stderr
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
 
-def colour_text(colour, text):
+def colour_text(text, colour = None):
+    if not colour:
+        colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
@@ -20,11 +29,11 @@ def convert(file_handle, title):
         if title == "standard input":
             print_error("Content of standard input is not in readable %s format: %s" % (format_name, e))
         else:
-            print_error("Content of input (%s) is not in readable %s format: %s" % (colour_text(COLOUR_GREEN, title), format_name, e))
+            print_error("Content of input (%s) is not in readable %s format: %s" % (colour_text(title, COLOUR_GREEN), format_name, e))
         return
     dst_body = yaml.safe_dump(src_body, default_flow_style=False, allow_unicode = True, indent=2)
-    print "---\n"
-    print dst_body
+    print("---\n")
+    print(dst_body)
 
 def enable_colours(force = False):
     global COLOUR_PURPLE
@@ -55,7 +64,7 @@ def enable_colours(force = False):
 enable_colours()
 
 def hexit(code = 0):
-    print_usage("%s./%s%s %s-file" % (COLOUR_GREEN, os.path.basename(sys.argv[0]), COLOUR_OFF, format_name.lower()))
+    print_usage("%s %s-file" % (colour_text("./%s" % os.path.basename(sys.argv[0]), COLOUR_GREEN), format_name.lower()))
     exit(code)
 
 #
@@ -66,16 +75,13 @@ error_count = 0
 def print_error(message):
     global error_count
     error_count += 1
-    print >> sys.stderr, "%s[%s]: %s" % (colour_text(COLOUR_RED, "Error"), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+    _print_message(COLOUR_RED, "Error", message, True)
 
 def print_notice(message):
-    print >> sys.stderr, "%s[%s]: %s" % (colour_text(COLOUR_BLUE, "Notice"), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+    _print_message(COLOUR_BLUE, "Notice", message, True)
 
 def print_usage(message):
-    print >> sys.stderr, "%s[%s]: %s" % (colour_text(COLOUR_PURPLE, "Usage"), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
-
-def print_warning(message):
-    print >> sys.stderr, "%s[%s]: %s" % (colour_text(COLOUR_YELLOW, "Warning"), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+    _print_message(COLOUR_PURPLE, "Usage", message, True)
 
 #
 # Script operation
@@ -93,9 +99,9 @@ if len(sys.argv) >= 2:
         file_handle = sys.stdin
         print_notice("Reading %s content from standard input." % format_name)
     elif not os.path.isfile(source_file):
-        print_error("%s file does not exist: %s%s%s" % (format_name, COLOUR_GREEN, source_file, COLOUR_OFF))
+        print_error("%s file does not exist: %s" % (format_name, colour_text(source_file, COLOUR_GREEN)))
     elif not os.access(source_file, os.R_OK):
-        print_error("%s file could not be read: %s%s%s" % (format_name, COLOUR_GREEN, source_file, COLOUR_OFF))
+        print_error("%s file could not be read: %s%s%s" % (format_name, colour_text(source_file, COLOUR_GREEN)))
 else:
     print_error("No %s file path provided." % format_name)
 
@@ -111,4 +117,3 @@ else:
 
 if error_count:
     exit(1)
-

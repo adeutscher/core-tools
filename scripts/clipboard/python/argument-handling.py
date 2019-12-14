@@ -12,6 +12,7 @@
 #          * Adjust colour_text() calls.
 #          * Adjust all mentions of COLOUR_* variables.
 
+from __future__ import print_function
 import getopt, os, re, sys
 
 MASK_OPT_TYPE_LONG = 1
@@ -49,13 +50,21 @@ class ArgHelper:
         opt = self.opts_by_label.get(arg)
 
         if not opt:
-            return None
+            # There was no registered option.
+            #   Giving give the args dictionary an attempt in case
+            #   something like a validator went and added to it.
+            return self.args.get(arg)
         if opt.multiple:
             default = []
 
         # Silly note: Doing a get() out of a dictionary when the stored
         #   value of the key is None will not fall back to default
-        value = self.args.get(arg, os.environ.get(opt.environment, self.defaults.get(arg)))
+        value = self.args.get(arg)
+        if value is None:
+            if opt.environment:
+                value = os.environ.get(opt.environment, self.defaults.get(arg))
+            else:
+                value = self.defaults.get(arg)
 
         if value is None:
             return default
@@ -164,7 +173,7 @@ class ArgHelper:
 
         _print_message(COLOUR_PURPLE, "Usage", s)
         for l in lines:
-            print l
+            print(l)
 
         if exit_code >= 0:
             exit(exit_code)
@@ -302,7 +311,7 @@ COLOUR_PURPLE = "placeholder"
 def colour_text(m, c):
     return m
 def _print_message(c, h, m):
-    print "[%s] %s" % (h, m)
+    print("[%s] %s" % (h, m))
 
 # This is an example implementation.
 # See the add_opt and process methods for a listing of arguments.
@@ -321,6 +330,6 @@ args.process(sys.argv)
 # Print some example values.
 # ArgHelper's  __getitem__ method will not explode if an unknown key is found, instead trying defaults and then None as a last resort.
 for t in ["int-value", "int-multiple", "int-value-long"]:
-    print "%s: %s" % (t, args[t])
+    print("%s: %s" % (t, args[t]))
 
-print "Operands: %s" % ", ".join(args.operands)
+print("Operands: %s" % ", ".join(args.operands))

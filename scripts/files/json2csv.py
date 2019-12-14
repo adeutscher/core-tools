@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
 import csv, getopt, json, os, sys
 
 format_name = "JSON"
@@ -8,10 +9,15 @@ format_name = "JSON"
 # Common Colours and Message Functions
 ###
 
-def __print_message(colour, header, message):
-    print "%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+def _print_message(header_colour, header_text, message, stderr=False):
+    f=sys.stdout
+    if stderr:
+        f=sys.stderr
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
 
-def colour_text(colour, text):
+def colour_text(text, colour = None):
+    if not colour:
+        colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
@@ -47,16 +53,16 @@ error_count = 0
 def print_error(message):
     global error_count
     error_count += 1
-    print >> sys.stderr, "%s[%s]: %s" % (colour_text(COLOUR_RED, "Error"), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+    _print_message(COLOUR_RED, "Error", message, True)
 
 def print_notice(message):
-    print >> sys.stderr, "%s[%s]: %s" % (colour_text(COLOUR_BLUE, "Notice"), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+    _print_message(COLOUR_BLUE, "Notice", message, True)
 
 def print_usage(message):
-    print >> sys.stderr, "%s[%s]: %s" % (colour_text(COLOUR_PURPLE, "Usage"), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+    _print_message(COLOUR_PURPLE, "Usage", message, True)
 
 def print_warning(message):
-    print >> sys.stderr, "%s[%s]: %s" % (colour_text(COLOUR_YELLOW, "Warning"), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+    _print_message(COLOUR_YELLOW, "Warning", message, True)
 
 #
 # Script Functions
@@ -77,7 +83,7 @@ def convert_list_to_csv(l):
     for item in l:
         list_count += 1
         if not isinstance(item, dict):
-            print_error("Row %s is not a %s object." % (colour_text(COLOUR_BOLD, "#%d" % list_count), format_name))
+            print_error("Row %s is not a %s object." % (colour_text("#%d" % list_count), format_name))
             continue
 
         a.append(flattenjson(item, '__'))
@@ -100,7 +106,7 @@ def convert_list_to_csv(l):
         try:
             csv_w.writerow( map( lambda x: i_r.get( x, "" ), columns ) )
         except Exception as e:
-            print_error("Problem (item %s): %s" % (colour_text(COLOUR_BOLD, "#%d" % output_count), e))
+            print_error("Problem (item %s): %s" % (colour_text("#%d" % output_count), e))
 
 def flattenjson( b, delim ):
     val = {}
@@ -123,7 +129,7 @@ def get_content(file_handle, title):
         if title == "standard input":
             print_error("Content of standard input is not in readable %s format: %s" % (format_name, e))
         else:
-            print_error("Content of input (%s) is not in readable %s format: %s" % (colour_text(COLOUR_GREEN, title), format_name, e))
+            print_error("Content of input (%s) is not in readable %s format: %s" % (colour_text(title, COLOUR_GREEN), format_name, e))
         return None
 
 def main():
@@ -134,9 +140,9 @@ def main():
             file_handle = sys.stdin
             print_notice("Reading %s content from standard input." % format_name)
         elif not os.path.isfile(source_file):
-            print_error("%s file does not exist: %s" % (format_name, colour_text(COLOUR_GREEN, source_file)))
+            print_error("%s file does not exist: %s" % (format_name, colour_text(source_file, COLOUR_GREEN)))
         elif not os.access(source_file, os.R_OK):
-            print_error("%s file could not be read: %s" % (format_name, colour_text(COLOUR_GREEN, source_file)))
+            print_error("%s file could not be read: %s" % (format_name, colour_text(source_file, COLOUR_GREEN)))
     else:
         print_error("No %s file path provided." % format_name)
 
@@ -169,7 +175,7 @@ def main():
         exit(1)
 
 def hexit(code = 0):
-    print_usage("%s %s-file" % (colour_text(COLOUR_GREEN, "./%s" % os.path.basename(sys.argv[0])), format_name.lower()))
+    print_usage("%s %s-file" % (colour_text("./%s" % os.path.basename(sys.argv[0]), COLOUR_GREEN), format_name.lower()))
     exit(code)
 
 if __name__ == "__main__":

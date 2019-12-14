@@ -1,7 +1,15 @@
 #!/usr/bin/env python
 
 import CoreHttpServer as common
-import cookielib, getopt, os, re, shutil, sys, urllib2, urlparse
+import getopt, os, re, shutil, sys
+
+if sys.version_info[0] == 2:
+    from urllib2 import build_opener, Request, URLError, HTTPErrorProcessor
+    from urlparse import urlsplit
+else:
+    from urllib.request import build_opener, HTTPErrorProcessor, Request
+    from urllib.error import URLError
+    from urllib.parse import urlsplit
 
 TITLE_TARGET = "proxy target"
 common.local_files.append(os.path.realpath(__file__))
@@ -9,7 +17,7 @@ common.local_files.append(os.path.realpath(__file__))
 # Remove unused arguments
 del common.args.opts[common.OPT_TYPE_FLAG]["-P"]
 
-class NoRedirection(urllib2.HTTPErrorProcessor):
+class NoRedirection(HTTPErrorProcessor):
 
     def http_response(self, request, response):
         # Immediately pass responses along. Let the client deal with
@@ -22,7 +30,7 @@ class Proxy(common.CoreHttpServer):
 
     server_version = "CoreHttpServer (Quick Proxy)"
 
-    opener = urllib2.build_opener(NoRedirection)
+    opener = build_opener(NoRedirection)
 
     log_on_send_error = True
 
@@ -50,7 +58,7 @@ class Proxy(common.CoreHttpServer):
         req_headers["X-Forwarded-For"] = forward_chain
 
         # Todo: Do this just once in some initialization instead.
-        parsed = urlparse.urlsplit(common.args[TITLE_TARGET])
+        parsed = urlsplit(common.args[TITLE_TARGET])
         port = parsed.port
         if port is None:
             port = 80
@@ -60,7 +68,7 @@ class Proxy(common.CoreHttpServer):
         req_headers["Host"] = "%s:%s" % (parsed.hostname, port)
 
         # Construct request
-        req = urllib2.Request(url, headers=req_headers)
+        req = Request(url, headers=req_headers)
         req.get_method = lambda: getattr(self, common.ATTR_COMMAND, "GET")
 
         data = None
@@ -96,7 +104,7 @@ class Proxy(common.CoreHttpServer):
             # Get response headers to pass along from target server to client.
             resp_headers = self.get_header_dict(resp.info())
             code = str(resp.getcode())
-        except urllib2.URLError as e:
+        except URLError as e:
             return self.send_error(502, "Error relaying request.")
 
         # TODO: This is the place to modify response headers in the resp_headers dictionary before
@@ -104,7 +112,7 @@ class Proxy(common.CoreHttpServer):
         #       At this time, I can't think of any that need re-writing, though.
 
         if getattr(self, common.ATTR_REQUEST_VERSION, self.default_request_version) != 'HTTP/0.9':
-            self.wfile.write("%s %s %s\r\n" % (self.protocol_version, code, getattr(self,common.ATTR_PATH, "/")))
+            self.wfile.write(common.convert_bytes("%s %s %s\r\n" % (self.protocol_version, code, getattr(self,common.ATTR_PATH, "/"))))
         for key in resp_headers:
             # Write response headers
             if resp_headers[key]:

@@ -23,31 +23,54 @@
     packages_fedora:
       - x264-devel
 
-    packages_x264:
-      - nasm
+    packages_debian:
+      - libmp3lame-dev
+      - libx264-dev
 
   tasks:
-    - name: install redhat dependencies (dnf)
-      become: yes
-      when: ansible_pkg_mgr == "dnf"
-      dnf: name="{{ packages_redhat }}" state="latest"
 
-    - name: install fedora dependencies (dnf)
+    - name: install dependencies
       become: yes
-      when: ansible_pkg_mgr == "dnf"
-      dnf: name="{{ packages_fedora }}" state="latest"
+      block:
 
-    - name: install redhat dependencies (yum)
-      become: yes
-      when: ansible_pkg_mgr == "yum"
-      yum: name="{{ packages_redhat }}" state="latest"
+        # Common dependencies
+        - name: install redhat dependencies
+          when: ansible_os_family == "RedHat"
+          block:
 
-    - name: install x264 dependencies (yum)
-      become: yes
-      when: ansible_pkg_mgr == "yum"
-      yum: name="{{ packages_x264 }}" state="latest"
+            - name: install CentOS 8+ dependencies
+              when: (ansible_distribution == "CentOS" and ansible_distribution_major_version >= 8)
+              block:
 
-    - name: get x264 (centos)
+                - name: set up PowerTools repository (CentOS 8+)
+                  yum_repository:
+                    name: "PowerTools"
+                    description: "CentOS-PowerTools"
+                    mirrorlist: "http://mirrorlist.centos.org/?release=$releasever&arch=$basearch&repo=PowerTools&infra=$infra"
+                    metadata_expire: 43200 # 12 hours
+                    ip_resolve: 4
+                    gpgcheck: yes
+                    gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-centosofficial"
+                    enabled: yes
+                    file: "CentOS-PowerTools"
+
+            - name: install common dependencies
+              action: >
+                {{ ansible_pkg_mgr }} name="{{ packages_redhat }}" state="latest"
+
+            - name: install fedora dependencies
+              when: ( ansible_distribution == "Fedora" )
+              action: >
+                {{ ansible_pkg_mgr }} name="{{ packages_fedora }}" state="latest"
+
+            - name: install debian dependencies
+              # Tested on Raspbian
+              when: ( ansible_distribution == "Debian" )
+              action: >
+                {{ ansible_pkg_mgr }} name="{{ packages_debian }}" state="latest"
+
+    - name: get x264 (CentOS)
+      when: ansible_distribution == "CentOS"
       git:
         repo: "{{ x264.src }}"
         dest: "{{ x264.dest }}"
