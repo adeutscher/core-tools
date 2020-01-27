@@ -152,9 +152,9 @@ backup_directory (){
     while read __old_backup; do
       [ -z "${__old_backup}" ] && continue
 
-      notice "$(printf "Removing old backup: '${GREEN}$__output_path/$i${NC}'")"
+      notice "$(printf "Removing old backup: '${GREEN}$__output_path/${__old_backup}${NC}'")"
 
-      __command="rm -rf \"$__output_path/$i\""
+      __command="rm -rf \"$__output_path/${__old_backup}\""
       run_command rm
     done <<< "$(ls -r $__output_path/ 2> /dev/null | egrep "${old_pattern}" | tail -n +$((1+$__count)))"
   else
@@ -184,7 +184,7 @@ while [ -n "${1}" ]; do
     # Handle switches up until we encounter a non-switch option.
     case "${OPT}" in
       "c")
-        __arg_count="$(grep -P '^\d+$' <<< "${OPT}")"
+        __arg_count="$(grep -P '^\d+$' <<< "${OPTARG}")"
         if [ -z "$__arg_count" ]; then
             error "$(printf "Invalid value ${BOLD}\"\"${NC} for \"-c\" switch. Must be an integer." "${OPTARG}")"
         fi
