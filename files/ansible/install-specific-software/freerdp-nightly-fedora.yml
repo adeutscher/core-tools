@@ -11,15 +11,15 @@
     # For example, the fedora-28 repository did not exist as of 2018-05-04.
     # This variable makes for an easy toggle.
     # Also track the minimum of nightly build used by the FreeRDP team.
-    freerdp_nightly_min_version: "28"
-    freerdp_nightly_max_version: "29"
+    freerdp_nightly_min_version: "30"
+    freerdp_nightly_max_version: "31"
 
   tasks:
-  
+
   - name: Install Repositories (Fedora)
     become: yes
     when: ansible_distribution == "Fedora" and ansible_distribution_major_version <= freerdp_nightly_max_version and ansible_distribution_major_version >= freerdp_nightly_min_version
-    block: 
+    block:
 
       - name: freerdp-nightly repository
         when: ansible_distribution_major_version <= freerdp_nightly_max_version and ansible_distribution_major_version >= freerdp_nightly_min_version

@@ -23,7 +23,7 @@ unset __BAT_NUM
 
 if [ -n "${__BATTERY_DIR}" ] || [ -n "${FORCE_LAPTOP_MODE}" ]; then
   if [ -n "${__BATTERY_DIR}" ]; then
-    alias battery='echo "Battery status: $(cat "{$__BATTERY_DIR}/capacity")% ($(cat "$__BATTERY_DIR/status"))"'
+    alias battery='echo "Battery status: $(cat "${__BATTERY_DIR}/capacity")% ($(cat "${__BATTERY_DIR}/status"))"'
     alias battery-short="cat $__BATTERY_DIR/capacity"
   else
     alias battery='echo "Laptop status was faked, no battery detected..."'

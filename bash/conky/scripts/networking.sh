@@ -298,14 +298,14 @@ for iface in ${other_up_interfaces}; do
     fi
 done
 
-[ -n "${up_display_list}" ] && printf "  Other UP:${up_display_list}\n" | sed -e 's/,$//' -e 's/@/\n/g'
+[ -n "${up_display_list}" ] && printf " Other UP:${up_display_list}\n" | sed -e 's/,$//' -e 's/@/\n/g'
 
 ###################
 # Down Interfaces #
 ###################
 
-# "  Down:" is 7 characters
-characterIndex=7
+# " Down:" is 6 characters
+characterIndex=6
 
 for iface in ${down_interfaces}; do
     if [[ "${bridge_members}" =~ (^|\ )"${iface}"($|\ ) ]] || [[ "${bridges}" =~ (^|\ )"${iface}"($|\ ) ]]; then
@@ -330,7 +330,7 @@ for iface in ${down_interfaces}; do
 done
 
 if [ -n "${down_display_list}" ]; then
-  printf "  Down:${down_display_list}\n" | sed -e 's/,$//' -e 's/@/\n/g'
+  printf " Down:${down_display_list}\n" | sed -e 's/,$//' -e 's/@/\n/g'
 fi
 
 ###########################

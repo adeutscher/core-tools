@@ -12,8 +12,8 @@
     # For example, the fedora-28 repository did not exist as of 2018-05-04.
     # This variable makes for an easy toggle.
     # Also track the minimum of nightly build used by the FreeRDP team.
-    freerdp_nightly_min_version: "28"
-    freerdp_nightly_max_version: "29"
+    freerdp_nightly_min_version: "30"
+    freerdp_nightly_max_version: "31"
 
     google_repo:
       name: "google-chrome"
@@ -28,6 +28,61 @@
       gpgkey:
         src: "https://repo.skype.com/data/SKYPE-GPG-KEY"
         dest: "/etc/pki/rpm-gpg/SKYPE-GPG-KEY"
+
+    packages:
+
+      desktop:
+        - conky               # Desktop information display
+        - firefox             # Web Browser
+        - google-chrome       # Fallback Web Browser
+        - geany               # Code Editor
+        - geany-themes        # Extra colour layouts for geany
+        - tigervnc            # VNC Client
+        - x11vnc              # Ad-Hoc VNC Server
+        - slick-greeter       # Really neat-looking greeter (originated with Ubuntu?)
+        - skypeforlinux       # Chat client
+        - wireshark           # Wireshark GUI
+        - libreoffice-calc    # Spreadsheets
+        - libreoffice-writer  # Word
+        - libreoffice-impress # Slideshows
+        - NetworkManager      # Network Management Service
+        - wine                # Windows compatibility
+
+      dev:
+        - vim              # vim editor
+        - tmux             # tmux multiplexer
+        - svn              # Subversion version control
+        - git              # Git version control
+        - astyle           # Artistic Style code formatter
+        - wget             # Network downloaded
+        - curl             # URL Handler
+        - python2          # Python v2
+        - python3          # Python v3
+
+      fun_cli:
+        - mpg123 # Play sounds from the command line
+
+      network:
+        - nmap             # Network discovery
+        - nmap-ncat        # Network Swiss Army Knife
+        - wireshark-cli    # Packet Captures
+        - tcpdump          # Alternate Packet Captures
+        - openconnect      # OpenConnect VPN (compatible with Cisco AnyConnect)
+        - vpnc-script      # Used by openconnect
+        - openvpn          # OpenVPN
+        - openssh-clients  # SSH Client
+        - openssh-server   # SSH Server
+        - openssl          # OpenSSL
+        - iperf3           # iperf3 Network Benchmarking
+
+      standard:
+        - sed
+        - tar
+        - bash
+        - coreutils
+        - unzip
+        - zip
+        - fuse-exfat
 
   environment:
     ANSIBLE: 1
@@ -57,7 +112,7 @@
           metalink: "https://mirrors.rpmfusion.org/metalink?repo={{ item }}-fedora-$releasever&arch=$basearch"
           gpgcheck: yes
           gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-rmpfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
-          ip_resolve: 4
+          ip_resolve: '4'
         with_items:
           - "free"
           - "nonfree"
@@ -68,12 +123,11 @@
           name: freerdp-nightly
           description: freerdp-nightly
           baseurl: https://pub.freerdp.com/repositories/rpm/fedora/$releasever/freerdp-nightly/
-          metadata_expire: 43200 # 12 hours
-          ip_resolve: 4
+          metadata_expire: '43200' # 12 hours
+          ip_resolve: '4'
           gpgcheck: no
 
       - name: "install google gpg key"
-        become: yes
         get_url:
           url: "{{ google_repo.gpgkey.src }}"
           dest: "{{ google_repo.gpgkey.dest }}"
@@ -81,7 +135,6 @@
           group: "root"
 
       - name: "{{ google_repo.name }} repository"
-        become: yes
         yum_repository:
           name: "{{ google_repo.name }}"
           description: "{{ google_repo.name }}"
@@ -90,7 +143,6 @@
           gpgkey: "file://{{ google_repo.gpgkey.dest }}"
 
       - name: "install {{ skype_repo.name }} gpg key"
-        become: yes
         get_url:
           url: "{{ skype_repo.gpgkey.src }}"
           dest: "{{ skype_repo.gpgkey.dest }}"
@@ -98,7 +150,6 @@
           group: "root"
 
       - name: "{{ skype_repo.name }} repository"
-        become: yes
         yum_repository:
           name: "{{ skype_repo.name }}"
           description: "{{ skype_repo.name }}"
@@ -109,6 +160,7 @@
   - name: Install Fedora Packages
     # Some Fedora checks are a bit redundant in this version.
     when: (ansible_distribution == "Fedora")
+    become: yes
     block:
       # Restrict to Fedora systems for the time being.
       # Support for other RedHat-based distributions can be added pending testing.
@@ -119,40 +171,16 @@
       ## Development Tools and CLI items
 
       - name: install/update development tools and cli items
-        dnf: name={{item}} state=latest
-        become: yes
-        with_items:
-          - vim      # vim editor
-          - tmux     # tmux multiplexer
-          - svn      # Subversion version control
-          - git      # Git version control
-          - astyle   # Artistic Style code formatter
-          - wget     # Network downloaded
-          - curl     # URL Handler
-          - python   # Python
-          - python3  # Python v3
+        dnf: name="{{ packages.dev }}" state=latest
 
       - name: install/update fun cli items
-        dnf: name={{item}} state=latest
-        become: yes
-        with_items:
-          - mpg123 # Play sounds from the command line
+        dnf: name="{{ packages.fun_cli }}" state=latest
 
       - name: install/update standard packages
         # Make sure that some boring common packages are up to date.
-        dnf: name={{item}} state=latest
-        become: yes
-        with_items:
-          - sed
-          - tar
-          - bash
-          - coreutils
-          - unzip
-          - zip
-          - fuse-exfat
+        dnf: name="{{ packages.standard }}" state=latest
 
       - name: install/update the 'development-tools' package group
-        become: yes
         dnf: name='@development-tools' state=latest
         # Install failed when run against a Fedora 25 machine due to a module problem.
         # F25 is already EoL at time of writing anyways (2018-05-01, Ansible 2.4.1), so this is not a major concern.
@@ -166,52 +194,20 @@
 
       ## Network-Based Items
       - name: install/update network utilities
-        become: yes
-        dnf: name={{item}} state=latest
-        with_items:
-          - nmap             # Network discovery
-          - nmap-ncat        # Network Swiss Army Knife
-          - wireshark        # Packet Captures
-          - tcpdump          # Packet Captures
-          - openconnect      # OpenConnect VPN (compatible with Cisco AnyConnect)
-          - vpnc-script      # Used by openconnect
-          - openvpn          # OpenVPN
-          - openssh-clients  # SSH Client
-          - openssh-server   # SSH Server
-          - openssl          # OpenSSL
-          - iperf3           # iperf3 Network Benchmarking
+        dnf: name="{{ packages.network }}" state=latest
 
       ## Desktop Items
 
       - name: install/update desktop machine packages
-        become: yes
-        dnf: name={{item}} state=latest
-        with_items:
-          - conky               # Desktop information display
-          - firefox             # Web Browser
-          - google-chrome       # Fallback Web Browser
-          - geany               # Code Editor
-          - geany-themes        # Extra colour layouts for geany
-          - tigervnc            # VNC Client
-          - x11vnc              # Ad-Hoc VNC Server
-          - slick-greeter       # Really neat-looking greeter (originated with Ubuntu?)
-          - skypeforlinux       # Chat client
-          - wireshark-gtk       # Wireshark GUI
-          - libreoffice-calc    # Spreadsheets
-          - libreoffice-writer  # Word
-          - libreoffice-impress # Slideshows
-          - NetworkManager      # Network Management Service
-          - wine                # Windows compatibility
+        dnf: name={{ packages.desktop }} state=latest
 
       - name: install/update freerdp-nightly
-        become: yes
         dnf: name=freerdp-nightly state=latest # RDP Client
         when: ansible_distribution_major_version <= freerdp_nightly_max_version and ansible_distribution_major_version >= freerdp_nightly_min_version
 
       # Remove Default Greeter for Fedora MATE spin
       - name: remove lightdm-gtk greeter
         dnf: name=lightdm-gtk state=absent
-        become: yes
 
       # Tidy Up
       - name: check dnf version
@@ -219,8 +215,7 @@
         register: dnf_check
         changed_when: false # Never announce as changed.
 
-      - name: Autoremove unneeded packages installed as dependencies
-        become: yes
+      - name: autoremove unneeded packages installed as dependencies
         dnf: autoremove=yes
         # Requires DNF v2.0.1 or greater.
         # 'version_compare' was renamed to 'version' with Ansible 2.5.

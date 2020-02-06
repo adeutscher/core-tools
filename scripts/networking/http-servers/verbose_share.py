@@ -11,12 +11,13 @@ common.local_files.append(os.path.realpath(__file__))
 
 # Specific to browser sharer
 
-import cgi
 
 if sys.version_info[0] == 2:
+    from cgi import escape
     from urllib import quote
     from urlparse import unquote
 else:
+    from html import escape
     from urllib.parse import quote, unquote
 
 # Script Content
@@ -108,10 +109,10 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                     displayname = name + "/@"
                     linkname = name + "/"
 
-                    extrainfo = "Symlink to directory <span class='path'>%s</span>" % cgi.escape(os.path.realpath(fullname))
+                    extrainfo = "Symlink to directory <span class='path'>%s</span>" % escape(os.path.realpath(fullname))
                 elif os.path.isfile(os.path.realpath(fullname)):
                     # File via Symlink
-                    extrainfo = "Symlink to %s file <span class='path'>%s</span>" % (self.humansize(os.stat(fullname).st_size), cgi.escape(os.path.realpath(fullname)))
+                    extrainfo = "Symlink to %s file <span class='path'>%s</span>" % (self.humansize(os.stat(fullname).st_size), escape(os.path.realpath(fullname)))
                     is_file = True
                 else:
                     # Dead symlink
@@ -169,7 +170,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         else:
             items.sort(key=lambda a: a['rawname'].lower(), reverse = reverse)
 
-        displaypath = cgi.escape(unquote(getattr(self, common.ATTR_PATH, "/")))
+        displaypath = escape(unquote(getattr(self, common.ATTR_PATH, "/")))
         htmlContent = """<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
 <html>
   <head>
@@ -203,7 +204,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
     ) # Breadcrumbs
 
         if getattr(self, common.ATTR_PATH, "/") != "/":
-            htmlContent += '      <tr class="r_0"><td class="c_name"><a href="..">%s</a></td><td class="c_mod">&nbsp;</td><td class="c_size">-</td><td class="c_info">&nbsp;</td></tr>\n' % cgi.escape("<UP ONE LEVEL>")
+            htmlContent += '      <tr class="r_0"><td class="c_name"><a href="..">%s</a></td><td class="c_mod">&nbsp;</td><td class="c_size">-</td><td class="c_info">&nbsp;</td></tr>\n' % escape("<UP ONE LEVEL>")
 
         for item in items:
 
@@ -212,10 +213,10 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                 mtime_display = datetime.datetime.fromtimestamp(item.get('mtime')).strftime('%Y-%m-%d %H:%M:%S')
 
             if item.get('linkname') and item.get('reachable', False):
-                htmlContent += '      <tr><td class="c_name"><a href="%s">%s</a></td><td class="c_mod">%s</td><td class="c_size">%s</td><td class="c_info">%s</td></tr>\n' % (quote(item.get('linkname')), cgi.escape(item.get('displayname')), mtime_display, item.get('size_display'), item.get('extrainfo'))
+                htmlContent += '      <tr><td class="c_name"><a href="%s">%s</a></td><td class="c_mod">%s</td><td class="c_size">%s</td><td class="c_info">%s</td></tr>\n' % (quote(item.get('linkname')), escape(item.get('displayname')), mtime_display, item.get('size_display'), item.get('extrainfo'))
             else:
                 # Not reachable - dead symlink
-                htmlContent += '      <tr><td class="c_name s_dead">%s</td><td class="c_mod">%s</td><td class="c_size">%s</td><td class="c_info">%s</td></tr>\n' % (cgi.escape(item.get('displayname')), mtime_display, item.get('size_display'), item.get('extrainfo'))
+                htmlContent += '      <tr><td class="c_name s_dead">%s</td><td class="c_mod">%s</td><td class="c_size">%s</td><td class="c_info">%s</td></tr>\n' % (escape(item.get('displayname')), mtime_display, item.get('size_display'), item.get('extrainfo'))
 
         htmlContent += '    <tr><td colspan="5"><hr></td></table>\n  </body>\n</html>\n'
         return self.serve_content(htmlContent)

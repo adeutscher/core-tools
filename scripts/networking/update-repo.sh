@@ -35,6 +35,8 @@ warning(){
 # Script Functions
 ####################
 
+_command_timeout="$(which timeout)"
+
 __is_git_repo(){
   # Default, assume not a directory
   local __no=1
@@ -59,6 +61,16 @@ function __is_svn_repo(){
   elif [ ! -n "${1}" ] || [ ! -d "${1}/.svn" ] || ! svn info "${1}" 2> /dev/null >&2; then
     [ -n "${2}" ] && error "$(printf "${GREEN}%s${NC} does not appear to be a readable SVN checkout!" "${1}")"
     return 1
+  fi
+}
+
+__is_unix ()
+{
+  if [ -n "$WINDIR" ]; then
+    # Observed via MobaXterm
+    return 1
+  else
+    return 0
   fi
 }
 
@@ -199,11 +211,21 @@ function update-git-repo(){
   elif ! qtype host; then
     warning "$(printf "The ${BLUE}host${NC} command was not detected on this machine.")"
     warning "Continuing, but unable to verify that we can resolve the domain name for the upstream git repository."
-  elif ! timeout 1 host ${repoDomain} 2> /dev/null >&2; then
-    # Note: This check will not account for cached entries in the local BIND server (if applicable)
-    # Note: Avoiding "for" phrasing in non-comments to appease pluma colouring.
-    error "$(printf "${BLUE}%s${NC} was unable to resolve the address of ${GREEN}%s${NC}. Quitting...\n" "host" "${repoDomain}")"
-    return 7
+  else
+    # Host command is present
+    local timeout_arg="1"
+    if ! __is_unix; then
+      # Timeout command within Cygwin (or at least MobaXterm...)
+      #   needs the timeout duration to be specified with a '-t' switch.
+      local timeout_arg="-t${timeout_arg}"
+    fi
+
+    if ! "${_command_timeout}" "${timeout_arg}" host "${repoDomain}" 2> /dev/null >&2; then
+      # Note: This check will not account for cached entries in the local BIND server (if applicable)
+      # Note: Avoiding "for" phrasing in non-comments to appease pluma colouring.
+      error "$(printf "${BLUE}%s${NC} was unable to resolve the address of ${GREEN}%s${NC}. Quitting...\n" "host" "${repoDomain}")"
+      return 7
+    fi
   fi # end else block executed after doing "pre-flight" checks for reaching the repository server.
 
   # Track old and new revisions (at least on our current branch).

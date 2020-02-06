@@ -106,7 +106,7 @@ class ArgHelper:
             raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
         # These do not cover harmless checks on arg modifiers with flag values.
 
-        obj = OptArg()
+        obj = OptArg(self)
         obj.opt_type = opt_type
         obj.label = label
         obj.required = required and opt_type & MASK_OPT_TYPE_ARG
@@ -271,7 +271,9 @@ class ArgHelper:
 
 class OptArg:
 
-    opt_type = 0
+    def __init__(self, args):
+        self.opt_type = 0
+        self.args = args
 
     def is_flag(self):
         return self.opt_type in (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)
@@ -291,7 +293,7 @@ class OptArg:
         if self.default_announce:
             # Manually going to defaults table allows this core module
             # to have its help display reflect retroactive changes to defaults.
-            s += " (Default: %s)" % colour_text(args.defaults.get(self.label), self.default_colour)
+            s += " (Default: %s)" % colour_text(self.args.defaults.get(self.label), self.default_colour)
         return s
 
     def get_printout_usage(self, opt):

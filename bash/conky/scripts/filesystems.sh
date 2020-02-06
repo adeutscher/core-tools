@@ -62,7 +62,7 @@ fi
 #   - /run/cmanager/fs and /run/lock, two tmpfs directories on Ubuntu systems
 #   - gvfsd file system at /run/user/${UID}/gvfs
 # This should cover all other system-specific, temporary (USB drives, SD cards), or network, network file systems, etc.
-extra_file_systems="$(cut -d' ' -f ${cut_fields} < /proc/1/mountinfo | egrep ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf|hfsplus) ' | egrep -v '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/user/\d?|/gvfs|/run/cmanager/fs|/run/lock|/lib/live|/home/'"${USER}"'/\.gvfs|/home | / / ))' | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
+extra_file_systems="$(cut -d' ' -f ${cut_fields} < /proc/1/mountinfo | egrep ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf|hfsplus) ' | egrep -v '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/user/\d?|/gvfs|/root/\.cache/gvfs|/run/cmanager/fs|/run/lock|/lib/live|/home/'"${USER}"'/\.gvfs|/home | / / ))' | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
 
 ##########
 # Header #
@@ -102,10 +102,6 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
     # Substitute home directory path for '~' and shorten.
     fs_title="$(shorten_string "$(sed "s|^${HOME}|\\~|g" <<< "${fs}")" "$((34-$(expr length "${fs_type}")))")"
 
-    # If the target directory does not even exist, do not bother continuing through the loop.
-    # Made for static systems, since some target file systems are dynamically listed off of find command.
-    [ -d "${fs}" ] || continue
-
     # Special colour for network-based file systems.
     if egrep -qm1 "cifs|nfs|fuse\.obexfs" <<< "${fs_type}"; then
         fs_colour=${colour_network}
@@ -120,7 +116,16 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
     fi
 
     printf  "\${color #${fs_colour}}${fs_title}\$color \${color ${bracket_colour}}(\${color red}${fs_type}\$color\${color ${bracket_colour}})\$color\n"
-    
+
+    if [ ! -d "${fs}" ]; then
+      # If the mount point directory does not exist,
+      #  then either it does not exist (in which case it's odd that it's even still mounted)
+      #  or the current user does not have access to one of the directories in the mount point path
+      # Raise an alert, but continue on.
+
+      printf " \${color red}Unreachable Directory\$color\n"
+    fi
+
     if ! grep -q "^/$" <<< "${fs_bind_location}" && ! [[ "${fs_type}" =~ "cifs" ]]; then
         # Avoid redundant information by treating bind mounts differently.
 
@@ -192,12 +197,17 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
                     print_usage=1
                 fi
             fi
-        elif [[ "${fs_type}" =~ ^iso9660$ ]]; then  
+        elif [[ "${fs_type}" =~ ^iso9660$ ]]; then
             print_usage=0
         fi
 
-        if (( ${print_usage} )); then
-            printf " Usage: \${fs_used ${fs}}/\${fs_size ${fs}} - \${fs_used_perc ${fs}}%% \${fs_bar 6 ${fs}}\n"
+        if (( ${print_usage} )) && [ -d "${fs}" ]; then
+          # fs_used, fs_used_perc, and fs_bar all depend
+          #   on being able to verify the existence of the directory
+          #   that the file system is mounted to.
+          # Without this, we cannot do anything but report 0B, 0%, etc.
+
+          printf " Usage: \${fs_used ${fs}}/\${fs_size ${fs}} - \${fs_used_perc ${fs}}%% \${fs_bar 6 ${fs}}\n"
         fi
 
         # Print remote location for CIFS.

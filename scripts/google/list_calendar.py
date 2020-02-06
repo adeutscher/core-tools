@@ -10,6 +10,7 @@
 
 from __future__ import print_function
 import common,datetime,os,re,sys,time
+common.local_files.append(os.path.realpath(__file__))
 
 def main():
     """Shows basic usage of the Google Calendar API.

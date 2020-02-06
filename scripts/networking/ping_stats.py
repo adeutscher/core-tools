@@ -15,11 +15,12 @@ def colour_text(text, colour = None):
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
 def colour_green(text):
-    # Lazy shorthand for the common habit of using green to highlight paths and network addresses.
+    # Lazy shorthand for the common habit of using green to highlight paths.
     return colour_text(text, COLOUR_GREEN)
 
 def enable_colours(force = False):
     global COLOUR_BOLD
+    global COLOUR_BLUE
     global COLOUR_RED
     global COLOUR_GREEN
     global COLOUR_YELLOW
@@ -27,6 +28,7 @@ def enable_colours(force = False):
     if force or sys.stdout.isatty():
         # Colours for standard output.
         COLOUR_BOLD = '\033[1m'
+        COLOUR_BLUE = '\033[1;94m'
         COLOUR_RED = '\033[1;91m'
         COLOUR_GREEN = '\033[1;92m'
         COLOUR_YELLOW = '\033[1;93m'
@@ -34,6 +36,7 @@ def enable_colours(force = False):
     else:
         # Set to blank values if not to standard output.
         COLOUR_BOLD = ''
+        COLOUR_BLUE = ''
         COLOUR_RED = ''
         COLOUR_GREEN = ''
         COLOUR_YELLOW = ''
@@ -44,7 +47,7 @@ MODE_NORMAL = 1
 MODE_RELIABLE = 2
 MODE_UNRELIABLE = 3
 
-DEFAULT_STREAK_COUNT = 60
+DEFAULT_STREAK_COUNT = 15
 
 def hexit(exit_code):
 
@@ -88,10 +91,10 @@ def main(cli_args):
         elif f == '-u':
             unreliable = True
             mode = MODE_UNRELIABLE
-	elif f == '-t':
-	    tally = True
-	elif f == '-d':
-	    debug = True
+        elif f == '-t':
+            tally = True
+        elif f == '-d':
+            debug = True
         elif f == '-c':
             count_raw = v
             count_have = True
@@ -112,7 +115,7 @@ def main(cli_args):
         try:
             ip = socket.gethostbyname(addr)
         except socket.gaierror:
-            print("Unable to resolve address: %s" % colour_green(addr))
+            print("Unable to resolve address: %s" % colour_text(addr, COLOUR_BLUE))
             error = True
 
     if count_have:
@@ -163,13 +166,14 @@ def ping(server, debug = False):
     t = time.time()
     if platform.system() in ["Linux", "Darwin"]:
         # Unix platform
-	# ToDo: Improve this check
+        # ToDo: Improve this check
         cmd=["ping", "-W1", "-c1", server]
     else:
         # Windows Environment (assumed)
         cmd=["ping", "-w", "1", "-n", "1", server]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
+    out = str(out).replace("\\n", "\n")
 
     # Calculate time lazily using python time rather than the time from ping.
     # This might result in some inaccurate numbers, but I think it's minor enough to let slide
@@ -184,7 +188,9 @@ def ping(server, debug = False):
         r["success"] = True
         # Strip out the icmp_seq value because our implementation invokes a new
         #   ping process. icmp_seq will always be '1'.
-        r["line"] = re.sub("((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)", "", l.group(0))
+        line = re.sub("((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)", "", l.group(0))
+        line = line.replace("time=", "t=")
+        r["line"] = re.sub("(\.[\d]{2})\d? ms", r"\1 ms", line)
     else:
         r["success"] = False
 
@@ -230,7 +236,7 @@ def stats(server, ip, **kwargs):
 
         saddr = colour_green(server)
         if server != ip:
-            saddr += ' (%s)' % colour_green(ip)
+            saddr += ' (%s)' % colour_text(ip, COLOUR_BLUE)
 
         print("Waiting until %s %s be pinged %s times in a row." % (saddr, word, colour_text(number)))
         if limit:
@@ -258,8 +264,8 @@ def stats(server, ip, **kwargs):
 
                 chart += '^'
                 colour = COLOUR_GREEN
-                verb = 'response'
-                extra = ': %s' % r.get('line', '').strip()
+                verb = 'reply'
+                extra = '  %s' % r.get('line', '').strip()
 
                 # Only bother announcing the number of successes in a row when testing for reliability.
                 if mode == MODE_RELIABLE:
@@ -287,7 +293,7 @@ def stats(server, ip, **kwargs):
                 else:
                     extra = ' (%s failed in a row)' % colour_text(streak_fail)
 
-            line = '%s %s%s' % (colour_green(ip), colour_text(verb, colour), extra)
+            line = '%s  %s%s' % (colour_text(ip, COLOUR_BLUE), colour_text(verb, colour), extra)
             chart = chart[max(0, len(chart)-recent_limit):] # Trim chart
 
             display_chart = ''
@@ -322,7 +328,7 @@ def stats(server, ip, **kwargs):
             percentage_text = "%6.02f%%" % percentage
 
             # Padding the count digits to avoid a bunch of relatively rapid format jumps.
-            print("[%03d/%03d %s][%s]: %s" % (total_success, total_pings, colour_text(percentage_text, percentage_colour), display_chart, line))
+            print("%03d/%03d %s  [%s]  %s" % (total_success, total_pings, colour_text(percentage_text, percentage_colour), display_chart, line))
 
             # This was originally one big assignment statement, but it was a pain to read.
             continue_loop = (not limit or total_pings < limit)

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 #####################################################
 #
@@ -17,7 +17,7 @@
 #####################################################
 
 from __future__ import print_function
-import getopt, os, re, socket, sys
+import binascii, getopt, os, re, socket, sys
 
 # Static variables
 ####
@@ -108,12 +108,20 @@ def print_notice(message):
 def print_warning(message):
     _print_message(COLOUR_YELLOW, "Warning", message)
 
+# Script Functions
+
+def format_bytes(content):
+  content_bytes = content
+  if sys.version_info.major >= 3 and type(content) is not bytes:
+      content_bytes = bytes(content_bytes, 'ascii')
+  return binascii.unhexlify(content_bytes)
+
 def send_magic_packet(mac):
 
   global WOL_PORT
   global TARGET_ADDRESS
 
-  print_notice("Sending WoL magic packet for %s%s%s" % (COLOUR_BOLD, mac, COLOUR_OFF))
+  print_notice("Sending WoL magic packet for %s" % colour_text(mac))
 
   sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
   sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -124,10 +132,10 @@ def send_magic_packet(mac):
   #   followed by sixteen repetitions of the target computer's
   #   48-bit MAC address, for a total of 102 bytes.
 
-  payload='ffffffffffff'.decode("hex")
+  payload=format_bytes('ffffffffffff')
   mac_plain = re.sub(':','',mac)
   for i in range(16):
-    payload+=mac_plain.decode("hex")
+    payload+=format_bytes(mac_plain)
   sock.sendto(payload, (TARGET_ADDRESS, WOL_PORT))
 
 def run():
@@ -154,11 +162,11 @@ def run():
       if re.match(REGEX_INET4_CIDR, arg):
         # Someone put in a CIDR range by accident.
         # Their heart is in the right place, so fix formatting with a small nudge for next time.
-        print_warning("Target address '%s%s%s' appears to be in CIDR format." % (COLOUR_GREEN, arg, COLOUR_OFF))
+        print_warning("Target address '%s' appears to be in CIDR format." % colour_text(arg, COLOUR_GREEN))
         arg = re.sub(r"\/.*$", "", arg)
-        print_warning("Trimming target address down to '%s%s%s'." % (COLOUR_GREEN, arg, COLOUR_OFF))
+        print_warning("Trimming target address down to '%s'." % colour_text(arg, COLOUR_GREEN))
       elif not re.match(REGEX_INET4, arg):
-        errors.append("Not a valid target address: %s%s%s" % (COLOUR_BOLD, arg, COLOUR_OFF))
+        errors.append("Not a valid target address: %s" % colour_text(arg, COLOUR_GREEN))
         continue
       TARGET_ADDRESS = arg
     elif opt =="-p":
@@ -170,7 +178,7 @@ def run():
       except ValueError:
         errors.append("Invalid port number: %s" % colour_text(arg))
     else:
-      errors.append("Unhandled option: %s%s%s" % colour_text(opt))
+      errors.append("Unhandled option: %s" % colour_text(opt))
 
   if not len(errors) and len(args) == 0:
     errors.append("No MAC addresses provided.")
@@ -189,7 +197,7 @@ def run():
     if re.match(MAC_PATTERN, candidate_lower):
       send_magic_packet(candidate_lower)
     else:
-      print_error("Invalid MAC address: %s%s%s" % (COLOUR_BOLD, candidate, COLOUR_OFF))
+      print_error("Invalid MAC address: %s" % colour_text(candidate))
       bad_format += 1
     if bad_format:
       exit(1)

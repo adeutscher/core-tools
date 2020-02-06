@@ -10,7 +10,11 @@
 ############################################################################
 
 from __future__ import print_function
-import common,contextlib,csv,itertools,os,re,sys
+import common,contextlib,csv,os,re,sys
+common.local_files.append(os.path.realpath(__file__))
+
+if sys.version_info.major == 2:
+    from itertools import izip as zip
 
 def itersheets(service, id):
 
@@ -20,8 +24,26 @@ def itersheets(service, id):
     sheets = [s['properties']['title'] for s in doc['sheets']]
     params = {'spreadsheetId': id, 'ranges': sheets, 'majorDimension': 'ROWS'}
     result = service.spreadsheets().values().batchGet(**params).execute()
-    for name, vr in itertools.izip(sheets, result['valueRanges']):
+    for name, vr in zip(sheets, result['valueRanges']):
         yield (title, name), vr['values']
+
+def export_csv(service, docid, filename_template='%(title)s - %(sheet)s.csv'):
+
+    error_count = common.error_count # Note original error count
+
+    if docid and re.match("^https://docs.google.com/spreadsheets/d/", docid, re.IGNORECASE):
+        docid = docid.split("/")[5]
+
+    try:
+        for (doc, sheet), rows in itersheets(service, docid):
+            file_name = filename_template % {'title': doc, 'sheet': sheet}
+            file_path = os.path.join(common.args[TITLE_DIR], common.args[TITLE_PREFIX], file_name)
+            common.print_notice("Saving \"%s\" sheet to file: %s" % (common.colour_text(sheet), common.colour_text(file_name, common.COLOUR_GREEN)))
+            with open(file_name, 'w') as fd:
+                write_csv(service, fd, rows)
+    except Exception as e:
+        common.print_exception(e)
+    return error_count == common.error_count
 
 def main():
     """Shows basic usage of the Google Calendar API.
@@ -39,28 +61,9 @@ def main():
             exit_code = 1
     return exit_code
 
-def write_csv(service, fd, rows, encoding='utf-8', dialect='excel'):
-    csvfile = csv.writer(fd, dialect=dialect)
-    for r in rows:
-        csvfile.writerow([c.encode(encoding) for c in r])
-
-def export_csv(service, docid, filename_template='%(title)s - %(sheet)s.csv'):
-
-    error_count = common.error_count # Note original error count
-
-    if docid and re.match("^https://docs.google.com/spreadsheets/d/", docid, re.IGNORECASE):
-        docid = docid.split("/")[5]
-
-    try:
-        for (doc, sheet), rows in itersheets(service, docid):
-            file_name = filename_template % {'title': doc, 'sheet': sheet}
-            file_path = os.path.join(common.args[TITLE_DIR], common.args[TITLE_PREFIX], file_name)
-            common.print_notice("Saving \"%s\" sheet to file: %s" % (common.colour_text(sheet), common.colour_text(file_name, common.COLOUR_GREEN)))
-            with open(file_name, 'wb') as fd:
-                write_csv(service, fd, rows)
-    except Exception as e:
-        common.print_exception(e)
-    return error_count == common.error_count
+def pad_list(l, max_columns):
+    while len(l) < max_columns: l.append('')
+    return l
 
 def validate_arg_operands(self):
     if not self.operands:
@@ -74,6 +77,12 @@ def validate_arg_dir(self):
         except Exception as e:
             return "Could not create CSV directory %s: %s" % (common.colour_text(self[TITLE_DIR], common.COLOUR_GREEN), str(e))
 common.args.add_validator(validate_arg_dir)
+
+def write_csv(service, fd, rows, dialect='excel'):
+    csvfile = csv.writer(fd, dialect=dialect)
+    max_columns = max([len(r) for r in rows])
+    for r in rows:
+        csvfile.writerow(pad_list(r, max_columns))
 
 DEFAULT_DIR = "."
 TITLE_DIR = "target_dir"

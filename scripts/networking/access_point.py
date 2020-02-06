@@ -215,7 +215,7 @@ def print_notice(message):
 
 def print_summary(args):
 
-    print_notice("SSID: %s%s%s" % (COLOUR_BOLD, args[TITLE_SSID], COLOUR_OFF))
+    print_notice("SSID: %s" % colour_text(args[TITLE_SSID]))
     if args.get(TITLE_IS_JOIN, False):
         verbword = "Joining"
         nounword = "network"
@@ -223,7 +223,7 @@ def print_summary(args):
     else:
         verbword = "Hosting"
         nounword = "access point"
-        closer = " (Channel %s%d%s)." % (COLOUR_BOLD, args[TITLE_CHANNEL], COLOUR_OFF)
+        closer = " (Channel %s)." % colour_text(args[TITLE_CHANNEL])
 
     if args.get(TITLE_PASSWORD, None):
         # An access point under this script will never by non-open, non-WEP, and non-WPA at the same time..
@@ -236,9 +236,9 @@ def print_summary(args):
         print_notice("%s an open %s%s" % (verbword, nounword, closer))
 
     if args.get(TITLE_IS_JOIN, False):
-        print_notice("Joining network using the %s%s%s interface." % (COLOUR_BLUE, args[TITLE_INTERFACE], COLOUR_OFF))
+        print_notice("Joining network using the %s interface." % colour_text(args[TITLE_INTERFACE], COLOUR_BLUE))
     else:
-        print_notice("The %s%s%s interface will be attached to the %s%s%s bridge." % (COLOUR_BLUE, args[TITLE_INTERFACE], COLOUR_OFF, COLOUR_GREEN, args[TITLE_BRIDGE], COLOUR_OFF))
+        print_notice("The %s interface will be attached to the %s bridge." % (colour_text(args[TITLE_INTERFACE], COLOUR_BLUE), colour_text(args[TITLE_BRIDGE], COLOUR_GREEN)))
 
 def print_usage(message):
     _print_message(COLOUR_PURPLE, "Usage", message)
@@ -406,7 +406,7 @@ def validate_bridge_interface(candidate, title):
 def validate_command(command):
     all_clear = True
     if not which(command):
-        print_error("%s%s%s is not found in PATH." % (COLOUR_BLUE, command, COLOUR_OFF))
+        print_error("%s is not found in PATH." % colour_text(command, COLOUR_BLUE))
         all_clear = False
     return all_clear
 

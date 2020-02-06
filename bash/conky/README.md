@@ -33,6 +33,7 @@ The following environment variables can be exported to affect my `conky` display
 | CONKY_SCREEN              | Controls primary display location. Display will be placed in the bottom-right corner.                         | DVI-1, HDMI-0       |
 | CONKY_PADDING_X           | Horizontal offset of primary display from bottom-right corner (default: 10).                                  | 10                  |
 | CONKY_PADDING_Y           | Vertical offset of primary display from bottom-right corner (default: 35).                                    | 35                  |
+| CONKY_DISABLE_LUA         | Set to '1' to disable Lua-driven rounded corners. Useful if conky does not have Cairo support.                | 1                   |
 | CONKY_ENABLE_CLOCK        | Set to '1' to enable a time display in system information area.                                               | 1                   |
 | CONKY_ENABLE_TASKS        | Set to '1' to enable the secondary display (off by default). See "Tasks Display" section for more information | 1                   |
 | CONKY_SECONDARY_SCREEN    | Controls secondary display location. Display will be placed in the bottom-right corner.                       | DVI-1, HDMI-0       |

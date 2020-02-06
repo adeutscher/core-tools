@@ -2,7 +2,7 @@
 # Temporary files called up by vi.
 *.swp
 # Python bytecode
-*.pyc
+*.py[cod]
 # Python 3 bytecode directory. Redundant, but added to be safe.
 __pycache__
 # Ansible retry files

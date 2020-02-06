@@ -10,12 +10,13 @@
 # General modules
 from __future__ import print_function
 import base64, common, mimetypes, os, platform, random, re, string, sys, uuid
+common.local_files.append(os.path.realpath(__file__))
 
 # Mail modules
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.MIMEBase import MIMEBase
-from email import Encoders
+from email.mime.base import MIMEBase
+import email.encoders as Encoders
 
 def load_attachment(file_path):
     content_type, encoding = mimetypes.guess_type(file_path)
@@ -85,6 +86,13 @@ common.args.add_opt(common.OPT_TYPE_SHORT, "m", TITLE_MESSAGE, "Set e-mail messa
 common.args.add_opt(common.OPT_TYPE_SHORT, "s", TITLE_SUBJECT, "Set e-mail message subject.", default = "No Subject")
 common.args.add_opt(common.OPT_TYPE_LONG_FLAG, "html", TITLE_HTML_FORMAT, "Enable HTML mode. Message content will be expected to be HTML-formatted.")
 
+def encode_base64(content):
+    if sys.version_info[0] >= 3 and type(content) is str:
+        return str(base64.urlsafe_b64encode(bytes(content, 'utf-8')), 'utf-8')
+
+    # Python 2
+    return base64.urlsafe_b64encode(content)
+
 def main():
 
     common.process()
@@ -117,11 +125,14 @@ def main():
     if not common.error_count:
         # Prep and send.
         try:
-            message = (service.users().messages().send(userId="me", body={'raw': base64.urlsafe_b64encode(msg.as_string())}).execute())
+            message = (service.users().messages().send(userId="me", body={'raw': encode_base64(msg.as_string())}).execute())
         except Exception as e:
             common.print_error("Unable to send mail: %s" % str(e))
     else:
         common.print_error("Not sending mail due to at least one argument error (%d in total)." % common.error_count)
+    if common.error_count:
+        return 1
+    return 0
 
 if __name__ == '__main__':
-    main()
+    exit(main())

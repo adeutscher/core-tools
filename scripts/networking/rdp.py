@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
-import getopt, getpass, os, re, subprocess, sys, time
+from __future__ import print_function
+import base64, getopt, getpass, os, re, subprocess, sys, time
 
 # Defaults
 
@@ -12,7 +13,7 @@ DEFAULT_WIDTH = 1600
 ###
 
 def __print_message(colour, header, message):
-    print "%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+    print("%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message))
 
 def colour_text(colour, text):
     # A useful shorthand for applying a colour to a string.
@@ -87,6 +88,13 @@ TITLE_WIDTH = "width"
 TITLE_VERBOSE = "verbose"
 TITLE_EC2_FILE = "EC2 Key File"
 
+def format_bytes(content):
+    if sys.version_info.major == 2:
+        return bytes(content)
+    elif type(content) is bytes:
+        return content # Already bytes
+    return bytes(content, 'ascii')
+
 def get_user(display = False):
 
     if TITLE_EC2_FILE in args:
@@ -118,6 +126,9 @@ def get_ec2_cipher():
     else:
         # File exists.
         try:
+            from Crypto.Cipher import PKCS1_v1_5
+            from Crypto.PublicKey import RSA
+
             input = open(args[TITLE_EC2_FILE])
             key = RSA.importKey(input.read())
             input.close()
@@ -233,7 +244,7 @@ def process_switches(args):
             i += 1
             if i > 10:
                 break
-            if "[/v:<server>[:port]]" in line:
+            if format_bytes("[/v:<server>[:port]]") in line:
                 new_switches=True
                 break
     except OSError:
@@ -314,20 +325,22 @@ def record_var(values, title, colour=COLOUR_BOLD, reportOverwrite=True):
     set_var(values, title, temp, colour, reportOverwrite)
 
 def set_ec2_info():
+
+    tag_name = 'Name'
+    label_instance_id = "instance ID"
+    label_public_ip = "public IP"
+    label_public_dns = "public DNS"
+    label_tag_name = "'%s' tag" % tag_name
+
     good = False
     target = args.get(TITLE_SERVER)
 
     end = False
 
     try:
+        import boto3
         ec2client = boto3.client('ec2')
         response = ec2client.describe_instances()
-
-        tag_name = 'Name'
-        label_instance_id = "instance ID"
-        label_public_ip = "public IP"
-        label_public_dns = "public DNS"
-        label_tag_name = "'%s' tag" % tag_name
 
         for reservation in response["Reservations"]:
             for instance in reservation["Instances"]:
@@ -379,7 +392,7 @@ def set_ec2_info():
                 end = True
 
                 password_data =  ec2client.get_password_data(InstanceId = instance_id)
-                raw_password = password_data.get("PasswordData", "").strip().decode('base64')
+                raw_password = base64.b64decode(password_data.get("PasswordData", "").strip())
 
                 if not raw_password:
                     print_error("Unable to get encrypted password data from instance '%s' matching %s: %s" % (colour_text(COLOUR_BOLD, instance_id), label, colour_text(COLOUR_BOLD, target)))
@@ -395,7 +408,8 @@ def set_ec2_info():
                 # If we get past this point, then we have successfully obtained a password for the instance.
 
                 args[TITLE_SERVER] = public_ip
-                args[TITLE_PASSWORD] = plain_password
+                args[TITLE_PASSWORD] = plain_password.decode()
+
                 # Note: Username is handled by get_user().
                 # Assumed to always be 'administrator' for EC2 connections using a private key.
                 if TITLE_DOMAIN in args:
@@ -407,6 +421,7 @@ def set_ec2_info():
                 break
     except Exception as e:
         print_error("Error resolving EC2 identifier (%s) to an active instance: %s" % (colour_text(COLOUR_BOLD, target), str(e)))
+        raise
         good = False
 
     if not good:
@@ -439,14 +454,12 @@ def translate_seconds(duration, add_and = False):
     c = -1
 
     times = []
-    while i < len(modules) - 1:
-        i += 1
-
-        value = modules[i][1]
-        mod_value = num % value
-        num = num / modules[i][1]
+    for i in range(len(modules)):
 
         noun = modules[i][0]
+        value = modules[i][1]
+        mod_value = num % value
+
         if mod_value == 1:
             if modules[i][2]:
                 noun = modules[i][2]
@@ -455,6 +468,10 @@ def translate_seconds(duration, add_and = False):
 
         if mod_value:
             times.append("%s %s" % (mod_value, noun))
+
+        num = int(num / modules[i][1])
+        if not num:
+            break # No more modules to process
 
     if len(times) == 1:
         return " ".join(times)
@@ -522,17 +539,18 @@ def which(program):
                 return exe_file
     return None
 
-if __name__ == "__main__":
+def run():
     good_env = validate_environment()
 
+    global args
     args, good_args = process_args()
 
     if args.get(TITLE_EC2_FILE):
         # Must load modules outside of functions.
         try:
             import base64, boto3
-            from Crypto.Cipher import PKCS1_v1_5
-            from Crypto.PublicKey import RSA
+            import Crypto.Cipher
+            import Crypto.PublicKey
         except ImportError as e:
             print_error("Error loading modules for EC2 password: %s" % str(e))
             good_args = False
@@ -557,10 +575,11 @@ if __name__ == "__main__":
     if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
         print_notice("Command: %s" % " ".join(command))
 
-    time_start = time.time()
+    time_start = int(time.time())
 
     try:
         p = subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr)
+
 
         # Clean password from memory a bit.
         # It's not perfect, but it does axe at least a few instances of the password from a memory dump.
@@ -582,7 +601,7 @@ if __name__ == "__main__":
         print_error("OSError: %s" % e)
         exit_code = 1
 
-    time_end = time.time()
+    time_end = int(time.time())
     time_diff = time_end - time_start
 
     if (time_diff) > 60:
@@ -592,3 +611,6 @@ if __name__ == "__main__":
         print_notice("RDP Session Duration: %s" % colour_text(COLOUR_BOLD, translate_seconds(time_diff)))
 
     exit(exit_code)
+
+if __name__ == "__main__":
+    run()

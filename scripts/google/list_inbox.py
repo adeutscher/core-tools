@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 import common,os,re,sys
+common.local_files.append(os.path.realpath(__file__))
 
 ####################################################
 # List calendar events in a format that can be     #

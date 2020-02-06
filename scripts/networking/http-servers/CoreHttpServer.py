@@ -245,7 +245,7 @@ class ArgHelper:
             raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
         # These do not cover harmless checks on arg modifiers with flag values.
 
-        obj = OptArg()
+        obj = OptArg(self)
         obj.opt_type = opt_type
         obj.label = label
         obj.required = required and opt_type & MASK_OPT_TYPE_ARG
@@ -410,7 +410,9 @@ class ArgHelper:
 
 class OptArg:
 
-    opt_type = 0
+    def __init__(self, args):
+        self.opt_type = 0
+        self.args = args
 
     def is_flag(self):
         return self.opt_type in (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)
@@ -430,7 +432,7 @@ class OptArg:
         if self.default_announce:
             # Manually going to defaults table allows this core module
             # to have its help display reflect retroactive changes to defaults.
-            s += " (Default: %s)" % colour_text(args.defaults.get(self.label), self.default_colour)
+            s += " (Default: %s)" % colour_text(self.args.defaults.get(self.label), self.default_colour)
         return s
 
     def get_printout_usage(self, opt):
@@ -474,7 +476,7 @@ def validate_common_arguments(self):
         errors.append("Port must be 0-65535. Given: %s" % colour_text(port))
 
     if self[TITLE_TIMEOUT] <= 0:
-        errors.append("Timeout must be a positive value. Given: %s" % colour_text(COLOUR_BOLD, self.args[TITLE_PORT]))
+        errors.append("Timeout must be a positive value. Given: %s" % colour_text(self.args[TITLE_PORT]))
 
     for label in [TITLE_SSL_CERT, TITLE_SSL_KEY]:
         path = self[label]

@@ -2,13 +2,14 @@
 
 # A quick and dirty 'format JSON' button.
 
+from __future__ import print_function
 import json, os, sys
 
 def err(msg):
-    print >> sys.stderr, msg
+    print(msg, file=sys.stderr)
 
 def printout(s):
-    print json.dumps(json.load(s), indent=2)
+    print(json.dumps(json.load(s), indent=2))
 
 if __name__ == "__main__":
 

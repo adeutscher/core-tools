@@ -29,13 +29,6 @@ alias iftop="iftop -nNp"
 alias ping-reliably='ping-stats -r'
 alias ping-unreliably='ping-stats -u'
 
-###########
-# Ansible #
-###########
-
-# Include ansible scripts in path.
-qtype ansible && __add_to_path "$toolsDir/bin/topics/ansible"
-
 ########
 # Curl #
 ########
@@ -221,7 +214,7 @@ wol-create-aliases(){
     if [ -n "${_address}" ] && [[ "${_address}" != "${_label}" ]]; then
       # Given label that does not match the expected address.
       notice "$(printf "Created WoL alias \"${Colour_BIBlue}wol-%s${Colour_Off}\" for ${Colour_Bold}%s${Colour_Off} (${Colour_Bold}%s${Colour_Off}, expected at ${Colour_BIGreen}%s${Colour_Off})." "${_short_name}" "${_label:-${_short_name}}" "${_mac}" "${_address}")"
-      eval "alias wol-${_short_name}=\"wol ${_mac} && notice \\\"\\\$(printf \\\"Sent WoL packet for \\\${Colour_Bold}%s\\\${Colour_Off}. If available, will be reachable at \\\${Colour_BIGreen}%s\\\${Colour_Off}.\\\" \\\"${_label:-${_short_name}}\\\" \\\"${_address}\\\")\\\"\""
+      eval "alias wol-${_short_name}=\"wol ${_mac} && notice \\\"\\\$(printf \\\"Sent WoL packet for \\\${Colour_Bold}%s\\\${Colour_Off}. If available, will be reachable at address: \\\${Colour_BIGreen}%s\\\${Colour_Off}\\\" \\\"${_label:-${_short_name}}\\\" \\\"${_address}\\\")\\\"\""
     else
       # Given no expected address or matches with label.
       notice "$(printf "Created WoL alias \"${Colour_BIBlue}wol-%s${Colour_Off}\" for ${Colour_Bold}%s${Colour_Off} (${Colour_Bold}%s${Colour_Off})." "${_short_name}" "${_label:-${_short_name}}" "${_mac}")"

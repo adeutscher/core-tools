@@ -150,9 +150,10 @@ if type lsof 2> /dev/null >&2; then
 fi
 
 add_pid(){
-  [ -z "${1}" ] && return 0
-  COUNT="$((${COUNT:-0}+1))"
-  PIDS[${COUNT}]="${1}"
+  if [ -z "${1}" ] || grep -qw "${1}" <<< "${PIDS[*]}"; then
+    return 0
+  fi
+  PIDS[${#PIDS[*]}]="${1}"
 }
 
 pid_exists(){
@@ -165,10 +166,8 @@ wait_for_pids(){
   time_start="$(date +%s)"
   while (( 1 )); do
     current=0
-    while [ "${current}" -lt "${COUNT}" ]; do
-      current="$((${current}+1))"
-      (( "${COMPLETED[${current}]:-0}" )) && continue
-      if ! pid_exists "${PIDS[${current}]}"; then
+    while [ "${current}" -lt "${#PIDS[*]}" ]; do
+      if ! (( "${COMPLETED[${current}]:-0}" )) && ! pid_exists "${PIDS[${current}]}"; then
         print_complete "$(printf "PID Complete: ${BOLD}%s${NC}: %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
         time_diff="$(($(date +%s)-${time_start}))"
         print_duration "$(printf "Process time: ${BOLD}%s${NC}" "$(__translate_seconds "$((${time_diff}+${DURATIONS[${current}]}))")")"
@@ -176,8 +175,12 @@ wait_for_pids(){
         complete="$((${complete}+1))"
         COMPLETED[${current}]=1
       fi
+      current="$((${current}+1))"
     done
-    [ "${complete}" -eq "${COUNT}" ] && break
+
+    # Check for wheher or not we are done before we sleep.
+    [ "${complete}" -eq "${#PIDS[*]}" ] && break
+
     sleep "${INTERVAL:-0.5}"
   done
 }
@@ -312,7 +315,7 @@ done # Outer ${1} loop.
 
 if ! (( "${ATTEMPT:-0}" )); then
   error "No PIDs provided."
-elif ! (( "${COUNT:-0}" )); then
+elif ! (( "${#PIDS[*]}" )); then
   # Drive the point home that no matches happened.
   error "No matched PIDs."
 fi
@@ -320,11 +323,11 @@ fi
 (( "${__error_count:-0}" )) && exit 1
 
 current=0
-while [ "${current}" -lt "${COUNT}" ]; do
-  current="$((${current}+1))"
+while [ "${current}" -lt "${#PIDS[*]}" ]; do
   COMMANDS[${current}]="$(ps -eo cmd -q "${PIDS[${current}]}" | tail -n1)"
   DURATIONS[${current}]="$(ps axwo etimes -q "${PIDS[${current}]}" | tail -n1)"
   print_wait "$(printf "Waiting for PID: ${BOLD}%s${NC}: %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
+  current="$((${current}+1))"
 done
 
 # Announce Options

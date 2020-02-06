@@ -7,7 +7,7 @@
 
   vars:
     git_src: "https://github.com/rg3/youtube-dl.git"
-    git_dest: "{{ ansible_user_dir }}/.local/youtube-dl-local"
+    git_dest: "{{ ansible_user_dir }}/.local/ansible-deployments/youtube-dl-local"
 
   tasks:
 

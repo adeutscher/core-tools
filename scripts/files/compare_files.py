@@ -97,7 +97,7 @@ def main(argv):
 
     try:
         # Note: Python will not throw a fit if you call for an invalid slice (will simply be empty).
-        opts, operands = getopt.getopt(argv[1:],"hs:")
+        opts, operands = getopt.gnu_getopt(argv[1:],"hs:")
     except getopt.GetoptError:
         errors.append("Error parsing arguments")
     for opt, arg in opts:
@@ -133,7 +133,7 @@ def main(argv):
             print_error(e)
         hexit(1)
 
-    print_notice("Comparing %s to %s, %s bytes at a time." % (colour_text(COLOUR_GREEN, file_a), colour_text(file_b, COLOUR_GREEN), colour_text(block_size)))
+    print_notice("Comparing %s to %s, %s bytes at a time." % (colour_text(file_a, COLOUR_GREEN), colour_text(file_b, COLOUR_GREEN), colour_text(block_size)))
     compare(file_a, file_b, block_size)
 
 def compare(file_a, file_b, block_size):

@@ -1,0 +1,22 @@
+---
+
+# Install dependencies for google scripts
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+  
+  environment:
+    ANSIBLE: 1
+    
+  vars:
+    pip:
+        - httplib2
+        - oauth2client
+        - google-api-python-client
+  
+  tasks:
+    - name: install/update pip items
+      pip:
+        name: "{{ packages.pip }}"
+        state: latest
+        extra_args: --user --upgrade

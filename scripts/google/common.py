@@ -1,6 +1,7 @@
 
 # Common variables for google API scripts.
 
+from __future__ import print_function
 import httplib2, os, re, sys
 
 #
@@ -8,7 +9,7 @@ import httplib2, os, re, sys
 ###
 
 def _print_message(header_colour, header_text, message):
-    print "%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message)
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message))
 
 def colour_text(text, colour = None):
     if not colour:
@@ -50,13 +51,29 @@ def print_error(message):
     error_count += 1
     _print_message(COLOUR_RED, "Error", message)
 
+local_files = [re.sub("\.pyc", ".py", __file__)]
 def print_exception(e, msg=None):
     # Shorthand wrapper to handle an exception.
     # msg: Used to provide more context.
     sub_msg = ""
     if msg:
-        sub_msg = " (%s)" % msg
-    print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
+        sub_msg = "%s, " % msg
+
+    exc_type, exc_obj, exc_tb = sys.exc_info()
+    stack = []
+
+    while exc_tb is not None:
+        fname = exc_tb.tb_frame.f_code.co_filename
+        lineno = exc_tb.tb_lineno
+        stack.append((fname, lineno))
+        exc_tb = exc_tb.tb_next
+
+    # Get the deepest local file.
+    fname, lineno = next((t for t in reversed(stack) if os.path.realpath(t[0]) in local_files), (stack[-1]))
+
+    fname = os.path.split(fname)[1]
+    print_error("Unexpected %s(%s%s, Line %s): %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, colour_text(fname, COLOUR_GREEN), lineno, str(e)))
+
 
 def print_notice(message):
     _print_message(COLOUR_BLUE, "Notice", message)
@@ -169,7 +186,7 @@ class ArgHelper:
             raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
         # These do not cover harmless checks on arg modifiers with flag values.
 
-        obj = OptArg()
+        obj = OptArg(self)
         obj.opt_type = opt_type
         obj.label = label
         obj.required = required and opt_type & MASK_OPT_TYPE_ARG
@@ -334,7 +351,9 @@ class ArgHelper:
 
 class OptArg:
 
-    opt_type = 0
+    def __init__(self, args):
+        self.opt_type = 0
+        self.args = args
 
     def is_flag(self):
         return self.opt_type in (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)
@@ -354,7 +373,7 @@ class OptArg:
         if self.default_announce:
             # Manually going to defaults table allows this core module
             # to have its help display reflect retroactive changes to defaults.
-            s += " (Default: %s)" % colour_text(args.defaults.get(self.label), self.default_colour)
+            s += " (Default: %s)" % colour_text(self.args.defaults.get(self.label), self.default_colour)
         return s
 
     def get_printout_usage(self, opt):
@@ -427,10 +446,13 @@ def get_service(service_name, version='v1'):
     store = Storage(credential_path)
     credentials = store.get()
     missing_scopes = False
-    for s in SCOPES:
-        if s not in credentials.scopes:
-            print_warning("Credentials for '%s' profile are missing '%s' scope and must be updated." % (tag, s))
-            missing_scopes = True
+    if not credentials:
+        print_warning('No credentials currently stored.')
+    else:
+        for s in SCOPES:
+            if s not in credentials.scopes:
+                print_warning("Credentials for '%s' profile are missing '%s' scope and must be updated." % (tag, s))
+                missing_scopes = True
 
     if not credentials or credentials.invalid or missing_scopes:
         flow = client.flow_from_clientsecrets(CLIENT_SECRET_PATH, SCOPES)

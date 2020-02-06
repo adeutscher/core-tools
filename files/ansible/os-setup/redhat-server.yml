@@ -12,7 +12,6 @@
     # Requirements for CentOS are slightly different than Fedora.
     system_packages_centos:
       - epel-release
-      - deltarpm
       - bash-completion
       - bash
 
@@ -44,6 +43,12 @@
       - openssh-clients
       - openssl
       - openssl-libs
+      - bind-utils
+      - pv
+      - lsof
+
+    pip_packages:
+      - httplib2
 
   environment:
     ANSIBLE: 1
@@ -56,7 +61,7 @@
     block:
 
       - name: Python path (CentOS)
-        when: (ansible_distribution_major_version >= 8)
+        when: (ansible_distribution_major_version >= '8')
         set_fact:
           ansible_python_interpreter: /usr/bin/python3
 
@@ -75,6 +80,12 @@
     become: yes
     action: >
       {{ ansible_pkg_mgr }} name="{{ preferred_packages }}" state=latest
+
+  - name: install/update pip items
+    become: yes
+    pip:
+      name: "{{ pip_packages }}"
+      state: latest
 
   - name: Other RedHat Items
     when: (ansible_os_family == "RedHat")

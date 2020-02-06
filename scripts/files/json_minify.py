@@ -2,13 +2,14 @@
 
 # A quick and dirty 'minify JSON' button.
 
+from __future__ import print_function
 import json, os, sys
 
 def err(msg):
-    print >> sys.stderr, msg
+    print(msg, file=sys.stderr)
 
 def printout(s):
-    print json.dumps(json.load(s), separators=(',', ':'))
+    print(json.dumps(json.load(s), separators=(',', ':')))
 
 if __name__ == "__main__":
 

@@ -4,7 +4,16 @@
  ######################
 ########################
 # General functions and variables.
-# Can be summed up as "anything that I don't consider large enough to get its own file".
+
+# PATH Variable Additions
+
+__add_to_path "$toolsDir/bin" 1
+__add_to_path "$toolsDir/bin/hosts/$HOSTNAME"
+__add_to_path "$HOME/.local/bin" # TODO: This may be redundant. Double-check on more distributions.
+
+# Environment Variables
+###
+
 
 export EDITOR=vi
 export SVN_EDITOR=vi

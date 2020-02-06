@@ -14,16 +14,22 @@
 # For a list of options, use the -h switch.
 #
 
+from __future__ import print_function
 import getopt, os, re, subprocess, struct, sys
 
 #
 # Common Colours and Message Functions
 ###
 
-def __print_message(colour, header, message):
-    print "%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message)
+def _print_message(header_colour, header_text, message, stderr=False):
+    f=sys.stdout
+    if stderr:
+        f=sys.stderr
+    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
 
-def colour_text(colour, text):
+def colour_text(text, colour = None):
+    if not colour:
+        colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
@@ -59,7 +65,7 @@ error_count = 0
 def print_error(message):
     global error_count
     error_count += 1
-    __print_message(COLOUR_RED, "Error", message)
+    _print_message(COLOUR_RED, "Error", message)
 
 def print_exception(e, msg=None):
     # Shorthand wrapper to handle an exception.
@@ -67,13 +73,13 @@ def print_exception(e, msg=None):
     sub_msg = ""
     if msg:
         sub_msg = " (%s)" % msg
-    print_error("Unexpected %s%s: %s" % (colour_text(COLOUR_RED, type(e).__name__), sub_msg, str(e)))
+    print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
 
 def print_notice(message):
-    __print_message(COLOUR_BLUE, "Notice", message)
+    _print_message(COLOUR_BLUE, "Notice", message)
 
 def print_warning(message):
-    __print_message(COLOUR_YELLOW, "Warning", message)
+    _print_message(COLOUR_YELLOW, "Warning", message)
 
 TITLE_DEBUG = "debug"
 TITLE_DOMAINS = "domains"
@@ -244,16 +250,16 @@ def add_routes_for_domain(domain, addresses):
     for address in addresses:
         if address not in hosts:
             count += 1
-            print_notice("  Add fallback route for %s via %s on %s" % (colour_text(COLOUR_GREEN, address), colour_text(COLOUR_GREEN, args.get(TITLE_GATEWAY, "Undefined")), colour_text(COLOUR_BOLD, args.get(TITLE_INTERFACE, "Undefined"))))
+            print_notice("  Add fallback route for %s via %s on %s" % (colour_text(address, COLOUR_GREEN), colour_text(args.get(TITLE_GATEWAY, "Undefined"), COLOUR_GREEN), colour_text(args.get(TITLE_INTERFACE, "Undefined"))))
             if debug:
                 print_notice("    Debug mode, not actually trying to add a route.")
             else:
                 run_command(['route', 'add', '-host', address, 'gw', args[TITLE_GATEWAY], "dev", args[TITLE_INTERFACE]])
             hosts.append(address)
     if(count):
-        print "Answer for %s A lookup (%s)" % (colour_text(COLOUR_GREEN, domain), colour_text(COLOUR_GREEN, ("%s, %s" % (COLOUR_OFF, COLOUR_GREEN)).join(addresses)))
+        print("Answer for %s A lookup (%s%s%s)" % (colour_text(domain, COLOUR_GREEN), COLOUR_GREEN, ("%s, %s" % (COLOUR_OFF, COLOUR_GREEN)).join(addresses), COLOUR_OFF))
     elif debug:
-        print "Answer for %s A lookup (already added)" % colour_text(COLOUR_GREEN, domain)
+        print("Answer for %s A lookup (already added)" % colour_text(domain, COLOUR_GREEN))
 
 def confirm_root_or_rerun():
     if not os.geteuid():
@@ -263,7 +269,7 @@ def confirm_root_or_rerun():
     cmd = list(sys.argv)
     cmd.insert(0, "sudo")
 
-    print_notice("We are not %s, so %s will be re-run through %s." % (colour_text(COLOUR_RED, "root"), colour_text(COLOUR_GREEN, cmd[1]), colour_text(COLOUR_BLUE, cmd[0])))
+    print_notice("We are not %s, so %s will be re-run through %s." % (colour_text("root", COLOUR_RED), colour_text(cmd[1], COLOUR_GREEN), colour_text(cmd[0], COLOUR_BLUE)))
 
     # Run command. Do not set sudo_required because of the alternate message was printed above.
     exit(run_command(cmd))
@@ -297,7 +303,7 @@ def do_input_pcap():
     try:
         pcap_obj.setfilter(PCAP_FILTER)
     except:
-        print_error("Illegal PCAP filter: %s" % colour_text(COLOUR_BOLD, PCAP_FILTER))
+        print_error("Illegal PCAP filter: %s" % colour_text(PCAP_FILTER))
         exit(1)
     pcap_obj.loop(0, do_input_pcap_callback)
 
@@ -343,7 +349,7 @@ def examine_domain(domain, addresses):
         add_routes_for_domain(domain, addresses)
     elif debug:
         # Print a message for debug output. Not considered a necessity in regular mode.
-        print "Answer for %s A lookup (non-matching)" % colour_text(COLOUR_GREEN, domain)
+        print("Answer for %s A lookup (non-matching)" % colour_text(domain, COLOUR_GREEN))
 
 # Load arguments and defaults
 def handle_arguments():
@@ -353,7 +359,7 @@ def handle_arguments():
     try:
         opts, operands = getopt.gnu_getopt(sys.argv[1:], "d:Dg:hi:ostv:")
     except getopt.GetoptError as e:
-        print >> sys.stderr, e
+        print_exception(e)
         hexit(1)
 
     for opt, optarg in opts:
@@ -387,14 +393,14 @@ def handle_arguments():
         # TODO: Make a best-effort guess at the default gateway IP. Can probably do this at the same time as the local interface TODO.
         print_error("No gateway given (-g gateway-ip)")
     elif not re.match(REGEX_INET4, args[TITLE_GATEWAY]):
-        print_error("Invalid gateway IP: %s" % colour_text((COLOUR_GREEN, args[TITLE_GATEWAY])))
+        print_error("Invalid gateway IP: %s" % colour_text((args[TITLE_GATEWAY], COLOUR_GREEN)))
 
     # Interface Check
     if TITLE_INTERFACE not in args:
         # TODO: Make a best-effort guess at the local interface. Can probably do this at the same time as the gateway IP TODO.
         print_error("No interface given (-i interface)")
     elif not os.path.isdir("/sys/class/net/%s" % args[TITLE_INTERFACE]):
-        print_error("Interface does not exist: %s" % colour_text(COLOUR_BOLD, args[TITLE_INTERFACE]))
+        print_error("Interface does not exist: %s" % colour_text(args[TITLE_INTERFACE]))
 
     # VPN Interface Check
     if TITLE_VPN_INTERFACE not in args:
@@ -402,29 +408,29 @@ def handle_arguments():
             # Listening with libpcap or tshark requires an interface to listen on.
             print_error("No VPN interface given (-v interface)")
     elif not os.path.isdir("/sys/class/net/%s" % args[TITLE_VPN_INTERFACE]):
-        print_error("VPN Interface does not exist: %s" % colour_text(COLOUR_BOLD, args[TITLE_VPN_INTERFACE]))
+        print_error("VPN Interface does not exist: %s" % colour_text(args[TITLE_VPN_INTERFACE]))
 
     if not args.get(TITLE_DEBUG, False):
-        print_error("Must be %s to actually add routes via %s command." % (colour_text(COLOUR_RED, "root"), colour_text(COLOUR_BLUE, "route")))
+        print_error("Must be %s to actually add routes via %s command." % (colour_text("root", COLOUR_RED), colour_text("route", COLOUR_BLUE)))
 
     if errors:
         for e in errors:
             print_error(e)
 
 def hexit(exit_code=0):
-    print "%s%s%s: ./%s -d domain -g gateway -i local-interface -v vpn-interface [-D] [-h] [-o] [-s] [-t]" % (colour_text(COLOUR_BOLD, "Usage"), os.path.basename(sys.argv[0]))
-    print "  Uses DNS responses in tshark output to create exceptions to VPN redirection."
-    print "  Switches:"
-    print "    -d domain: Domain to watch. Can be specified multiple times."
-    print "    -D: Debug mode. Do not actually add any detected routes. Also print slightly more output."
-    print "    -g gateway: Gateway IP to bypass routes through."
-    print "    -h: Print this help menu and exit."
-    print "    -i local-interface: Interface that local routes will be added on, bypassing VPN"
-    print "    -o: Strict domain mode. Only add routes for domains that exactly match requested domains. Default behavior is to match requested domains and all their sub-domains."
-    print "    -s: Collect input from standard input (presumed to be tshark output). Example: tshark -i tun0 -f 'port 53' -l 2> /dev/null | ./script.py -s ..."
-    print "    -t: Collect input directly tshark output invoked as a subprocess."
-    print "    -v: VPN interface. This is the interface that is expected to be able to see unencrypted DNS responses to drive route addition. Not required for standard input mode."
-    print "  Above all: This is a REACTIVE script. It (probably) cannot outpace your first request, but will re-route to the gateway for later requests"
+    print("%s: %s -d domain -g gateway -i local-interface -v vpn-interface [-D] [-h] [-o] [-s] [-t]" % (colour_text("Usage", COLOUR_PURPLE), colour_text("./%s" % os.path.basename(sys.argv[0]), COLOUR_GREEN)))
+    print("  Uses DNS responses in tshark output to create exceptions to VPN redirection.")
+    print("  Switches:")
+    print("    -d domain: Domain to watch. Can be specified multiple times.")
+    print("    -D: Debug mode. Do not actually add any detected routes. Also print slightly more output.")
+    print("    -g gateway: Gateway IP to bypass routes through.")
+    print("    -h: Print this help menu and exit.")
+    print("    -i local-interface: Interface that local routes will be added on, bypassing VPN")
+    print("    -o: Strict domain mode. Only add routes for domains that exactly match requested domains. Default behavior is to match requested domains and all their sub-domains.")
+    print("    -s: Collect input from standard input (presumed to be tshark output). Example: tshark -i tun0 -f 'port 53' -l 2> /dev/null | ./script.py -s ...")
+    print("    -t: Collect input directly tshark output invoked as a subprocess.")
+    print("    -v: VPN interface. This is the interface that is expected to be able to see unencrypted DNS responses to drive route addition. Not required for standard input mode.")
+    print("  Above all: This is a REACTIVE script. It (probably) cannot outpace your first request, but will re-route to the gateway for later requests")
     exit(exit_code)
 
 def ip_bytes_to_str(bytes):
@@ -453,12 +459,12 @@ def main():
     only = args.get(TITLE_ONLY_DOMAIN, False)
 
     if args.get(TITLE_MODE, 0) == MODE_STDIN:
-        m = "Taking DNS replies from %s output via standard input" % colour_text(COLOUR_BLUE, "tshark", COLOUR_OFF)
+        m = "Taking DNS replies from %s output via standard input" % colour_text("tshark", COLOUR_BLUE)
     elif args.get(TITLE_MODE, 0) == MODE_TSHARK:
-        m = "Taking DNS replies from %s output on %s" % (colour_text(COLOUR_BLUE, "tshark"), colour_text(COLOUR_BOLD, args[TITLE_VPN_INTERFACE]))
+        m = "Taking DNS replies from %s output on %s" % (colour_text("tshark", COLOUR_BLUE), colour_text(args[TITLE_VPN_INTERFACE]))
     elif args.get(TITLE_MODE, 0) == MODE_PCAP:
-        m = "Taking DNS replies collected via %s data on %s" % (colour_text(COLOUR_BOLD, "pypcap"), colour_text(COLOUR_BOLD, args[TITLE_VPN_INTERFACE]))
-    m += " and using them to create routes via %s on %s." % (colour_text(COLOUR_GREEN, args[TITLE_GATEWAY]), colour_text(COLOUR_BOLD, args[TITLE_INTERFACE]))
+        m = "Taking DNS replies collected via %s data on %s" % (colour_text("pypcap"), colour_text(args[TITLE_VPN_INTERFACE]))
+    m += " and using them to create routes via %s on %s." % (colour_text(args[TITLE_GATEWAY], COLOUR_GREEN), colour_text(args[TITLE_INTERFACE]))
 
     print_notice(m)
 
@@ -467,7 +473,7 @@ def main():
     else:
         print_notice("Domains (and subdomains of):")
     for d in args[TITLE_DOMAINS]:
-        print_notice(colour_text(COLOUR_GREEN, d))
+        print_notice(colour_text(d, COLOUR_GREEN))
 
     mon = None
 
@@ -516,7 +522,7 @@ if __name__ == "__main__":
         try:
             import pcap
         except ImportError:
-            print_error("Python module %s is not installed." % colour_text(COLOUR_BOLD, "pypcap"))
+            print_error("Python module %s is not installed." % colour_text("pypcap"))
             print_notice("To install: dnf install -y libpcap-devel python-devel redhat-rpm-config && pip install pypcap")
 
     if error_count:

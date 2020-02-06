@@ -30,6 +30,23 @@ CONKYRC_SECONDARY=".$CONKYRC_SECONDARY_TEMPLATE"
 DEFAULT_PADDING_X=10
 DEFAULT_PADDING_Y=45
 
+if grep -q Fedora /etc/redhat-release 2> /dev/null; then
+  # As of 2020-01-04, Fedora 31 has a problem where the cairo bindings don't work.
+  #   Apparently this is a problem with conky just not being compiled with them.
+  #   For the moment, force-disabling Lua on any Fedora 31 machine until I can confirm
+  #     that this is no longer a problem.
+  version_number="$(rpm -E %fedora)"
+  if [ "${version_number:0}" -ge 31 ]; then
+    CONKY_DISABLE_LUA=1
+  fi
+fi
+
+disable_lua(){
+    sed -r -i '/^lua_(load|draw)/d' "${1}"
+    sed -i 's/^own_window_transparent yes/own_window_transparent no/g' "${1}"
+    sed -i 's/^#own_window_colour/own_window_colour/g' "${1}"
+}
+
 # Set up per-system conkyrc settings.
 do_dynamic_setup(){
 
@@ -75,6 +92,11 @@ do_dynamic_setup(){
     fi
     # Original version-based check.
     #if conky --version | head -n1 | grep -qiP "^Conky 1\.1\d\."; then
+
+    if (( "${CONKY_DISABLE_LUA}" )); then
+        disable_lua "${CONKYRC_PRIMARY}"
+        (( "${CONKY_ENABLE_TASKS:-0}" )) && disable_lua "${CONKYRC_SECONDARY}"
+    fi
 
     return 0
 }
@@ -315,22 +337,23 @@ setup_global_values(){
 
     __primary_monitor="$(xrandr --current 2> /dev/null | grep -wm1 "primary" | grep -w connected | cut -d' ' -f1)"
 
+    # Fall back to first connected monitor if none are designated by "primary".
+    if [ -z "$__primary_monitor" ]; then
+        __primary_monitor="$(xrandr --current 2> /dev/null | grep -w "connected" | cut -d' ' -f1)"
+    fi
+
     __num_monitors="$(xrandr --current | grep -w connected | wc -l)"
     if [ "$__num_monitors" -le 1 ]; then
       # If we only have the one monitor, then ignore any monitor settings.
-      if [ -n "$CONKY_SCREEN$CONKY_SECONDARY_SCREEN" ]; then
-        # If values were set, then remind the user that settings are being ignored.
+      if [[ "${CONKY_SCREEN:-${__primary_monitor}}" != "${__primary_monitor}" ]] || [[ "${CONKY_SECONDARY_SCREEN:-${__primary_monitor}}" != "${__primary_monitor}" ]]; then
+        # If values were set to something other than what the only monitor is,
+        #     then remind the user that settings are being ignored.
         for __method in notify-send echo; do
           $__method "Only one connected monitor detected, ignoring screen choices." 2> /dev/null
         done
         unset __method
       fi
       unset CONKY_SCREEN CONKY_SECONDARY_SCREEN
-    fi
-
-    # Fall back to first connected monitor if none are designated by "primary".
-    if [ -z "$__primary_monitor" ]; then
-        __primary_monitor="$(xrandr --current 2> /dev/null | grep -w "connected" | cut -d' ' -f1)"
     fi
 
     monitor_check "${CONKY_SCREEN:-$__primary_monitor}" "${CONKY_SECONDARY_SCREEN-${CONKY_SCREEN:-$__primary_monitor}}"
