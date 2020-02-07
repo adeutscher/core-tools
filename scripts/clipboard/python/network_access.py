@@ -7,7 +7,12 @@ import re, socket, struct, sys
 
 # Colours
 
-import sys
+def colour_text(text, colour = None):
+    if not colour:
+        colour = COLOUR_BOLD
+    # A useful shorthand for applying a colour to a string.
+    return "%s%s%s" % (colour, text, COLOUR_OFF)
+
 def enable_colours(force = False):
     global COLOUR_PURPLE
     global COLOUR_RED
@@ -35,6 +40,7 @@ def enable_colours(force = False):
         COLOUR_BOLD = ''
         COLOUR_OFF = ''
 enable_colours()
+
 # Network Access Class
 # Required modules: re, socket, struct, sys
 ###
@@ -51,20 +57,21 @@ class NetAccess:
         self.denied_networks = []
 
     def add_access(self, addr_list, net_list, candidate):
-        error = False
+        good = True
+        candidate = candidate.strip()
         if re.match(self.REGEX_INET4_CIDR, candidate):
-            e, n = self.ip_validate_cidr(candidate)
-            error = e
-            if not e:
+            g, n = self.ip_validate_cidr(candidate)
+            good = g
+            if g:
                 # No error
                 net_list.append((n, candidate))
         else:
-            e, a, astr = self.ip_validate_address(candidate)
-            error = e
-            if not e:
+            g, a, astr = self.ip_validate_address(candidate)
+            error = g
+            if g:
                 # No error
                 addr_list.append((a, candidate, astr))
-        return error
+        return good
 
     def add_blacklist(self, candidate):
         return self.add_access(self.denied_addresses, self.denied_networks, candidate)
@@ -80,15 +87,15 @@ class NetAccess:
 
             for title, ip, address in l:
                 if ip == address:
-                    print "%s %s: %s%s%s" % (action, title, COLOUR_GREEN, address, COLOUR_OFF)
+                    print_notice("%s %s: %s" % (action, title, colour_text(address, COLOUR_GREEN)))
                 else:
-                    print "%s %s: %s%s%s (%s%s%s)" % (action, title, COLOUR_GREEN, address, COLOUR_OFF, COLOUR_GREEN, ip, COLOUR_OFF)
+                    print_notice("%s %s: %s (%s)" % (action, title, colour_text(address, COLOUR_GREEN), colour_text(ip, COLOUR_GREEN)))
 
     # Credit for initial IP functions: http://code.activestate.com/recipes/66517/
 
     def ip_make_mask(self, n):
         # Return a mask of n bits as a long integer
-        return (2L<<n-1)-1
+        return (2<<n-1)-1
 
     def ip_strton(self, ip):
         # Convert decimal dotted quad string to long integer
@@ -105,21 +112,21 @@ class NetAccess:
     def ip_validate_address(self, candidate):
         try:
             ip = socket.gethostbyname(candidate)
-            return (False, self.ip_strton(ip), ip)
+            return (True, self.ip_strton(ip), ip)
         except socket.gaierror:
-            self.errors.append("Unable to resolve: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF))
-            return (True, None, None)
+            self.errors.append("Unable to resolve: %s" % colour_text(candidate, COLOUR_GREEN))
+            return (False, None, None)
 
     def ip_validate_cidr(self, candidate):
         a = candidate.split("/")[0]
         m = candidate.split("/")[1]
         try:
             if socket.gethostbyname(a) and int(m) <= 32:
-                return (False, self.ip_network_mask(a, m))
+                return (True, self.ip_network_mask(a, m))
         except socket.gaierror:
             pass
-        self.errors.append("Invalid CIDR address: %s%s%s" % (COLOUR_GREEN, candidate, COLOUR_OFF))
-        return (True, None)
+        self.errors.append("Invalid CIDR address: %s" % colour_text(candidate, COLOUR_GREEN))
+        return (False, None)
 
     def is_allowed(self, address):
         # Blacklist/Whitelist filtering
@@ -156,7 +163,7 @@ class NetAccess:
 
     def load_access_file(self, fn, path, header):
         if not os.path.isfile(path):
-            self.errors.append("Path to %s file does not exist: %s%s%s" % (header, COLOUR_GREEN, path, COLOUR_OFF))
+            self.errors.append("Path to %s file does not exist: %s" % (header, colour_text(path, COLOUR_GREEN)))
             return False
         with open(path) as f:
             for l in f.readlines():

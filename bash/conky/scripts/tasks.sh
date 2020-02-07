@@ -50,9 +50,9 @@ for i in `seq -2 14`; do
     # ${i} -lt 0 -> Past
     DAY_COLOUR="color5"
   fi
-  
+
   printf "\${color1}┏━━━━\${${DAY_COLOUR}}$(date -d "${i} day" "+%A, %B %d, %Y")\${color1}━━━━━━━━━━━━━━━━━━━━━━━\n"
-  
+
   CORNER="┣"
 
   TASK_COUNT=$(wc -l <<< "${TASK_CONTENTS}")

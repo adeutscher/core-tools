@@ -17,17 +17,17 @@ fi
 if qtype virsh; then
     # Put initial listing in CSV format.
     vm_listing="$(virsh --connect "qemu:///system" list | tail -n +3 | sed -e '/^$/d' -e '/^\-/d' | awk -F' ' '{print $1","$2","$3" "}')"
-    
+
     if [ -n "${vm_listing}" ]; then
-    
+
         printf "\n\${color #${colour_header}}\${font Neuropolitical:size=16:bold}Virtual Machines\${font}\${color}\${hr}\n"
-    
+
         for listing in ${vm_listing}; do
             # Extract names from CSV for use.
             vm_id="$(cut -d"," -f1 <<< "${listing}")"
             vm_name="$(cut -d"," -f2 <<< "${listing}")"
             vm_state="$(cut -d"," -f3 <<< "${listing}")"
-            
+
             case "${vm_state}" in
             "running")
                 case_colour="${colour_good}"
@@ -36,13 +36,13 @@ if qtype virsh; then
                 case_colour="${colour_alert}"
                 ;;
             esac
-            
+
             # Search through the XML configuration for interface names.
             raw_vm_ifaces="$(virsh --connect "qemu:///system" dumpxml "${vm_name}" | grep vnet | cut -d"'" -f 2)"
-            
+
             # Print initial VM data.
             printf " \${color #${colour_kvm}}${vm_name}\${color} (${vm_id}, \${color #${case_colour}}${vm_state}\${color}"
-            
+
             # Interface listing
             # Up to 3 interface entries per line.
             # Initial VM data will be the equivalent of two entries.
@@ -61,7 +61,7 @@ if qtype virsh; then
             done
             # Close our display.
             printf ")\n"
-            
+
         done
     fi
 fi
