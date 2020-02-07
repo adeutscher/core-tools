@@ -4,7 +4,7 @@ from __future__ import print_function
 # General
 import getopt, os, random, re, sys
 # Networking
-import fcntl, select, socket, ssl, struct
+import errno, fcntl, select, socket, ssl, struct
 from ssl import SSLError, SSLWantReadError, SSLWantWriteError
 from select import EPOLLIN, EPOLLET, EPOLLERR, EPOLLHUP, EPOLLONESHOT, EPOLLOUT, EPOLLPRI
 
@@ -501,6 +501,7 @@ class TcpRelayServer:
         ## Arguments
         args = ArgHelper()
         args.add_validator(self.validate_version)
+        args.set_operand_help_text('target[:port] [target-2[:port]] ...')
 
         # Short flags
         args.add_opt(OPT_TYPE_FLAG, "v", TITLE_VERBOSE, "Verbose output.")
@@ -627,7 +628,11 @@ class TcpRelayServer:
 
     def register_socket(s, sock, flags):
         fd = sock.fileno()
-        s.epoll_socket.register(fd, flags)
+        try:
+            s.epoll_socket.register(fd, flags)
+        except FileExistsError:
+            # Observed to happen when sending an OpenVPN-TCP connection over the relay.
+            s.epoll_socket.modify(fd, flags)
         s.active_fds.add(fd)
 
     def resolve_port(s, value, label):
@@ -735,8 +740,8 @@ class TcpRelayServer:
                 else: print_warning('%s rotation options selected, but only one target was specified.' % colour_text(num_rotation_options))
 
             # Sanity-check for the user to remind them that every target will be treated as SSL.
-            if args[TITLE_TARGET_SSL] or args[TITLE_TARGET_SSL_INSECURE]:
-                print_warning('SSL endpoints enabled for multiple targets. %s target will be considered to be SSL-enabled.')
+            if len(self.targets) > 1 and (args[TITLE_TARGET_SSL] or args[TITLE_TARGET_SSL_INSECURE]):
+                print_warning('SSL endpoints enabled for multiple targets. %s target will be considered to be SSL-enabled.' % colour_text(len(self.targets)))
 
         return errors
 
@@ -818,7 +823,13 @@ class TcpRelaySession:
             if self.verbose: print_notice('Attempting server connection: %s' % self.get_arrow_string())
 
             try:
-                self.dst.connect(target_addr)
+                try: self.dst.connect(target_addr)
+                except socket.error as e:
+                    # errno.EISCON has been observed to happen when running the relay on WSL.
+                    # Uncertain how widespread the problem is.
+                    # Any other socket error should be considered to be at the very least a failure of
+                    #   this immediate connection attempt.
+                    if e.errno != errno.EISCONN: raise
                 rearm_server = True
 
                 if self.verbose: print_notice('Completed TCP connection: %s' % self.get_arrow_string())
@@ -898,8 +909,8 @@ class TcpRelaySession:
 
                 data = sock_in.recv(1024)
                 if data: sock_out.send(data)
-            except SSLWantReadError: force_rearm = True
-            except socket.error as e: print_exception(e)
+            except (SSLWantReadError, SSLWantWriteError): force_rearm = True
+            except socket.error as e: print_exception(e, self)
 
         if closing and not (data or force_rearm): self.shutdown() # Double-check that no data was read
         else: self.re_arm(sock_in) # Re-arm socket
