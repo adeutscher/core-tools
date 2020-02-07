@@ -644,7 +644,7 @@ class TcpRelayServer:
 
     def resolve_target_address(s, value):
         try: ip = socket.gethostbyname(value)
-        except socket.gaierror: return None, value, "Unable to resolve: %s" % colour_text(candidate, COLOUR_BLUE)
+        except socket.gaierror: return None, value, "Unable to resolve: %s" % colour_text(value, COLOUR_BLUE)
         return ip, value, None
 
     def run(self):
