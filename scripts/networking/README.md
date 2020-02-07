@@ -27,7 +27,7 @@ Arguments:
 
 ## arp-toxscreen.py
 
-Use `libpcap` to sniff for an imbredacted-namece of unsolicited ARP replies that might suggest ARP poisoning.
+Use `libpcap` to sniff for an imbalance of unsolicited ARP replies that might suggest ARP poisoning.
 
 Usage:
 
@@ -38,7 +38,7 @@ Arguments:
 * `-f pcap-file`: PCAP file to listen to.
 * `-i interface`: Network interface to listen on.
 * `-e expiry-time`: Time after which to forget about ARP events.
-* `-t threshold`: Threshold of imbredacted-nameces to at which point to consider a chain of unsolicited ARP replies to be a poisoning attempt.
+* `-t threshold`: Threshold of imbalances to at which point to consider a chain of unsolicited ARP replies to be a poisoning attempt.
 * `-v`: Print additional information when any ARP request/reply is detected.
 * `-s script`: processing script to run when a suspicious instance is detected.
 * `-c cooldown`: Seconds between script runs per suspect.

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Author: redacted-name Deutscher
+# Author: Alan Deutscher
 # A silly little script to print out files in two provided directories
 #   that are not found in the other directory.
 # I created this script to help me to get my desktop backgrounds folder back in sync across multiple machines.

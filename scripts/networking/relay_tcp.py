@@ -473,8 +473,8 @@ TITLE_BIND = "bind"
 TITLE_PORT = "port"
 TITLE_VERBOSE="verbose"
 
-TITLE_Bredacted-nameCE_RANDOM = "random-target"
-TITLE_Bredacted-nameCE_ROUND_ROBIN = "round-robin-target"
+TITLE_BALANCE_RANDOM = "random-target"
+TITLE_BALANCE_ROUND_ROBIN = "round-robin-target"
 
 TITLE_TARGET_PORT = "target-port"
 TITLE_TARGET_SSL = "target-ssl"
@@ -513,8 +513,8 @@ class TcpRelayServer:
         args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_TARGET_SSL, TITLE_TARGET_SSL, 'Indicate that the target is SSL-secured.')
         args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_TARGET_SSL_INSECURE, TITLE_TARGET_SSL_INSECURE, 'Indicate that the target is SSL-secured, and that the relay should ignore certificate verification errors.')
 
-        args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_Bredacted-nameCE_RANDOM, TITLE_Bredacted-nameCE_RANDOM, 'Select between multiple targets at random.')
-        args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_Bredacted-nameCE_ROUND_ROBIN, TITLE_Bredacted-nameCE_ROUND_ROBIN, 'Rotate between targets (default).')
+        args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_BALANCE_RANDOM, TITLE_BALANCE_RANDOM, 'Select between multiple targets at random.')
+        args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_BALANCE_ROUND_ROBIN, TITLE_BALANCE_ROUND_ROBIN, 'Rotate between targets (default).')
 
         args.add_opt(OPT_TYPE_SHORT, "a", TITLE_ALLOW, "Add network address or CIDR range to whitelist.", multiple = True)
         args.add_opt(OPT_TYPE_SHORT, "A", TITLE_ALLOW_FILE, "Add addresses or CIDR ranges in file to whitelist.", multiple = True)
@@ -610,7 +610,7 @@ class TcpRelayServer:
             print_notice('Relaying TCP connections on %s to the following hosts:' % colour_addr(s.args[TITLE_BIND], s.port))
             for t in s.targets: print_notice('  * %s' % t)
 
-            if s.args[TITLE_Bredacted-nameCE_RANDOM]: s.get_target = lambda: s.targets[random.randint(0, len(s.targets)-1)]
+            if s.args[TITLE_BALANCE_RANDOM]: s.get_target = lambda: s.targets[random.randint(0, len(s.targets)-1)]
             else: s.get_target = s.get_target_round_robin
 
         if s.args[TITLE_SSL_CERT]:
@@ -728,7 +728,7 @@ class TcpRelayServer:
 
         if not self.targets: errors.append('No relay target specified.')
         else:
-            num_rotation_options = len([i for i in [TITLE_Bredacted-nameCE_RANDOM, TITLE_Bredacted-nameCE_ROUND_ROBIN] if args[i]])
+            num_rotation_options = len([i for i in [TITLE_BALANCE_RANDOM, TITLE_BALANCE_ROUND_ROBIN] if args[i]])
             if num_rotation_options > 1:
                 if len(self.targets) > 1: errors.append('Must only select one rotation type when using multiple targets.')
                 # If there was only one target, let the user off with a warning.

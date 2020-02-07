@@ -13,7 +13,7 @@ vendor_index="${INDEX_NETWORK_DATA:-$secureToolsDir/files/tool-data/vendor-mac.p
 
 # Example record line (plus header):
 #     owner,type,mac,label,general-location,specific-location,description,notes
-#     redacted-name,Bluetooth,18:2a:7b:3d:aa:bb,WiiU Pro,Home,Bookshelf,Used for games,purchased last year
+#     Alan,Bluetooth,18:2a:7b:3d:aa:bb,WiiU Pro,Home,Bookshelf,Used for games,purchased last year
 __get_mac_record(){
     if [ -n "$1" ]; then
         # Try cache and then try for a secure tools checkout (not mourning an error if secureToolsDir does not exist.
