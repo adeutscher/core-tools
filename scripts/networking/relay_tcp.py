@@ -604,11 +604,11 @@ class TcpRelayServer:
             s.get_target = lambda: s.targets[0]
 
             t = s.get_target()
-            print_notice('Relaying TCP connections on %s to %s' % (colour_addr(s.args[TITLE_BIND], s.port), colour_addr(t.ip, t.port, t.hostname)))
+            print_notice('Relaying TCP connections on %s to %s' % (colour_addr(s.args[TITLE_BIND], s.port), t))
 
         else:
             print_notice('Relaying TCP connections on %s to the following hosts:' % colour_addr(s.args[TITLE_BIND], s.port))
-            for t in s.targets: print_notice('  * %s' % colour_addr(t.ip, t.port, t.hostname))
+            for t in s.targets: print_notice('  * %s' % t)
 
             if s.args[TITLE_Bredacted-nameCE_RANDOM]: s.get_target = lambda: s.targets[random.randint(0, len(s.targets)-1)]
             else: s.get_target = s.get_target_round_robin
@@ -795,8 +795,7 @@ class TcpRelaySession:
         s.dst = srv.new_socket()
         srv.register_session(s)
 
-    def get_arrow_string(s):
-        return '%s->%s' % (colour_addr(s.addr[0], s.addr[1]), colour_addr(s.target.ip, s.target.port, s.target.hostname))
+    get_arrow_string = lambda s: '%s->%s' % (colour_addr(s.addr[0], s.addr[1]), s.target)
 
     def handle_connection(self):
 
@@ -856,7 +855,7 @@ class TcpRelaySession:
             except (SSLWantReadError, SSLWantWriteError, BlockingIOError) as e:
                 self.re_arm(self.dst, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLONESHOT)
             except ssl.SSLCertVerificationError as e:
-                if self.verbose: print_error('Failed to verify SSL certificate for %s in %s: %s' % (colour_green(self.target.hostname), self.get_arrow_string, e))
+                if self.verbose: print_error('Failed to verify SSL certificate for %s in %s: %s' % (colour_blue(self.target.hostname), self.get_arrow_string(), e))
                 self.shutdown()
             except (SSLError, OSError) as e:
                 if self.verbose: print_error('SSL handshake error error for %s: %s' % (self.get_arrow_string(), e))
@@ -928,6 +927,7 @@ class TcpRelayTarget(object):
         s.ip = t_ip
         s.port = t_port
         s.hostname = t_host
+    __str__ = lambda s: colour_addr(s.ip, s.port, s.hostname)
 
 # Run
 if __name__ == '__main__':
