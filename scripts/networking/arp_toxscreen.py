@@ -16,10 +16,10 @@ ARP poisoning involves a malicious host constandly sending out
         * Host C: Hey Host A, I'm host B, and I'm over here (honest!)
         * Host C: Hey Host A, I'm host B, and I'm over here (honest!)
 
-This script makes judgements based on imbredacted-nameces of ARP replies to ARP requests.
-  * An imbredacted-namece of requests for a particular address suggests a client trying to reach something on an unused address.
+This script makes judgements based on imbalances of ARP replies to ARP requests.
+  * An imbalance of requests for a particular address suggests a client trying to reach something on an unused address.
     This is unfortunate for the person making the request, but not harmful.
-* An imbredacted-namece of replies for a particular address suggests that ARP poisoning is taking place.
+* An imbalance of replies for a particular address suggests that ARP poisoning is taking place.
 """
 
 from __future__ import print_function
@@ -683,11 +683,11 @@ def do_pcap_callback(ts, pkt, obj):
     if score >= obj.args[TITLE_REPORT_THRESHOLD]:
          #
          # TODO: Existing reporting currently has a bit of a flaw:
-         #          - Does not account for one IP "legitimately" being stepped on by two devices, creating an imbredacted-namece.
+         #          - Does not account for one IP "legitimately" being stepped on by two devices, creating an imbalance.
          #            This still impedes network performance, but it's more "ARP high cholesterol" than "ARP poisoning".
          #            Still bad for your network, but not necessarily malicious.
 
-        obj.print_alert("%s (%s) is likely being ARP poisoned by %s (spoofing %s, ARP imbredacted-namece of %s over %s seconds)" % (colour_text(arp.ndst, COLOUR_GREEN), colour_text(arp.adst), colour_text(arp.esrc), colour_text(arp.nsrc, COLOUR_GREEN), colour_text(score), colour_text(obj.args[TITLE_REPORT_THRESHOLD])));
+        obj.print_alert("%s (%s) is likely being ARP poisoned by %s (spoofing %s, ARP imbalance of %s over %s seconds)" % (colour_text(arp.ndst, COLOUR_GREEN), colour_text(arp.adst), colour_text(arp.esrc), colour_text(arp.nsrc, COLOUR_GREEN), colour_text(score), colour_text(obj.args[TITLE_REPORT_THRESHOLD])));
 
         list_ipv4_addresses_by_mac(arp.esrc, obj.args[TITLE_LIST])
         attempt_script(ARP_SPOOF_EVENT_SPOOF, ts, arp, obj.args)
@@ -788,7 +788,7 @@ class ToxScreen:
         else:
             on = ("Looking", "in file", colour_text(self.args[TITLE_PCAP_FILE], COLOUR_GREEN))
         print_notice("%s for ARP poisoning cases %s: %s" % on)
-        print_notice("Poisoning threshold: %s imbredacted-nameced replies will imply poisoning." % colour_text(self.args[TITLE_REPORT_THRESHOLD]))
+        print_notice("Poisoning threshold: %s imbalanced replies will imply poisoning." % colour_text(self.args[TITLE_REPORT_THRESHOLD]))
         print_notice("Poisoning expiry time: %s" % colour_text("%ds" % self.args[TITLE_EXPIRY]))
         if TITLE_SCRIPT in self.args:
             user_colour = COLOUR_BOLD
