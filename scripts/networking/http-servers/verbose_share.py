@@ -55,8 +55,8 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
     def humansize(self, nbytes):
         if nbytes == 0: return '0B'
         i = 0
-        while nbytes >= 1024 and i < len(self.suffixes)-1:
-            nbytes /= 1024.
+        while nbytes >= 1000 and i < len(self.suffixes)-1:
+            nbytes /= 1000.
             i += 1
         f = ('%.2f' % nbytes).rstrip('0').rstrip('.')
         return '%s%s' % (f, self.suffixes[i])
