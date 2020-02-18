@@ -226,6 +226,12 @@ def stats(server, ip, **kwargs):
     # Store desired exit code.
     exit_code = 0
 
+    if server != ip:
+        display_server = '%s (%s)' % (colour_text(server, COLOUR_BLUE), colour_text(ip, COLOUR_BLUE))
+    else:
+        display_server = colour_text(server, COLOUR_BLUE)
+
+
     # Announce
     reliability_check = mode in (MODE_RELIABLE, MODE_UNRELIABLE)
     if reliability_check:
@@ -234,11 +240,7 @@ def stats(server, ip, **kwargs):
         else:
             word = colour_text("cannot", COLOUR_RED)
 
-        saddr = colour_green(server)
-        if server != ip:
-            saddr += ' (%s)' % colour_text(ip, COLOUR_BLUE)
-
-        print("Waiting until %s %s be pinged %s times in a row." % (saddr, word, colour_text(number)))
+        print("Waiting until %s %s be pinged %s times in a row." % (display_server, word, colour_text(number)))
         if limit:
             print("Will terminate unsuccessfully if we cannot do so after %s ping attempts." % colour_text(limit))
     elif limit:
@@ -353,11 +355,6 @@ def stats(server, ip, **kwargs):
             # Set an exit code if we weren't able to get the required number of successful/failed pings within the limit.
             # (Do not override the exit code of a keyboard interrupt)
             exit_code = 1
-
-        if server != ip:
-            display_server = "%s (%s)" % (server, ip)
-        else:
-            display_server = ip
 
         print("\n--- %s ping statistics ---" % display_server)
         # ping numbers in ping-like format
