@@ -2,6 +2,7 @@
 
 import CoreHttpServer as common
 import getopt, os, re, shutil, sys
+from socket import error as SocketError
 
 if sys.version_info[0] == 2:
     from urllib2 import build_opener, HTTPErrorProcessor, Request, URLError
@@ -104,7 +105,7 @@ class Proxy(common.CoreHttpServer):
             # Get response headers to pass along from target server to client.
             resp_headers = self.get_header_dict(resp.info())
             code = str(resp.getcode())
-        except (ConnectionResetError, URLError) as e:
+        except (SocketError, URLError) as e:
             return self.send_error(502, "Error relaying request")
 
         # TODO: This is the place to modify response headers in the resp_headers dictionary before
