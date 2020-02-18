@@ -25,11 +25,11 @@ def load_attachment(file_path):
         content_type = 'application/octet-stream'
 
     main_type, sub_type = content_type.split('/', 1)
+    msg = MIMEBase(main_type, sub_type)
     with open(file_path, 'rb') as fp:
-        msg = MIMEBase(main_type, sub_type)
-        Encoders.encode_base64(msg)
         msg.set_payload(fp.read())
 
+    Encoders.encode_base64(msg)
     msg.add_header('Content-Disposition', 'attachment', filename=os.path.basename(file_path))
     msg.set_param("name", os.path.basename(file_path))
     # Imitate the content ID format used by Google. Probably unnecessary to make it this similar...
