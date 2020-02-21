@@ -99,7 +99,6 @@ class Proxy(common.CoreHttpServer):
         if data:
             req.add_data(data)
         try:
-            print(url)
             resp = self.opener.open(req)
 
             # Get response headers to pass along from target server to client.
