@@ -5,12 +5,12 @@ import getopt, os, re, shutil, sys
 from socket import error as SocketError
 
 if sys.version_info[0] == 2:
-    from urllib2 import build_opener, HTTPErrorProcessor, Request, URLError
+    from urllib2 import build_opener, HTTPErrorProcessor, quote, Request, URLError
     from urlparse import urlsplit
 else:
     from urllib.request import build_opener, HTTPErrorProcessor, Request
     from urllib.error import URLError
-    from urllib.parse import urlsplit
+    from urllib.parse import quote, urlsplit
 
 TITLE_TARGET = "proxy target"
 common.local_files.append(os.path.realpath(__file__))
@@ -36,7 +36,7 @@ class Proxy(common.CoreHttpServer):
     log_on_send_error = True
 
     def do_PROXY(self):
-        url = "%s%s" % (common.args[TITLE_TARGET], self.path)
+        url = "%s%s" % (common.args[TITLE_TARGET], quote(self.path))
 
         # Set headers locally for convenient short-hand.
         headers = getattr(self, common.ATTR_HEADERS, common.CaselessDict())
@@ -98,8 +98,8 @@ class Proxy(common.CoreHttpServer):
 
         if data:
             req.add_data(data)
-
         try:
+            print(url)
             resp = self.opener.open(req)
 
             # Get response headers to pass along from target server to client.
