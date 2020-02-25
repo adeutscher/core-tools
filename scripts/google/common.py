@@ -2,7 +2,7 @@
 # Common variables for google API scripts.
 
 from __future__ import print_function
-import httplib2, os, re, sys
+import httplib2, os, re, sys, warnings
 
 #
 # Common Colours and Message Functions
@@ -417,7 +417,12 @@ if not os.path.isfile(CLIENT_SECRET_PATH):
 
 try:
     import argparse
-    flags = argparse.Namespace(auth_host_name='localhost', auth_host_port=[8080, 8090], logging_level='ERROR', noauth_local_webserver=False)
+    flags = argparse.Namespace(
+        auth_host_name='localhost',
+        auth_host_port=[8080, 8090],
+        logging_level='ERROR',
+        noauth_local_webserver=not os.environ.get('DISPLAY')
+    )
 except ImportError:
     flags = None
 
@@ -473,7 +478,9 @@ def get_service(service_name, version='v1'):
         print_exception(e, "Getting %s service" % service_name)
         exit(2)
 
-# Initialize arguments
+# Initialize Common Items
+
+warnings.simplefilter("ignore")
 
 DEFAULT_TAG = "default"
 
@@ -485,3 +492,10 @@ args.add_opt(OPT_TYPE_SHORT, "A", TITLE_TAG, "Specify Google profile tag.", defa
 def process():
     if not args.process(sys.argv, exit_on_error = False) or error_count:
         exit(1)
+
+def run(main_fn):
+    try:
+        exit(main_fn())
+    except KeyboardInterrupt:
+        print('')
+        exit(130)

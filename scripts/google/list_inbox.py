@@ -51,5 +51,4 @@ common.args.add_opt(common.OPT_TYPE_FLAG, "c", TITLE_CSV_FORMAT, "Toggle to disp
 
 # Run script
 
-if __name__ == '__main__':
-    main()
+if __name__ == '__main__': exit(common.run(main))

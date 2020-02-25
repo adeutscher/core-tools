@@ -5,6 +5,32 @@ These are my scripts involving Google services.
 
 Breaking with my usual habit for standalone scripts, all of these scripts rely on being able to load in the `common.py` file for common functions.
 
+## Application Set Up
+
+To run this script requires a JSON file containing a Google API app client ID and secret.
+
+To get the client ID / secret:
+1. With your Google account, navigate to the [Google Developer Console](https://console.developers.google.com/).
+2. In the top-left of the screen, select the project menu in the drop-down to the right of the "Google APIs" Logo.
+  * The phrasing for this will either along the lines "Select Project", or the title of an existing project.
+3. In the lefthand menu of the resulting page, select **Credentials**.
+4. In the top menu, select **Create Credentials** -> **Oauth client ID**.
+  * For the **Application Type**, select 'Other' and enter a description.
+5. When the OAuth client ID is created, download it and place it in a location that is
+    accessible to the user that will be running the scripts.
+  * The default location is `${HOME}/.local/tools/google/client_secret.json`
+  * The location can be overriden using the `GOOGLE_SECRET` environment variable.
+
+Because the script uses one or more "sensitive scopes", the app requires verification by Google to run unrestricted.
+  However, the limits of an unverified app should be more than enough for personal/small-group use. At this time, I
+  haven't seen the need to make an effort to verify my personal app.
+
+The limits on unverified apps are
+
+* Limit of 100 different user accounts.
+* 10,000 token grants per day.
+* Users receive an additional warning that the app is unsafe when they authenticate.
+
 ## Environment Variables
 
 My Google scripts currently use the following variables:

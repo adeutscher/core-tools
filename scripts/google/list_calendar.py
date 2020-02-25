@@ -45,5 +45,4 @@ def main():
             text = "%s,%s" % (time.strftime("%Y-%m-%d,%H:%M", dateObj), event['summary'])
             print(text)
 
-if __name__ == '__main__':
-    main()
+if __name__ == '__main__': exit(common.run(main))

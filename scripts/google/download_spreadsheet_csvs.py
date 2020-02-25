@@ -91,5 +91,4 @@ TITLE_PREFIX = "prefix"
 common.args.add_opt(common.OPT_TYPE_SHORT, "d", TITLE_DIR, "Specify output directory.", default = DEFAULT_DIR)
 common.args.add_opt(common.OPT_TYPE_SHORT, "p", TITLE_PREFIX, "File name prefix", default = "")
 
-if __name__ == '__main__':
-    exit(main())
+if __name__ == '__main__': exit(common.run(main))
