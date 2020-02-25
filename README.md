@@ -162,8 +162,6 @@ A few lazy functions for sleeping (each one only accepts integers):
 * `countdown-hours`
 * `countdown-days`
 
-Note that the countdown methods are imperfect. The calculations involved in making the timer display slowly introduce a slight drift to the timing, depending on your host (e.g. 20 minutes may have an actual time of 20 minutes and 5 seconds`). If you want a status report, use a `countdown-` function, but if you want to be more precise a `sleep-` function should be used, as they call the actual `sleep` command almost immediately.
-
 ## Modules
 
 I made a module-based system for storing functions in order to limit unneeded data leaks.
@@ -176,7 +174,7 @@ The tools directory variable must:
 
 * Have a unique amongst the tool directories.
 * Draw off of `$__current_module_dir` variable, which is set in the cycling of the `bashrc` file of these core tools that loads in modules.
-  * The exception to this is $toolsDir`, which is set in a system bashrc or `~/.bashrc` by the setup script.
+  * The exception to this is `$toolsDir`, which is set in a system bashrc or `~/.bashrc` by the setup script.
     * A number of modules do fall back to guessing at a location, but this is not recommended.
 * End in `ToolsDir` (case-insensitive).
     This is necessary because some functions (`ssh-compile-config`, for example)
