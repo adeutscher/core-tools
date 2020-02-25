@@ -1099,7 +1099,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             #   to send. The connection is about to be closed anyways.
             pass
         if self.log_on_send_error:
-            self.log_message('"%s" %s %s', self.requestline, code, message)
+            self.log_message('"%s" %s %s', getattr(self, 'requestline', '???'), code, message)
 
     def send_redirect(self, target):
         # redirect browser - doing basically what apache does
