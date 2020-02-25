@@ -21,6 +21,8 @@ if sys.version_info[0] == 2:
         from cStringIO import StringIO
     except ImportError:
         from StringIO import StringIO
+
+    FileNotFoundError = OSError
 else:
     import http.client
     from http.server import HTTPServer
@@ -1004,7 +1006,12 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             return False
 
         self.command, self.request_version = command, version
-        self.path, self.section, self.file_path, self.get = self.parse_path(path)
+
+        try:
+            self.path, self.section, self.file_path, self.get = self.parse_path(path)
+        except FileNotFoundError:
+            self.send_error(404, 'Not Found')
+            return False
 
         # Examine the headers and look for a Connection directive
         # Parsing into a dictionary for simplicity.
@@ -1124,7 +1131,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
     def serve_file(self, path):
 
         if not (os.path.exists(path) and os.path.isfile(path)):
-            return self.send_error(404, "File not found.")
+            return self.send_error(404, 'Not Found')
 
         ctype = self.guess_type(path)
         try:
@@ -1133,7 +1140,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             # transmitted *less* than the content-length!
             f = open(path, 'rb')
         except IOError:
-            self.send_error(404, "File not found")
+            self.send_error(404, 'Not Found')
             return None
         self.send_response(200)
         self.send_header("Content-type", ctype)
