@@ -11,7 +11,6 @@ common.local_files.append(os.path.realpath(__file__))
 
 # Specific to browser sharer
 
-
 if sys.version_info[0] == 2:
     from cgi import escape
     from urllib import quote
@@ -176,35 +175,36 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
   <head>
     <title>Directory listing for %s (%s)</title>
     <style>
+      body { font-family: "Poppins", "Roboto", Sans-serif; padding: 25px; }
+      table { border-collapse: collapse; }
       th { text-align: left; }
-      td { vertical-align: text-top; }
-      tr:nth-child(even) {background-color: #f2f2f2;}
-      .c_mod { align: right; padding: 0px 10px; min-width: 175px; }
-      .c_size { align: right; padding: 0px 10px; }
-      .c_info { align: right; }
+      tr.hover-row:hover { background-color: rgba(0,0,0,.075); }
+      td { vertical-align: text-top; padding: 5px 0px; margin: 0px; }
+      tr td { border-top: 1px solid #dee2e6; }
+      h2 { color: #555; font-size: 22px; font-weight: 600; margin: 0; line-height: 1.2; margin-bottom: 25px; }
+      a { text-decoration: none; }
+      .c_name { min-width: 300px; padding-left: 25px; }
+      .c_mod { align: right; padding: 5px 20px; min-width: 175px; }
+      .c_size { align: right; padding: 5px 10px 5px 20px; min-width: 125px; }
+      .c_info { align: right; min-width: 175px; }
       .s_dead { color: #821e00; }
       .path { font-weight: bold; }
     </style>
   </head>
   <body>
-    <h2>Directory listing for %s</h2>
-    <h3>Full path: %s%s</h3>
-    <p>%s</p>
+    <h2>Directory: %s</h2>
     <table>
-      <tr><th>%s</th><th class="c_mod">%s</th><th class="c_size">%s</th><th class="c_info">%s</th></tr>
-""" % (displaypath, os.getcwd(), # Title
-        displaypath,
-        os.getcwd(),
-        displaypath, # Full path
+      <tr><th class="c_name">%s</th><th class="c_size">%s</th><th class="c_mod">%s</th><th class="c_info">%s</th></tr>
+""" % (displaypath, self.base_directory, # Title
         self.render_breadcrumbs(displaypath),
         self.render_header("Name", LABEL_CATEGORY_NAME, reverse, category_label, path),
-        self.render_header("Last Modified", LABEL_CATEGORY_MTIME, reverse, category_label, path),
         self.render_header("Size", LABEL_CATEGORY_SIZE, reverse, category_label, path),
+        self.render_header("Last Modified", LABEL_CATEGORY_MTIME, reverse, category_label, path),
         self.render_header("Description", LABEL_CATEGORY_TYPE, reverse, category_label, path)
     ) # Breadcrumbs
 
         if getattr(self, common.ATTR_PATH, "/") != "/":
-            htmlContent += '      <tr class="r_0"><td class="c_name"><a href="..">%s</a></td><td class="c_mod">&nbsp;</td><td class="c_size">-</td><td class="c_info">&nbsp;</td></tr>\n' % escape("<UP ONE LEVEL>")
+            htmlContent += '      <tr class="hover-row"><td class="c_name"><a href="..">%s</a></td><td class="c_size">-</td><td class="c_mod">&nbsp;</td><td class="c_info">&nbsp;</td></tr>\n' % escape("<UP ONE LEVEL>")
 
         for item in items:
 
@@ -213,12 +213,14 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                 mtime_display = datetime.datetime.fromtimestamp(item.get('mtime')).strftime('%Y-%m-%d %H:%M:%S')
 
             if item.get('linkname') and item.get('reachable', False):
-                htmlContent += '      <tr><td class="c_name"><a href="%s">%s</a></td><td class="c_mod">%s</td><td class="c_size">%s</td><td class="c_info">%s</td></tr>\n' % (quote(item.get('linkname')), escape(item.get('displayname')), mtime_display, item.get('size_display'), item.get('extrainfo'))
+                parts = (quote(item.get('linkname')), escape(item.get('displayname')), item.get('size_display'), mtime_display, item.get('extrainfo'))
+                htmlContent += '      <tr class="hover-row"><td class="c_name"><a href="%s">%s</a></td><td class="c_size">%s</td><td class="c_mod">%s</td><td class="c_info">%s</td></tr>\n' % parts
             else:
                 # Not reachable - dead symlink
-                htmlContent += '      <tr><td class="c_name s_dead">%s</td><td class="c_mod">%s</td><td class="c_size">%s</td><td class="c_info">%s</td></tr>\n' % (escape(item.get('displayname')), mtime_display, item.get('size_display'), item.get('extrainfo'))
+                parts = (escape(item.get('displayname')), item.get('size_display'), mtime_display, item.get('extrainfo'))
+                htmlContent += '      <tr class="hover-row"><td class="c_name s_dead">%s</td><td class="c_size">%s</td><td class="c_mod">%s</td><td class="c_info">%s</td></tr>\n' % parts
 
-        htmlContent += '    <tr><td colspan="5"><hr></td></table>\n  </body>\n</html>\n'
+        htmlContent += '    <tr><td colspan="5"></td></table>\n  </body>\n</html>\n'
         return self.serve_content(htmlContent)
 
     def render_header(self, label, target, reverse, current, path):

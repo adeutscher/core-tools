@@ -932,7 +932,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         path = posixpath.normpath(unquote(items[0]))
 
         words = [_f for _f in path.split('/') if _f]
-        file_path = os.getcwd()
+        self.base_directory = file_path = os.getcwd()
         path = '/'
 
         for word in words:
@@ -1045,22 +1045,40 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         return True
 
     def render_breadcrumbs(self, path):
-        current = "/"
-        items = [(current, "Root")]
 
-        for item in path.split("/"):
-            if not item:
-                continue
-            current += item + "/"
-            items.append((current, item))
-        content = ""
+        base_parts = []
+        path_parts = []
+        current = '/'
+
+        items = [p for p in (path or '').split('/') if p]
         i = 0
         for item in items:
             i += 1
+            current += item + '/'
             if i == len(items):
-                content += " / <strong>%s</strong>" % item[1]
+                # Current directory
+                path_parts.append((item, None))
             else:
-                content += " / <a href='%s'>%s</a>" % (item[0], item[1])
+                # Parent directory of current
+                path_parts.append((item, current))
+
+        items = [p for p in (self.base_directory or '').split('/') if p]
+        i = 0
+        for item in items:
+            i += 1
+            if i == len(items) and path_parts:
+                # Link to root directory
+                base_parts.append((item, '/'))
+            else:
+                # Unsharable item, parent of root directory
+                base_parts.append((item, None))
+
+        content = ""
+        for text, link in base_parts + path_parts:
+            if link:
+                content += "/<a href='%s'>%s</a>" % (link, text)
+            else:
+                content += "/%s" % text
         return content
 
     def run(self):
