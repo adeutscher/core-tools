@@ -292,7 +292,7 @@ get_files(){
       continue
     fi
 
-    if ! file "${_possible_file}" | grep -q "text/plain$"; then
+    if ! file --mime-type "${_possible_file}" | grep -q "text/plain$"; then
       # Silently skip any non-ASCII files (e.g. vim swap files).
       continue
     fi
