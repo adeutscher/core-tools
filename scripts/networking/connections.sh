@@ -146,6 +146,7 @@ get_data(){
     using_netstat='"${NETSTAT:-0}"'
     display_incoming='"${INCOMING:-0}"'
     display_all='"${SHOW_ALL:-0}"'
+    summarize='"${SUMMARIZE:-0}"'
     if(!using_netstat){
       raw_addresses="'"${LOCAL_ADDRESSES}"'"
       split(raw_addresses, addresses, " ")
@@ -172,6 +173,9 @@ get_data(){
     } else if(using_netstat && !(!display_incoming || display_all))
       next
 
+    if(summarize)
+      $4="0" # "From" port not used when summarizing.
+
     if(!(using_netstat || display_all)){
       target=$2
       if(display_incoming)
@@ -189,7 +193,6 @@ get_data(){
         next
     }
 
-
     # Place numbers for sorting.
     sourcenums = $2 " " $3;
     while(sub(/\./," ",sourcenums)){}
@@ -198,7 +201,7 @@ get_data(){
 
   }' <<< "${BASIC}" \
     | sort -t' ' -k1,1n -k2,2n -k3,3n -k4,4n -k5,5n -k6,6n -k7,7n -k8,8n -k13,13n -k12,12n \
-    | cut -d' ' -f9- | uniq
+    | cut -d' ' -f9- | uniq -c | sed -r 's/^\s+//g'
   )"
 }
 
@@ -319,17 +322,17 @@ needs_label(){
 print_line(){
   # This is intended for normal output.
   # Note from development: This cannot be placed in a sub-shell.
-  [ -n "${last_from}${QUIET}" ] || return 0
+  #[ -n "${QUIET}" ] || return 0
 
   if (( "${DO_CSV:-0}" )); then
-    printf "%s,%s,%s,%d,%d\n" "${last_from}" "${last_to}" "${last_proto}" "${last_to_p}" "${count:-1}"
+    printf "%s,%s,%s,%d,%d\n" "${from}" "${to}" "${proto}" "${to_p}" "${count:-1}"
   elif (( "${SUMMARIZE:-0}" )); then
-    message="$(printf "${GREEN}%s${NC} -> ${GREEN}%s${NC} (%s/%d" "${last_from}" "${last_to}" "${last_proto}" "${last_to_p}")"
+    message="$(printf "${GREEN}%s${NC} -> ${GREEN}%s${NC} (%s/%d" "${from}" "${to}" "${proto}" "${to_p}")"
     [ ${count:-0} -gt 1 ] && message="${message}, ${count} connections"
     message="${message})"
     notice "${message}"
   else
-    message="$(printf "${GREEN}%s:%d${NC} -> ${GREEN}%s:%d${NC} (${BOLD}%s${NC})" "${last_from}" "${last_from_p}" "${last_to}" "${last_to_p}" "${last_proto}")"
+    message="$(printf "${GREEN}%s:%d${NC} -> ${GREEN}%s:%d${NC} (${BOLD}%s${NC})" "${from}" "${from_p}" "${to}" "${to_p}" "${proto}")"
     notice "${message}"
   fi
 
@@ -539,7 +542,7 @@ while (( 1 )); do
       # Expected format of a connection line: proto src dst sport dport state
       # Content example of a connection line: tcp 10.20.30.40 20.30.40.50 43149 443 ESTABLISHED
       # Credit for advanced IPv4 Regex: https://www.regular-expressions.info/ip.html
-      if ! grep -qP "tcp( (25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){2}( \d+){2} [A-Z_0-9]+$" <<< "${connection}"; then
+      if ! grep -qP "\d+ tcp( (25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){2}( \d+){2} [A-Z_0-9]+$" <<< "${connection}"; then
         illegal_format="$((${illegal_format:-0}+1))"
         if (( "${DEBUG:-0}" )); then
           error "$(printf "Illegally-formatted connection data from ${BLUE}%s${NC}: ${BOLD}%s${NC}" "${METHOD}" "${connection}")"
@@ -547,12 +550,13 @@ while (( 1 )); do
         continue
       fi
 
-      proto="$(cut -d' ' -f 1 <<< "${connection}")"
-      from="$(cut -d' ' -f 2 <<< "${connection}")"
-      to="$(cut -d' ' -f 3 <<< "${connection}")"
-      from_p="$(cut -d' ' -f 4 <<< "${connection}")"
-      to_p="$(cut -d' ' -f 5 <<< "${connection}")"
-      state="$(cut -d' ' -f 6 <<< "${connection}")"
+      count="$(cut -d' ' -f 1 <<< "${connection}")"
+      proto="$(cut -d' ' -f 2 <<< "${connection}")"
+      from="$(cut -d' ' -f 3 <<< "${connection}")"
+      to="$(cut -d' ' -f 4 <<< "${connection}")"
+      from_p="$(cut -d' ' -f 5 <<< "${connection}")"
+      to_p="$(cut -d' ' -f 6 <<< "${connection}")"
+      state="$(cut -d' ' -f 7 <<< "${connection}")"
 
       # Restrict to "ESTABLISHED"-state connections for the time being.
       [[ "${state}" == "ESTABLISHED" ]] || continue
@@ -631,21 +635,11 @@ while (( 1 )); do
 
       (( "${display:-0}" )) || continue
 
-      if ! (( ${SUMMARIZE:-0} )) || ( [ -n "${last_id}" ] && [[ "${id}" != "${last_id}" ]] ); then
-        print_verbose=0
-        needs_label "${last_from}" && print_verbose=1
-        CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line "${print_verbose}")")"
-        destinations="${destinations} ${last_to}"
-        unset count
-      fi
-
-      count="$((${count:-0}+1))"
-      last_id="${id}"
-      last_proto="${proto}"
-      last_from="${from}"
-      last_to="${to}"
-      last_to_p="${to_p}"
-      last_from_p="${from_p}"
+      print_verbose=0
+      needs_label "${from}" && print_verbose=1
+      CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line "${print_verbose}")")"
+      destinations="${destinations} ${to}"
+      unset count
 
     done <<<  "${CONNECTIONS}"
   elif ! (( ${QUIET:-0} )) && ! (( "${NETSTAT:-0}" )); then
@@ -653,13 +647,6 @@ while (( 1 )); do
     CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(notice "$(printf "No connections noted. Are you sure that there is a state-tracking rule in ${BLUE}%s${NC}?" "iptables")")")"
   fi
 
-  if (( "${SUMMARIZE:-0}" )) && ! (( "${QUIET:-0}" )); then
-    # Tailing line
-    print_verbose=0
-    needs_label "${last_from}" && print_verbose=1
-    CONTENT="$(printf "%s\n%s" "${CONTENT}" "$(print_line "${print_verbose}")")"
-    destinations="${destinations} ${last_to}"
-  fi
   if ! (( "${DO_CSV:-0}" )); then
     if (( "${VERBOSE:-0}" )); then
       # In verbose mode, track remaining unlabeled destinations to see if they can be labeled.
@@ -702,7 +689,7 @@ while (( 1 )); do
       # Print trailing newline.
       printf "\n"
     fi
-    break # Break out of infinity monitor loop.
+    break # Break out of infinite monitor loop.
   fi
 done # End infinite monitor loop.
 
