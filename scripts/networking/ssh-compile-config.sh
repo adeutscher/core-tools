@@ -103,9 +103,9 @@ ssh_compile_config(){
 
       if [ -f "$sshConfig" ]; then
         # SSH Configuration exist, probe for existing versions.
-        sectionStart=$(grep -wnm1 "$moduleSSHMarker" < "$sshConfig" | cut -d':' -f1)
-        sectionEnd=$(grep -wnm1 "$moduleSSHMarker-end" < "$sshConfig" | cut -d':' -f1)
-        sectionChecksum=$(grep -wm1 "$moduleSSHMarker" < "$sshConfig" | grep -o "checksum:[^ ]*" | cut -d':' -f2)
+        sectionStart=$(grep -wnm1 "$moduleSSHMarker" "$sshConfig" | cut -d':' -f1)
+        sectionEnd=$(grep -wnm1 "$moduleSSHMarker-end" "$sshConfig" | cut -d':' -f1)
+        sectionChecksum=$(grep -wm1 "$moduleSSHMarker" "$sshConfig" | grep -o "checksum:[^ ]*" | cut -d':' -f2)
       fi
 
       local updatedConfigCount=$(($updatedConfigCount+1))
@@ -291,6 +291,12 @@ get_files(){
       # Silently skip any file with "README" anywhere in its name.
       continue
     fi
+
+    if ! file "${_possible_file}" | grep -q "text/plain$"; then
+      # Silently skip any non-ASCII files (e.g. vim swap files).
+      continue
+    fi
+
     echo "${_possible_file}"
   done <<< "$(find "${1}" -type f 2> /dev/null)"
 }
