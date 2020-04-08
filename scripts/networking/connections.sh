@@ -564,7 +564,7 @@ while (( 1 )); do
       if (( "${SHOW_ALL:-0}" )); then
         subjects="${to} ${from}"
       elif (( "${INCOMING:-0}" )); then
-        subject="${from}"
+        subjects="${from}"
       else
         subjects="${to}"
       fi
