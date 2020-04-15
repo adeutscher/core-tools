@@ -207,7 +207,7 @@ if __is_unix; then
         if qtype avconv; then
             # If avconv is not available,
             #     then assume that we aren't able to convert our downloaded file(s) to mp3.
-            alias youtube-dl-mp3='youtube-dl --audio-quality 0 --audio-format mp3 -x'
+            alias youtube-dl-mp3='youtube-dl --audio-quality 0 --audio-format mp3 -x --prefer-avconv'
         fi
     fi
 
