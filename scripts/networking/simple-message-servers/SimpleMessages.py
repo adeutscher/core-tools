@@ -698,7 +698,7 @@ def announce_common_arguments(verb = "Doing stuff"):
         else:
             noun = "connections"
 
-        print_notice("%s with %s sent to %s" % (verb, noun, colour_text("%s:%d" % (bind_address, bind_port), COLOUR_GREEN)))
+        print_notice("%s with %s sent to %s\n" % (verb, noun, colour_text("%s:%d" % (bind_address, bind_port), COLOUR_GREEN)))
 
     if args[TITLE_VERBOSE]:
         print_notice("Extra information shall also be printed.")
