@@ -4,7 +4,7 @@ from __future__ import print_function
 # General
 import getopt, os, random, re, sys
 # Networking
-import errno, fcntl, select, socket, ssl, struct
+import errno, fcntl, select, socket, ssl, struct, time
 from ssl import SSLError, SSLWantReadError, SSLWantWriteError
 from select import EPOLLIN, EPOLLET, EPOLLERR, EPOLLHUP, EPOLLONESHOT, EPOLLOUT, EPOLLPRI
 
@@ -23,11 +23,18 @@ else:
 # Common Colours and Message Functions
 ###
 
-def _print_message(header_colour, header_text, message, stderr=False):
+def _print_message(header_colour, header_text, message, log_message = False, stderr=False):
     f=sys.stdout
     if stderr:
         f=sys.stderr
-    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
+
+    header_template = "%s[%%s]:" % colour_text(header_text, header_colour)
+    if log_message:
+        header = header_template % colour_text(time.strftime("%Y-%m-%d %k:%M:%S"))
+    else:
+        header = header_template % colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN)
+
+    print(header, message, file=f)
 
 def colour_addr(ip, port, host=None):
     if host and host != ip: return '[%s:%s (%s)]' % (colour_blue(ip), colour_text(port), colour_blue(host))
@@ -71,11 +78,15 @@ def enable_colours(force = False):
         COLOUR_OFF = ''
 enable_colours()
 
+def log_error(msg): print_error(msg, log_message = True)
+
+def log_notice(msg): print_notice(msg, log_message = True)
+
 error_count = 0
-def print_error(message):
+def print_error(message, log_message = False):
     global error_count
     error_count += 1
-    _print_message(COLOUR_RED, "Error", message)
+    _print_message(COLOUR_RED, "Error", message, log_message = log_message)
 
 def print_exception(e, msg=None):
     # Shorthand wrapper to handle an exception.
@@ -84,7 +95,7 @@ def print_exception(e, msg=None):
     if msg: sub_msg = " (%s)" % msg
     print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
 
-def print_notice(message): _print_message(COLOUR_BLUE, "Notice", message)
+def print_notice(message, log_message = False): _print_message(COLOUR_BLUE, "Notice", message, log_message = log_message)
 
 def print_warning(message): _print_message(COLOUR_YELLOW, "Warning", message)
 
@@ -668,8 +679,6 @@ class TcpRelayServer:
                                     sock.close()
                                     continue
 
-                                self.register_socket(sock, TcpRelaySession.CLIENT_FLAGS)
-
                                 session = TcpRelaySession(self, sock, addr)
                                 session.handle_connection()
 
@@ -820,7 +829,7 @@ class TcpRelaySession:
         if self.running and self.state_server == STATE_UNCONNECTED:
 
             target_addr = (self.target.ip, self.target.port)
-            if self.verbose: print_notice('Attempting server connection: %s' % self.get_arrow_string())
+            if self.verbose: log_notice('Attempting: %s' % self.get_arrow_string())
 
             try:
                 try: self.dst.connect(target_addr)
@@ -842,7 +851,9 @@ class TcpRelaySession:
                     )
 
                     self.state_server = STATE_UNINITIALIZED
-                else: self.state_server = STATE_CONNECTED
+                else:
+                    self.state_server = STATE_CONNECTED
+                    self.server.register_socket(self.src, TcpRelaySession.CLIENT_FLAGS)
 
             except BlockingIOError:
                 # Connection not immediately successful, but not already in the pending list (initial accept loop).
@@ -850,7 +861,7 @@ class TcpRelaySession:
             except (ConnectionError, OSError) as e:
                 # ConnectionError: Likely a reset connection (target not listening?)
                 # OSError: Possibly a timeout, or no route to host.
-                if self.verbose: print_error('Connection error for %s: %s' % (self.get_arrow_string(), e))
+                if self.verbose: log_error('Connection %s: %s' % (self.get_arrow_string(), e))
                 self.shutdown()
 
         if self.running and self.state_server == STATE_UNINITIALIZED:
@@ -859,12 +870,14 @@ class TcpRelaySession:
 
             try:
                 self.dst.do_handshake()
-                self.state_server = STATE_CONNECTED
                 rearm_server = True
+
+                self.state_server = STATE_CONNECTED
+                self.register_socket(self.src, TcpRelaySession.CLIENT_FLAGS)
 
                 if self.verbose: print_notice('Server SSL initialized for %s' % self.get_arrow_string())
             except (SSLWantReadError, SSLWantWriteError, BlockingIOError) as e:
-                self.re_arm(self.dst, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLONESHOT)
+                self.re_arm(self.dst, TcpRelaySession.CLIENT_FLAGS)
             except ssl.SSLCertVerificationError as e:
                 if self.verbose: print_error('Failed to verify SSL certificate for %s in %s: %s' % (colour_blue(self.target.hostname), self.get_arrow_string(), e))
                 self.shutdown()
@@ -920,12 +933,15 @@ class TcpRelaySession:
 
     def shutdown(s):
         if not s.running: return
-        if s.verbose: print_notice('Closing connection: %s' % s.get_arrow_string())
+        if s.verbose: log_notice('Closing: %s' % s.get_arrow_string())
 
-        for state, sock in [(s.state_client, s.src), (s.state_server, s.dst)]:
+        subjects = [(s.state_server, s.dst, True), (s.state_client, s.src, s.state_server == STATE_CONNECTED)]
+        for state, sock, do_deregister in subjects:
             fd = sock.fileno()
             del s.server.sessions[fd]
-            s.server.unregister_socket(sock)
+
+            if do_deregister:
+                s.server.unregister_socket(sock)
 
             try: sock.shutdown(socket.SHUT_RDWR)
             except: pass
