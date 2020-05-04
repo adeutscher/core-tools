@@ -179,10 +179,10 @@ function vnc(){
   sleep 3
 
   if [ -n "${__password}" ]; then
-    x11vnc -display :0 -auth guess -forever -shared ${__options} -passwd "${__password}"
+    x11vnc -display :0 -auth guess -noxrecord -forever -shared ${__options} -passwd "${__password}"
     local ret=$?
   else
-    x11vnc -display :0 -auth guess -forever -shared ${__options}
+    x11vnc -display :0 -auth guess -noxrecord -forever -shared ${__options}
     local ret=$?
   fi
   if (( "${__continue:-0}" )) || [ "${ret:-0}" -eq 130 ]; then
