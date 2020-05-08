@@ -108,9 +108,15 @@ def print_exception(e, msg=None):
 def print_notice(message):
     _print_message(COLOUR_BLUE, "Notice", message)
 
+def print_warning(message):
+    _print_message(COLOUR_YELLOW, "Warning", message)
+
 # Variables
 
+DEFAULT_AUTH_LIMIT = 5
 DEFAULT_AUTH_PROMPT = "Authorization Required"
+DEFAULT_AUTH_TIMEOUT = 300
+
 DEFAULT_TIMEOUT = 10
 
 DEFAULT_BIND = "0.0.0.0"
@@ -124,7 +130,9 @@ TITLE_POST = "post"
 TITLE_TIMEOUT = "timeout"
 TITLE_VERBOSE="verbose"
 
+TITLE_AUTH_LIMIT = "attempt limit"
 TITLE_AUTH_PROMPT = "prompt"
+TITLE_AUTH_TIMEOUT = "attempt limit timeout"
 TITLE_PASSWORD = "password"
 TITLE_USER = "user"
 
@@ -467,6 +475,8 @@ args.add_opt(OPT_TYPE_SHORT, "k", TITLE_SSL_KEY, "SSL key file path (PEM format)
 
 # Long flags
 args.add_opt(OPT_TYPE_LONG, "user-agent", TITLE_USER_AGENT, "Regular expression to match user agents. When this option is in use, the client must match at least one provided pattern.", multiple = True)
+args.add_opt(OPT_TYPE_LONG, "auth-limit", TITLE_AUTH_LIMIT, "Number of attempts allowed within lockout period (0 for unlimited attempts).", converter = int, default = DEFAULT_AUTH_LIMIT, default_announce = True)
+args.add_opt(OPT_TYPE_LONG, "auth-timeout", TITLE_AUTH_TIMEOUT, "Login attempts timeout in seconds (0 for unlimited).", converter = int, default = DEFAULT_AUTH_TIMEOUT, default_announce = True)
 for default, title in [(DEFAULT_AUTH_PROMPT, TITLE_AUTH_PROMPT), ("", TITLE_USER), ("", TITLE_PASSWORD)]:
     args.add_opt(OPT_TYPE_LONG, title, title, "Specify authentication %s." % title, default = default)
 
@@ -488,8 +498,18 @@ def validate_common_arguments(self):
     if TITLE_SSL_KEY in self.args and not TITLE_SSL_CERT in self.args:
         errors.append("%s path provided, but no %s path was provided." % (TITLE_SSL_KEY, TITLE_SSL_CERT))
 
-    if TITLE_USER in self.args or TITLE_PASSWORD in self.args:
+    if self[TITLE_AUTH_LIMIT] < 0:
+        errors.append('Auth limit must be greater than or equal to 0.')
+    if self[TITLE_AUTH_TIMEOUT] < 0:
+        errors.append('Auth timeout must be greater than or equal to 0.')
+
+    if TITLE_USER in self or TITLE_PASSWORD in self:
         authentication_stores.append(SimpleAuthStore(self[TITLE_USER], self[TITLE_PASSWORD]))
+    else:
+        if TITLE_AUTH_LIMIT in self.args:
+            print_warning("Auth limit specified, but no authentication credentials were specified.")
+        if TITLE_AUTH_TIMEOUT in self.args:
+            print_warning("Auth timeout specified, but no authentication credentials were specified.")
 
     return errors
 
@@ -539,6 +559,11 @@ def announce_common_arguments(verb = "Hosting content"):
 
     if args[TITLE_USER]:
         print_notice("Basic authentication enabled (User: %s)" % colour_text(args.get(TITLE_USER, "<EMPTY>")))
+
+        timeout_wording = "infinite"
+        if args[TITLE_AUTH_TIMEOUT]:
+            timeout_wording = '%ss' % args[TITLE_AUTH_TIMEOUT]
+        print_notice('Authentication timeout: %s' % colour_text(timeout_wording))
 
     access.announce_filter_actions()
 
@@ -653,8 +678,12 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         if not authentication_stores:
             return True
 
+        # Note: Currently, attempts with lack of any credentials or mangled credentials
+        #       are considered 'freebies', and do not count towards a user's auth limits.
+
         raw_creds = getattr(self, ATTR_HEADERS, CaselessDict()).get("Authorization").split()
         if not raw_creds or len(raw_creds) < 2:
+            # Incorrect credential format.
             return False
 
         # Decode
@@ -670,6 +699,26 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         # Check username/password from the user.
         self.user = creds_list[0]
         password = ":".join(creds_list[1:])
+        
+        client = self.client_address[0]
+        auth_timeout = args[TITLE_AUTH_TIMEOUT]
+        auth_limit = args[TITLE_AUTH_LIMIT]
+
+        have_record = client in self.server.attempts
+        if auth_limit and auth_timeout and have_record:
+            # Clean expired attempts from storage.
+            t = time.time()
+            trimmed_attempts = [x for x in self.server.attempts[client] if x + auth_timeout >= t]
+            if trimmed_attempts:
+                self.server.attempts[client] = trimmed_attempts
+            else:
+                del self.server.attempts[client]
+                have_record = False
+        
+        if auth_limit and len(self.server.attempts.get(client, [])) >= auth_limit:
+            # Client has already exceeded maximum attempts.
+            # Do not even make an attempt against authentication stores.
+            return False
 
         success = False
         for store in authentication_stores:
@@ -677,6 +726,18 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             success = result == AUTH_GOOD_CREDS
             if result >= AUTH_BAD_PASSWORD:
                 break
+                
+        if auth_limit and not success:
+            # Note failed attempt
+            if have_record:
+                # Append to existing record if we have a current record and a non-infinite timeout that is not filled.
+                # A bit overkill since the attempt blocking above should prevent the attempt records for the client from
+                #   growing further...
+                if auth_timeout or len(self.server.attempts[client]) < auth_limit:
+                    self.server.attempts[client].append(time.time())
+            else:
+                # No known record or first offense of an infinite timeout
+                self.server.attempts[client] = [time.time()]
         return success
 
     def copyobj(self, src, dst):
@@ -1374,6 +1435,7 @@ class SimpleAuthStore:
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
 
+    attempts = {}
     requests = {}
     alive = True
 
