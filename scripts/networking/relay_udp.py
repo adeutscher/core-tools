@@ -719,7 +719,7 @@ class UdpRelayServer:
                 for fd in write_fds:
                     if fd in active_sockets:
                         self.epoll_socket.modify(fd, self.FLAGS | EPOLLOUT)
-                    else
+                    else:
                         self.epoll_socket.register(fd, self.FLAGS | EPOLLOUT)
 
                 # Look for expired sessions and clean them up.
