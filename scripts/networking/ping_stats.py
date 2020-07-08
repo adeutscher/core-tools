@@ -220,7 +220,6 @@ def translate_seconds(duration, add_and = False):
         sl = s.split(d, len(times) - 2)
         return ", ".join(sl)
 
-
 class PingStatistics:
 
     def __get_debug(self):
@@ -321,23 +320,27 @@ class PingStatistics:
         }
 
         while True:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(1)
-                conn = s.connect_ex((self.server, self.port))
+
+            # Note: Python2 socket objects do not have an __exit__ method,
+            #         so with/__exit__ cannot be used.
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            conn_result = s.connect_ex((self.server, self.port))
 
             if self.debug:
-                print('Connection response: %s' % conn)
+                print('Connection response: %s' % conn_result)
 
-            if conn == errno.EAGAIN:
+            if conn_result == errno.EAGAIN:
                 continue
 
-            r['success'] = conn == 0
+            r['success'] = conn_result == 0
 
             if r['success']:
                 r['result'] = 'open'
-            elif conn == errno.ECONNREFUSED:
+                s.close()
+            elif conn_result == errno.ECONNREFUSED:
                 r['result'] = 'closed'
-            elif conn == errno.EHOSTUNREACH:
+            elif conn_result == errno.EHOSTUNREACH:
                 r['result'] = 'timeout'
             else:
                 r['result'] = 'unavailable'
