@@ -315,36 +315,60 @@ class PingStatistics:
         return r
 
     def do_tcp(self):
+
         r = {
             'line': 'TCP/%s' % self.port
         }
 
+        time_start = time.time()
         while True:
 
             # Note: Python2 socket objects do not have an __exit__ method,
             #         so with/__exit__ cannot be used.
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(1)
+            # https://www.tutorialspoint.com/python_penetration_testing/python_penetration_testing_network_scanner.htm
             conn_result = s.connect_ex((self.server, self.port))
+            time_duration = time.time() - time_start
 
             if self.debug:
-                print('Connection response: %s' % conn_result)
+                print('Connection response (%.02f seconds): %s' % (time_duration, conn_result))
 
-            if conn_result == errno.EAGAIN:
+            # If connect_ex() returned 11 (EAGAIN), then continue the loop.
+            # Give up after 10s. If the traffic is being dropped, then
+            #   the loop will go on for too long (possibly endless?)
+            # A value of 10s was chosen to distinguish between a connection that's
+            #   taking a while to time out and something that's being intentionally dropped.
+            # This was determined by comparing two addresses:
+            #   * Unused IP on local and remote networks (3-6ss to get a 113/EHOSTUNREACH)
+            #     * The 6s timeouts are less common than the 3s ones.
+            #   * Local address with a DROP rule in effect against the pinging host would take much too long.
+            if conn_result == errno.EAGAIN and time_duration < 10:
                 continue
 
             r['success'] = conn_result == 0
 
             if r['success']:
+                # Successfully established a connection.
                 r['result'] = 'open'
-                s.close()
+
+                # Possible future improvement - could take a leaf from nmap here and do some basic operation well-known ports for information.
+                # Probably won't implement this in any rush, though. The purpose of this script is on confirming the status of known hosts, not in exploring unknown hosts.
             elif conn_result == errno.ECONNREFUSED:
+                # Server was not listening on the target port.
+
+                # This response could also happen if iptables REJECTs the connection.
+                #   nmap can't or doesn't distinguish between the two causes, so I'm not too worried distinguishing either
                 r['result'] = 'closed'
             elif conn_result == errno.EHOSTUNREACH:
-                r['result'] = 'timeout'
+                # Socket gave up.
+                r['result'] = 'unreachable'
             else:
-                r['result'] = 'unavailable'
+                # Untracked error, or the script gave up.
+                # This could happen if the ping gets hit by a DROP target in iptables
+                r['result'] = 'timeout'
 
+            s.close()
             break
         return r
 
