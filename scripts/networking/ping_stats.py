@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 # Ping wrapper script.
 # As opposed to using flat ping, this will give the user more live
