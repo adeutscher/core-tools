@@ -118,7 +118,7 @@
         chdir: "{{ x264.dest }}"
 
     - name: configure libav
-      shell: ./configure --enable-libmp3lame --enable-gpl --enable-nonfree --enable-libx264
+      shell: ./configure --enable-libmp3lame --enable-gpl --enable-nonfree --enable-libx264 --enable-libvorbis
       args:
         chdir: "{{ git.dest }}"
       notify: clean libav
