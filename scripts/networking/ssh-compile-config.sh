@@ -292,8 +292,14 @@ get_files(){
       continue
     fi
 
-    if ! file --mime-type "${_possible_file}" | grep -q "text/plain$"; then
-      # Silently skip any non-ASCII files (e.g. vim swap files).
+    if grep -qi "\.swp$" <<< "${_possible_file##*/}"; then
+      # Silently skip any file ending in a swp extension, likely a vim swap file.
+      continue
+    fi
+
+    if type file 2> /dev/null >&2 && ! file --mime-type "${_possible_file}" | grep -q "text/plain$"; then
+      # If the `file` command is available (this is not the case in MobaXterm),
+      #   then silently skip any non-ASCII files (e.g. vim swap files).
       continue
     fi
 
