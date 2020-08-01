@@ -199,16 +199,18 @@ ssh_compile_config(){
     fi # End the else of the check for configuration file existing.
   done # End config loop.
 
-  if [ "$updatedConfigCount" -eq 0 ]; then
-
-    notice "$(printf "No updates to write to ${C_FILEPATH}%s${NC} config (${BOLD}%d${NC}/${BOLD}%d${NC} modules had SSH configurations to be checked)." "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "$totalConfigCount" "$totalModuleCount")"
-
-  elif [ -n "$noWrite" ]; then
+  if [ "${updatedConfigCount}" -ne 1 ]; then
+    pluralSection="s"
+  fi
+  countsPhrasing="$(printf "(${BOLD}%d${NC} SSH section${pluralSection} updated, ${BOLD}%d${NC} sections, ${BOLD}%d${NC} modules)" "${updatedConfigCount}" "${totalConfigCount}" "${totalModuleCount}")"
+  if [ "${updatedConfigCount}" -eq 0 ]; then
+    notice "$(printf "No updates to ${C_FILEPATH}%s${NC} %s" "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "${countsPhrasing}")"
+  elif [ -n "${noWrite}" ]; then
     # No-write message
-    error "$(printf "Wanted to update ${C_FILEPATH}%s${NC} config with ${BOLD}%d${NC} of ${BOLD}%d${NC} modules with SSH configurations, but the file was not writable..." "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "$updatedConfigCount" "$totalConfigCount")"
+    error "$(printf "Could not update ${C_FILEPATH}%s${NC}, file was not writable... %s" "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "${countsPhrasing}")"
   else
     # Standard message.
-    notice "$(printf "Updated ${C_FILEPATH}%s${NC} config with ${BOLD}%d${NC} of ${BOLD}%d${NC} modules with SSH configurations." "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "$updatedConfigCount" "$totalConfigCount")"
+    notice "$(printf "Updated ${C_FILEPATH}%s${NC} %s" "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "${countsPhrasing}")"
   fi
 
   # Correct permissions
