@@ -27,20 +27,20 @@ TITLE_HELP = "help"
 
 class ArgHelper:
 
-    args = {}
-    defaults = {}
-    raw_args = {}
-    operands = []
-
-    operand_text = None
-
-    errors = []
-    validators = []
-
-    opts = {OPT_TYPE_FLAG: {}, OPT_TYPE_SHORT: {}, OPT_TYPE_LONG: {}, OPT_TYPE_LONG_FLAG: {}}
-    opts_by_label = {}
-
     def __init__(self):
+        self.args = {}
+        self.defaults = {}
+        self.raw_args = {}
+        self.operands = []
+
+        self.operand_text = None
+
+        self.errors = []
+        self.validators = []
+
+        self.opts = {OPT_TYPE_FLAG: {}, OPT_TYPE_SHORT: {}, OPT_TYPE_LONG: {}, OPT_TYPE_LONG_FLAG: {}}
+        self.opts_by_label = {}
+
         self.add_opt(OPT_TYPE_FLAG, "h", TITLE_HELP, description="Display a help menu and then exit.")
 
     def __contains__(self, arg):
@@ -54,20 +54,16 @@ class ArgHelper:
             #   Giving give the args dictionary an attempt in case
             #   something like a validator went and added to it.
             return self.args.get(arg)
-        if opt.multiple:
-            default = []
+        if opt.multiple: default = []
 
         # Silly note: Doing a get() out of a dictionary when the stored
         #   value of the key is None will not fall back to default
         value = self.args.get(arg)
         if value is None:
-            if opt.environment:
-                value = os.environ.get(opt.environment, self.defaults.get(arg))
-            else:
-                value = self.defaults.get(arg)
+            if opt.environment: value = os.environ.get(opt.environment, self.defaults.get(arg))
+            else: value = self.defaults.get(arg)
 
-        if value is None:
-            return default
+        if value is None: return default
         return value
 
     def __setitem__(self, key, value):
@@ -121,14 +117,11 @@ class ArgHelper:
         obj.strict_single = strict_single
 
         self.opts_by_label[label] = self.opts[opt_type][arg] = obj
-        if not has_arg:
-            default = False
-        elif multiple:
-            default = []
+        if not has_arg: default = False
+        elif multiple: default = []
         self.defaults[label] = default
 
-    def add_validator(self, fn):
-        self.validators.append(fn)
+    add_validator = lambda s, fn: s.validators.append(fn)
 
     def _get_opts(self):
         s = "".join([k for k in sorted(self.opts[OPT_TYPE_FLAG])])
@@ -140,12 +133,10 @@ class ArgHelper:
         return [re.sub("^-+", "", i) for i in l]
 
     def convert_value(self, raw_value, opt):
-        value = None
 
-        try:
-            value = opt.converter(raw_value)
-        except:
-            pass
+        value = None
+        try: value = opt.converter(raw_value)
+        except: pass
 
         if value is None:
             self.errors.append("Unable to convert %s to %s: %s" % (colour_text(opt.label), opt.converter.__name__, colour_text(raw_value)))
@@ -159,8 +150,8 @@ class ArgHelper:
         s = "./%s" % os.path.basename(sys.argv[0])
         lines = []
         for label, section in [("Flags", OPT_TYPE_FLAG), ("Options", OPT_TYPE_SHORT), ("Long Flags", OPT_TYPE_LONG_FLAG), ("Long Options", OPT_TYPE_LONG)]:
-            if not self.opts[section]:
-                continue
+
+            if not self.opts[section]: continue
 
             lines.append("%s:" % label)
             for f in sorted(self.opts[section].keys()):
@@ -168,19 +159,15 @@ class ArgHelper:
                 s+= obj.get_printout_usage(f)
                 lines.append(obj.get_printout_help(f))
 
-        if self.operand_text:
-            s += " %s" % self.operand_text
+        if self.operand_text: s += " %s" % self.operand_text
 
         _print_message(COLOUR_PURPLE, "Usage", s)
-        for l in lines:
-            print(l)
+        for l in lines: print(l)
 
-        if exit_code >= 0:
-            exit(exit_code)
+        if exit_code >= 0: exit(exit_code)
 
     def last_operand(self, default = None):
-        if not len(self.operands):
-            return default
+        if not len(self.operands): return default
         return self.operands[-1]
 
     def load_args(self, cli_args = []):
@@ -215,23 +202,18 @@ class ArgHelper:
         return True
 
     def process(self, args = [], exit_on_error = True, print_errors = True):
-        validate = True
-        if not self.load_args(args):
-            validate = False
 
-        if self[TITLE_HELP]:
-            self.hexit(0)
+        validate = self.load_args(args)
 
-        if validate:
-            self.validate()
+        if self[TITLE_HELP]: self.hexit(0)
+
+        if validate: self.validate()
 
         if self.errors:
             if print_errors:
-                for e in self.errors:
-                    print_error(e)
+                for e in self.errors: print_error(e)
+            if exit_on_error: exit(1)
 
-            if exit_on_error:
-                exit(1)
         return not self.errors
 
     def set_operand_help_text(self, text):
@@ -239,35 +221,41 @@ class ArgHelper:
 
     def validate(self):
         for key in self.raw_args:
+
             obj = self.opts_by_label[key]
-            if not obj.has_arg:
-                self.args[obj.label] = True
+
+            if not obj.has_arg: self.args[obj.label] = True
+
             if not obj.multiple:
+
                 if obj.strict_single and len(self.raw_args[obj.label]) > 1:
                     self.errors.append("Cannot have multiple %s values." % colour_text(obj.label))
+
                 else:
+
                     value = self.convert_value(self.raw_args[obj.label][-1], obj)
-                    if value is not None:
-                        self.args[obj.label] = value
+                    if value is not None: self.args[obj.label] = value
+
             elif obj.multiple:
                 self.args[obj.label] = []
                 for i in self.raw_args[obj.label]:
+
                     value = self.convert_value(i, obj)
-                    if value is not None:
-                        self.args[obj.label].append(value)
+                    if value is not None: self.args[obj.label].append(value)
+
             elif self.raw_args[obj.label]:
+
                 value = self.convert_value(self.raw_args[obj.label][-1], obj)
-                if value is not None:
-                    self.args[obj.label] = value
-        for m in [self.opts_by_label[o].label for o in self.opts_by_label if self.opts_by_label[o].required and o not in self.raw_args]:
-            self.errors.append("Missing %s value." % colour_text(m))
+                if value is not None: self.args[obj.label] = value
+
+        for o in [self.opts_by_label[o] for o in self.opts_by_label if self.opts_by_label[o].required and o not in self.raw_args]:
+            if not o.environment or not os.environ.get(o.environment):
+                self.errors.append("Missing %s value." % colour_text(o.label))
         for v in self.validators:
             r = v(self)
             if r:
-                if isinstance(r, list):
-                    self.errors.extend(r) # Append all list items
-                else:
-                    self.errors.append(r) # Assume that this is a string.
+                if isinstance(r, list): self.errors.extend(r) # Append all list items
+                else: self.errors.append(r) # Assume that this is a string.
 
 class OptArg:
 
@@ -275,17 +263,14 @@ class OptArg:
         self.opt_type = 0
         self.args = args
 
-    def is_flag(self):
-        return self.opt_type in (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)
+    is_flag = lambda s: s.opt_type in (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)
 
     def get_printout_help(self, opt):
 
         desc = self.description or "No description defined"
 
-        if self.is_flag():
-            s = "  %s: %s" % (opt, desc)
-        else:
-            s = "  %s <%s>: %s" % (opt, self.label, desc)
+        if self.is_flag(): s = "  %s: %s" % (opt, desc)
+        else: s = "  %s <%s>: %s" % (opt, self.label, desc)
 
         if self.environment:
             s += " (Environment Variable: %s)" % colour_text(self.environment)
@@ -298,14 +283,11 @@ class OptArg:
 
     def get_printout_usage(self, opt):
 
-        if self.is_flag():
-            s = opt
-        else:
-            s = "%s <%s>" % (opt, self.label)
-        if self.required:
-            return " %s" % s
-        else:
-            return " [%s]" % s
+        if self.is_flag(): s = opt
+        else: s = "%s <%s>" % (opt, self.label)
+
+        if self.required: return " %s" % s
+        else: return " [%s]" % s
 
 # Barebones replacement for message functions so that the below examples do not explode.
 # Do not include in an actual script.
