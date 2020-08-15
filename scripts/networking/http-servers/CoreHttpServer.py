@@ -126,7 +126,6 @@ REGEX_INET4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 
 TITLE_BIND = "bind"
 TITLE_PORT = "port"
-TITLE_POST = "post"
 TITLE_TIMEOUT = "timeout"
 TITLE_VERBOSE="verbose"
 
@@ -459,7 +458,6 @@ class OptArg:
 args = ArgHelper()
 
 # Short opts
-args.add_opt(OPT_TYPE_FLAG, "P", TITLE_POST, "Accept POST data. The server will not process it, but it won't raise any error either.")
 args.add_opt(OPT_TYPE_FLAG, "v", TITLE_VERBOSE, "Verbose output.")
 # Short flags
 args.add_opt(OPT_TYPE_SHORT, "T", TITLE_TIMEOUT, "Read socket timeout (default: %s)." % colour_text(DEFAULT_TIMEOUT), converter = int, default = DEFAULT_TIMEOUT)
@@ -546,16 +544,13 @@ def announce_common_arguments(verb = "Hosting content"):
     if args[TITLE_VERBOSE]:
         print_notice("Extra information shall also be printed.")
 
-    if args[TITLE_POST]:
-        print_notice("Accepting %s messages. Will not process, but will not throw a %s code either." % (colour_text("POST"), colour_text("501", COLOUR_RED)))
-
     if TITLE_TIMEOUT in args:
         print_notice("Read socket timeout: %s" % colour_text(args[TITLE_TIMEOUT]))
 
     for label, title in [("certificate", TITLE_SSL_CERT), ("key", TITLE_SSL_KEY)]:
         path = args[title]
         if path:
-            print_notice("SSL %s file: %s" % (label, colour_text(path, COLOUR_GREEN)))
+            print_notice("SSL %s file: %s" % (label, colour_text(os.path.realpath(path), COLOUR_GREEN)))
 
     if args[TITLE_USER]:
         print_notice("Basic authentication enabled (User: %s)" % colour_text(args.get(TITLE_USER, "<EMPTY>")))
@@ -605,12 +600,16 @@ def serve(handler, change_directory = False):
     bind_address, bind_port, directory = get_target_information()
     server = None
     try:
-        if change_directory:
-            os.chdir(directory)
+
         server = ThreadedHTTPServer((bind_address, bind_port), handler)
 
         if args[TITLE_SSL_CERT]:
+            keyfile = os.path.realpath(args[TITLE_SSL_KEY])
+            certfile = os.path.realpath(args[TITLE_SSL_CERT])
             server.socket = ssl.wrap_socket(server.socket, server_side=True, keyfile=args[TITLE_SSL_KEY], certfile=args[TITLE_SSL_CERT])
+
+        if change_directory:
+            os.chdir(directory)
 
         print_notice("Starting server, use <Ctrl-C> to stop")
         server.serve_forever()
@@ -670,6 +669,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         self.client_address = client_address
         self.server = server
         self.setup()
+        self.request_sane = False
 
     def check_authentication(self):
         # Check for authorization (by default with the Authorization header),
@@ -699,7 +699,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         # Check username/password from the user.
         self.user = creds_list[0]
         password = ":".join(creds_list[1:])
-        
+
         client = self.client_address[0]
         auth_timeout = args[TITLE_AUTH_TIMEOUT]
         auth_limit = args[TITLE_AUTH_LIMIT]
@@ -714,7 +714,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             else:
                 del self.server.attempts[client]
                 have_record = False
-        
+
         if auth_limit and len(self.server.attempts.get(client, [])) >= auth_limit:
             # Client has already exceeded maximum attempts.
             # Do not even make an attempt against authentication stores.
@@ -726,7 +726,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             success = result == AUTH_GOOD_CREDS
             if result >= AUTH_BAD_PASSWORD:
                 break
-                
+
         if auth_limit and not success:
             # Note failed attempt
             if have_record:
@@ -740,18 +740,26 @@ class CoreHttpServer(BaseHTTPRequestHandler):
                 self.server.attempts[client] = [time.time()]
         return success
 
-    def copyobj(self, src, dst):
+    def copyobj(self, src, dst, close = True):
         while self.alive:
             buf = src.read(16*1024)
             if not (buf and self.alive):
                 break
             dst.write(convert_bytes(buf))
-        self.alive = False
-        src.close()
+        if close:
+            self.alive = False
+            src.close()
 
-    def do_GET(self):
-        """Serve a GET request."""
-        f = self.send_head()
+    def invoke(self, method):
+        """Serve a request."""
+
+        try:
+            f = method()
+        except Exception as e:
+            print_exception(e, colour_text(self.client_address[0], COLOUR_GREEN))
+            self.send_error(500)
+            f = None
+
         if f:
             self.copyobj(f, self.wfile)
 
@@ -764,10 +772,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         })
 
     def get_command(self):
-        command = getattr(self, ATTR_COMMAND, "GET")
-        if command.upper() == "POST" and args[TITLE_POST]:
-            command = "GET"
-        return command
+        return getattr(self, ATTR_COMMAND, "GET")
 
     def get_header_dict(self, src):
         d = CaselessDict()
@@ -828,8 +833,8 @@ class CoreHttpServer(BaseHTTPRequestHandler):
                 # Leave this as 'self.command' to not expose any possible custom handling from get_command().
                 self.send_error(501, "Unsupported method (%r)" % self.command)
                 return
-            method = getattr(self, mname)
-            method()
+            self.invoke(getattr(self, mname))
+
             self.wfile.flush() #actually send the response if not already done.
         except socket.timeout:
             # a read or a write timed out.  Discard this connection
@@ -897,12 +902,13 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         # A 400 (bad request) error is more likely to contain corrupted information.
         # A likely cause of a bad request is a non-HTTP protocol being used (e.g. HTTPS, SSH).
         # We do not want to print this information, so we will be overwriting our values tuple.
-        if response_code == 400:
+        if response_code == 400 and not self.request_sane:
             values = (colour_text("BAD REQUEST", COLOUR_RED), response_code, values[2])
         else:
             # Non-400 response.
             # ToDo: account for possible index error here...
             request_items = values[0].split(" ")
+            original_values = values
             values = (" ".join([request_items[0], colour_text(request_items[1], COLOUR_GREEN), request_items[2]]), values[1], values[2])
 
             if args[TITLE_VERBOSE]:
@@ -1028,6 +1034,9 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             if version[:5] != 'HTTP/':
                 self.send_error(400, "Bad request version (%r)" % version)
                 return False
+
+            self.request_sane = True
+
             try:
                 base_version_number = version.split('/', 1)[1]
                 version_number = base_version_number.split(".")
@@ -1083,7 +1092,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             mc = http.client.parse_headers(self.rfile, _class=self.MessageClass).__str__()
             self.headers = self.get_header_dict(mc)
 
-        # Access control checks
+        # Access control checksself.get
         user_agent_match = not args[TITLE_USER_AGENT]
         if not user_agent_match:
             # At least one match is present
@@ -1194,15 +1203,19 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         self.end_headers()
         return None
 
-    def serve_content(self, content, code = 200, mimetype = "text/html"):
-        f = StringIO()
-        f.write(content)
-        length = f.tell()
-        f.seek(0)
+    def serve_content(self, content = None, code = 200, mimetype = "text/html"):
 
-        self.send_response(200)
+        f = None
+        length = 0
+        if content:
+            f = StringIO()
+            f.write(content)
+            length = f.tell()
+            f.seek(0)
+
+        self.send_response(code)
         encoding = sys.getfilesystemencoding()
-        self.send_header("Content-type", "text/html; charset=%s" % encoding)
+        self.send_header("Content-type", "%s; charset=%s" % (mimetype, encoding))
         self.send_header("Content-Length", str(length))
         self.end_headers()
         return f
@@ -1450,12 +1463,7 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
             req.rfile._sock.settimeout(args[TITLE_TIMEOUT])
 
         self.requests[client_address] = req
-
-        try:
-            req.run()
-        except Exception as e:
-            print_exception(e, colour_text(client_address[0], COLOUR_GREEN))
-
+        req.run()
         del self.requests[client_address]
 
     def kill_requests(self):

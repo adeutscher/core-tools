@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import CoreHttpServer as common
-import getopt, os, re, shutil, sys
+import getopt, mmap, os, re, shutil, sys
 from socket import error as SocketError
 
 if sys.version_info[0] == 2:
@@ -13,10 +13,10 @@ else:
     from urllib.parse import quote, urlsplit
 
 TITLE_TARGET = "proxy target"
+TITLE_MAX_LENGTH = "max-length"
 common.local_files.append(os.path.realpath(__file__))
 
-# Remove unused arguments
-del common.args.opts[common.OPT_TYPE_FLAG]["-P"]
+common.args.add_opt(common.OPT_TYPE_LONG, TITLE_MAX_LENGTH, TITLE_MAX_LENGTH, converter = int, description="Maximum content length.")
 
 class NoRedirection(HTTPErrorProcessor):
 
@@ -36,7 +36,16 @@ class Proxy(common.CoreHttpServer):
     log_on_send_error = True
 
     def do_PROXY(self):
+
         url = "%s%s" % (common.args[TITLE_TARGET], quote(self.path))
+        get_items = []
+
+        for key in self.get:
+            for i in self.get[key]:
+                get_items.append('%s=%s' % (quote(key), quote(i)))
+
+        if get_items:
+            url += '?%s' % '&'.join(get_items)
 
         # Set headers locally for convenient short-hand.
         headers = getattr(self, common.ATTR_HEADERS, common.CaselessDict())
@@ -68,36 +77,46 @@ class Proxy(common.CoreHttpServer):
 
         req_headers["Host"] = "%s:%s" % (parsed.hostname, port)
 
-        # Construct request
-        req = Request(url, headers=req_headers)
-        req.get_method = lambda: getattr(self, common.ATTR_COMMAND, "GET")
-
         data = None
-        try:
-            # Read from data to relay.
-            # This requires trusting user data more than I'm comfortable with,
-            #  but I think that I've taken enough precautions for a script
-            #  that should only be used as a quick, dirty, and above all TEMPORARY solution
-            if self.command.lower() in ("post", "put"):
-                # For an extra layer of safety, only bother to try reading further data from
-                # POST or PUT commands. Revise this if we discover an exception to the rule, of course.
 
+        # Read from data to relay.
+        # This requires trusting user data more than I'm comfortable with,
+        #  but I think that I've taken enough precautions for a script
+        #  that should only be used as a quick, dirty, and above all TEMPORARY solution
+        if self.command.lower() in ("post", "put"):
+            # For an extra layer of safety, only bother to try reading further data from
+            # POST or PUT commands. Revise this if we discover an exception to the rule, of course.
 
-                # Use the content-length header, though being user-defined input it's not really trustworthy.
-                # Someone fudging this data is the main reason for my worrying over a timeout value.
+            # Use the content-length header, though being user-defined input it's not really trustworthy.
+            # Someone fudging this data is the main reason for my worrying over a timeout value.
+            try:
                 l = int(self.headers.get('content-length', 0))
-
                 if l < 0:
                     # Parsed properly, but some joker put in a negative number.
                     raise ValueError()
-                elif l:
-                    data = self.rfile.read(l)
-            # Intentionally not bothering to catch socket.timeout exception. Let it bubble up.
-        except ValueError:
-            return self.send_error(500, "Illegal content-length header value: %s" % self.headers.get('content-length', 0))
+            except ValueError:
+                return self.send_error(400, "Illegal content-length header value: %s" % self.headers.get('content-length', 0))
 
-        if data:
-            req.add_data(data)
+            m = args[TITLE_MAX_LENGTH]
+            if m and l > m:
+                return self.send_error(413, 'Content-Length is too large. Max: %d' % m)
+
+            elif l:
+                # Read from rfile into variable.
+                # urllib is SUPPOSED to be able to adapt to being
+                # directly fed something with a read() method,
+                # but in my testing this has resulted in infinite hangups and
+                # trouble reading things on the target's side.
+                # Will have to fix later, but for now this creates potential problems if large files are being uploaded.
+                # This is a good part of the reason why the --max-length flag exists.
+                data = self.rfile.read(l)
+                # Intentionally not bothering to catch socket.timeout exception. Let it bubble up.
+
+
+        # Construct request
+        req = Request(url, data, headers=req_headers)
+        req.get_method = lambda: getattr(self, common.ATTR_COMMAND, "GET")
+
         try:
             resp = self.opener.open(req)
 

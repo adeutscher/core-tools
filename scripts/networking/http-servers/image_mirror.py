@@ -242,6 +242,51 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
 
     server_version = "CoreHttpServer (Image Serving)"
 
+    def do_GET(self):
+        """Code for GET commands.
+        This sends the response code and MIME headers.
+        Return value is either a file object (which has to be copied
+        to the outputfile by the caller unless the command was HEAD,
+        and must be closed by the caller under all circumstances), or
+        None, in which case the caller has nothing further to do.
+        """
+
+        path = getattr(self, common.ATTR_PATH, "/")
+        if path.lower() == "/favicon.ico":
+            return self.send_error(404, "File not found.")
+
+        # Get the full path, getting rid of any symbolic links.
+        # Reminder: translate_path omits the first "word" in the URL, assuming it to be a keyword such as "browse" or view
+        mode, realPath, relativePath = self.translate_path(path)
+
+        if mode == "image":
+            target_path = "%s/%s" % (common.get_target(), relativePath)
+            return self.serve_file(target_path)
+        elif mode == "random":
+            # If nothing is specified, boot them back to root browsing...
+            if 'path' not in self.get:
+                return self.send_redirect("/browse/")
+            return self.handle_random(realPath)
+
+        elif mode == "view":
+            # We are in view mode, now where do we want to view?
+
+            # If nothing is specified, boot them back to root browsing...
+            if 'path' not in self.get:
+                return self.send_redirect("/browse/")
+
+            return self.handle_view(realPath)
+
+        elif mode == "browse" or not relativePath:
+            if os.path.isdir(realPath):
+                if not getattr(self, common.ATTR_PATH, "").endswith("/"):
+                    return self.send_redirect(getattr(self, common.ATTR_PATH, ""))
+                else:
+                    return self.handle_path(relativePath, realPath)
+            else:
+                return self.serve_content("Directory not found: %s" % realPath, code = 404)
+
+
     def get_navigation_javascript(self):
         return """
         <script>
@@ -286,7 +331,7 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         """Helper to produce a directory listing (absent index.html).
         Return value is either a file object, or None (indicating an
         error).  In either case, the headers are sent, making the
-        interface the same as for send_head().
+        interface the same as for do_GET().
         """
         try:
             bc = BrowseController(common.get_target(), relativePath)
@@ -456,50 +501,6 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
     </div>
   </body>
 </html>""" % (title, extra_headers, breadcrumb_content, entry_content)
-
-    def send_head(self):
-        """Common code for GET and HEAD commands.
-        This sends the response code and MIME headers.
-        Return value is either a file object (which has to be copied
-        to the outputfile by the caller unless the command was HEAD,
-        and must be closed by the caller under all circumstances), or
-        None, in which case the caller has nothing further to do.
-        """
-
-        path = getattr(self, common.ATTR_PATH, "/")
-        if path.lower() == "/favicon.ico":
-            return self.send_error(404, "File not found.")
-
-        # Get the full path, getting rid of any symbolic links.
-        # Reminder: translate_path omits the first "word" in the URL, assuming it to be a keyword such as "browse" or view
-        mode, realPath, relativePath = self.translate_path(path)
-
-        if mode == "image":
-            target_path = "%s/%s" % (common.get_target(), relativePath)
-            return self.serve_file(target_path)
-        elif mode == "random":
-            # If nothing is specified, boot them back to root browsing...
-            if 'path' not in self.get:
-                return self.send_redirect("/browse/")
-            return self.handle_random(realPath)
-
-        elif mode == "view":
-            # We are in view mode, now where do we want to view?
-
-            # If nothing is specified, boot them back to root browsing...
-            if 'path' not in self.get:
-                return self.send_redirect("/browse/")
-
-            return self.handle_view(realPath)
-
-        elif mode == "browse" or not relativePath:
-            if os.path.isdir(realPath):
-                if not getattr(self, common.ATTR_PATH, "").endswith("/"):
-                    return self.send_redirect(getattr(self, common.ATTR_PATH, ""))
-                else:
-                    return self.handle_path(relativePath, realPath)
-            else:
-                return self.serve_content("Directory not found: %s" % realPath, code = 404)
 
     def translate_path(self, path):
         """
