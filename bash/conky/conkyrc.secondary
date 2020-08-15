@@ -60,7 +60,7 @@ stippled_borders 0
 # This will make the display 'blip' to an empty or incomplete list less often.
 # Could be solved properly with a more sophisticated task list compiler
 #     that stages things instead of writing them directly to the final tasks.csv
-update_interval 3.14
+update_interval __CONKY_INTERVAL_SECONDARY__
 uppercase no
 short_units yes
 use_spacer none

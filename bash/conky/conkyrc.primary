@@ -56,7 +56,7 @@ own_window_class Conky
 own_window_hints undecorated,below,sticky,skip_taskbar,skip_pager  
 
 stippled_borders 0
-update_interval 1.0
+update_interval __CONKY_INTERVAL__
 uppercase no
 short_units yes
 use_spacer none

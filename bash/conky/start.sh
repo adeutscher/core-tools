@@ -22,9 +22,9 @@ EOF
 
 # Variables for configuration files
 CONKYRC_PRIMARY_TEMPLATE=conkyrc.primary
-CONKYRC_PRIMARY=".$CONKYRC_PRIMARY_TEMPLATE"
+CONKYRC_PRIMARY=".${CONKYRC_PRIMARY_TEMPLATE}"
 CONKYRC_SECONDARY_TEMPLATE=conkyrc.secondary
-CONKYRC_SECONDARY=".$CONKYRC_SECONDARY_TEMPLATE"
+CONKYRC_SECONDARY=".${CONKYRC_SECONDARY_TEMPLATE}"
 
 # Store default values in one place.
 DEFAULT_PADDING_X=10
@@ -92,6 +92,9 @@ do_dynamic_setup(){
     fi
     # Original version-based check.
     #if conky --version | head -n1 | grep -qiP "^Conky 1\.1\d\."; then
+
+    sed -i "s/__CONKY_INTERVAL__/${CONKY_INTERVAL:-2.0}/g" "${CONKYRC_PRIMARY}"
+    (( ${CONKY_ENABLE_TASKS:-0} )) && sed -i "s/__CONKY_INTERVAL_SECONDARY__/${CONKY_INTERVAL_SECONDARY:-3.14}/g" "${CONKYRC_SECONDARY}"
 
     if (( "${CONKY_DISABLE_LUA}" )); then
         disable_lua "${CONKYRC_PRIMARY}"
