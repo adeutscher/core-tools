@@ -10,6 +10,7 @@ KEYBINDS="$(cat << EOF
 /org/mate/marco/global-keybindings/run-command-terminal     <Primary><Alt>t
 /org/mate/settings-daemon/plugins/media-keys/home           <Mod4>e
 /org/mate/pluma/insert-spaces                               true
+/org/gnome/desktop/wm/preferences/mouse-button-modifier
 EOF
 )"
 
@@ -85,7 +86,7 @@ set_env(){
   pid=${1:-$(pgrep -U "$(whoami)" '(gnome|mate)-session' | head -n1)}
 
   # mate-session and gnome-session are reliable processes to search for to get our D-Bus session from.
-  if [ -n "$pid" ]; then
+  if [ -n "$pid" ] && [ -r "$/proc/${pid}/environ" ]; then
     environmentType=$(ps -p $pid -o cmd= | sed 's/-session$//g')
     export $(</proc/$pid/environ tr \\0 \\n | grep -E '^DBUS_SESSION_BUS_ADDRESS=')
   fi
