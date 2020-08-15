@@ -40,18 +40,12 @@ def export_csv(service, docid, filename_template='%(title)s - %(sheet)s.csv'):
             file_path = os.path.join(common.args[TITLE_DIR], common.args[TITLE_PREFIX], file_name)
             common.print_notice("Saving \"%s\" sheet to file: %s" % (common.colour_text(sheet), common.colour_text(file_name, common.COLOUR_GREEN)))
             with open(file_name, 'w') as fd:
-                write_csv(service, fd, rows)
+                write_csv(fd, rows)
     except Exception as e:
         common.print_exception(e)
     return error_count == common.error_count
 
 def main():
-    """Shows basic usage of the Google Calendar API.
-
-    Creates a Google Calendar API service object and outputs a list of
-    upcoming events on the user's calendar.
-    """
-
     common.process()
     service = common.get_service('sheets', 'v4')
 
@@ -78,11 +72,11 @@ def validate_arg_dir(self):
             return "Could not create CSV directory %s: %s" % (common.colour_text(self[TITLE_DIR], common.COLOUR_GREEN), str(e))
 common.args.add_validator(validate_arg_dir)
 
-def write_csv(service, fd, rows, dialect='excel'):
-    csvfile = csv.writer(fd, dialect=dialect)
+def write_csv(fd, rows):
+    csvfile = csv.writer(fd, lineterminator="\n")
     max_columns = max([len(r) for r in rows])
     for r in rows:
-        csvfile.writerow(pad_list(r, max_columns))
+        csvfile.writerow([i.strip() for i in pad_list(r, max_columns)])
 
 DEFAULT_DIR = "."
 TITLE_DIR = "target_dir"
