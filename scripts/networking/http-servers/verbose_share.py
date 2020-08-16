@@ -26,8 +26,9 @@ DEFAULT_TIMESORT = False
 
 TITLE_NO_LINKS = "nolinks"
 TITLE_LOCAL_LINKS = "locallinks"
-TITLE_UPLOAD = 'upload'
 TITLE_MAX_LENGTH = 'max-length'
+TITLE_UPLOAD = 'upload'
+TITLE_UPLOAD_NO_CLOBBER = 'no-clobber'
 
 LABEL_GET_CATEGORY = 'C'
 LABEL_GET_ORDER = 'O'
@@ -46,6 +47,7 @@ LABEL_CATEGORY_TYPE = 'T'
 args.add_opt(common.OPT_TYPE_FLAG, "l", TITLE_LOCAL_LINKS, "Only show local links (symbolic links that point to within the shared directory).")
 args.add_opt(common.OPT_TYPE_FLAG, "n", TITLE_NO_LINKS, "Do not allow symbolic links. Overrides local links.")
 args.add_opt(common.OPT_TYPE_FLAG, 'u', TITLE_UPLOAD, 'Enable uploading of files.')
+args.add_opt(common.OPT_TYPE_LONG_FLAG, TITLE_UPLOAD_NO_CLOBBER, TITLE_UPLOAD_NO_CLOBBER, 'Do not allow uploaded files to overwrite existing files.')
 args.add_opt(common.OPT_TYPE_LONG, TITLE_MAX_LENGTH, TITLE_MAX_LENGTH, "Maximum content length.", converter = int)
 
 args.add_validator(common.validate_common_directory)
@@ -106,9 +108,23 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         if not os.path.isdir(self.file_path):
             return self.send_error(404)
 
-        with open(os.path.join(self.file_path, filename), 'wb') as output_file:
-            # TODO: How to handle a user lying in their Content-Length header?
-            self.copyobj(form['file'].file, output_file, False)
+        path_save = os.path.join(self.file_path, filename)
+
+        if os.path.exists(path_save) and not os.path.isfile(path_save):
+            return self.serve_content('Destination exists as a non-file', code = 406)
+
+        if args[TITLE_UPLOAD_NO_CLOBBER] and os.path.isfile(path_save):
+            return self.serve_content('File already exists.', code = 302)
+
+        try:
+            with open(path_save, 'wb') as output_file:
+                # TODO: How to handle a user lying in their Content-Length header?
+                self.copyobj(form['file'].file, output_file, False)
+        except IOError:
+            if os.path.isfile(path_save):
+                os.remove(path_save)
+            return self.serve_content('Failed to save file.', code = 500)
+
 
         return self.serve_content(self.render_file_table(self.file_path), code = 200)
 
@@ -196,6 +212,9 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
       formdata.append("file", file);
       var ajax = new XMLHttpRequest();
 
+      ajax.size = file.size; // Used by 413 error response
+      ajax.filename = file.name; // Used by 406 error response
+      ajax.percent = 0; // Used by handleProgress
       ajax.upload.addEventListener("progress", handleProgress, false);
       ajax.addEventListener("load", handleComplete, false);
       ajax.addEventListener("error", handleError, false);
@@ -210,7 +229,6 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
       ajax.open("POST", url);
       ajax.send(formdata);
 
-      ajax.percent = 0;
       setProgress();
     }
 
@@ -229,10 +247,19 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         setStatus("Server error");
       } else if(code == 413) {
         setStatus("Content too large: " + event.target.responseText + event.target.size.toString());
+      } else if(code == 406) {
+        var filePath = window.location.pathname;
+        if(!filePath.endsWith("/")) {
+          filePath += "/";
+        }
+
+        setStatus("Path already used by non-file: " + filePath + event.target.filename);
       } else if(code == 404) {
         setStatus("Directory not found: " + window.location.pathname);
       } else if(code == 400) {
         setStatus("BAD REQUEST: " + event.target.responseText);
+      } else if(code == 302) {
+        setStatus("File already exists.")
       } else if(code == 200) {
         setStatus("Upload Complete");
         _("table").innerHTML = event.target.responseText;
@@ -480,6 +507,11 @@ if __name__ == '__main__':
         common.print_warning('Uploading is enabled.')
 
         if args[TITLE_MAX_LENGTH]:
-            common.print_notice('Maximum content length: %s' % common.colour_text('%sB' % args[TITLE_MAX_LENGTH]))
+            print_notice('Maximum content length: %s' % common.colour_text('%sB' % args[TITLE_MAX_LENGTH]))
+
+        if args[TITLE_UPLOAD_NO_CLOBBER]:
+            print_notice('Uploads will %s be able to overwrite each other.' % common.colour_text('NOT'))
+        else:
+            common.print_warning('Uploads will be able to overwrite each other.')
 
     common.serve(SimpleHTTPVerboseReqeustHandler, True)
