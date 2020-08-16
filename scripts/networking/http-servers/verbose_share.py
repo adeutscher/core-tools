@@ -62,6 +62,13 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
             self.do_POST = self.action_POST
 
     def action_POST(self):
+        """
+        Accept an uploaded file.
+
+        This method is not named do_POST because it is only enabled if the upload flag (-u) is used.
+
+        Original source is baot of StackOverflow: https://stackoverflow.com/questions/28217869/python-basehttpserver-file-upload-with-maxfile-size
+        """
 
         # Use the content-length header, though being user-defined input it's not really trustworthy.
         try:
@@ -189,7 +196,6 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
       formdata.append("file", file);
       var ajax = new XMLHttpRequest();
 
-      ajax.size = file.size;
       ajax.upload.addEventListener("progress", handleProgress, false);
       ajax.addEventListener("load", handleComplete, false);
       ajax.addEventListener("error", handleError, false);
@@ -204,55 +210,72 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
       ajax.open("POST", url);
       ajax.send(formdata);
 
-      _("status").innerHTML = "Upload Started";
-      _("progressBar").value = 0;
+      ajax.percent = 0;
+      setProgress();
     }
 
     function handleAbort(event) {
-      _("status").innerHTML = "Upload Aborted";
-      _("progressBar").value = 0;
+      setStatus("Upload Aborted");
+      setPercent();
     }
 
     function handleComplete(event) {
       code = event.target.status;
       var reset = true;
       if(code == 501) {
-        _("status").innerHTML = "Uploading is not enabled.";
+        // For this to happen, the server would need to be restarted with upload mode not enabled.
+        setStatus("Uploading is not enabled.");
       } else if(code == 500) {
-        _("status").innerHTML = "Server error";
+        setStatus("Server error");
       } else if(code == 413) {
-        _("status").innerHTML = "Content too large: " + event.target.responseText + event.target.size.toString();
+        setStatus("Content too large: " + event.target.responseText + event.target.size.toString());
       } else if(code == 404) {
-        _("status").innerHTML = "Directory not found: " + window.location.pathname;
+        setStatus("Directory not found: " + window.location.pathname);
       } else if(code == 400) {
-        _("status").innerHTML = "BAD REQUEST: " + event.target.responseText;
+        setStatus("BAD REQUEST: " + event.target.responseText);
       } else if(code == 200) {
-        _("status").innerHTML = "Upload Complete";
+        setStatus("Upload Complete");
         _("table").innerHTML = event.target.responseText;
-        _("progressBar").value = 100;
+        setPercent(100);
         reset = false;
       } else {
-        _("status").innerHTML = "Unexpected Response Code: " + code.toString();
+        setStatus("Unexpected Response Code: " + code.toString());
       }
 
       if(reset) {
-        _("progressBar").value = 0;
+        setPercent();
       }
 
     }
 
     function handleError(event) {
       _("status").innerHTML = "Upload Failed";
-      _("progressBar").value = 0;
+      setPercent();
     }
 
     function handleProgress(event) {
-      _("loaded_n_total").innerHTML = "Uploaded " + event.loaded + " bytes of " + event.total;
-      var percent = (event.loaded / event.total) * 100;
-      _("progressBar").value = Math.round(percent);
-      _("status").innerHTML = Math.round(percent) + "% Uploaded...";
+      var p = Math.round((event.loaded / event.total) * 100);
+      if(p == event.target.percent) {
+        return; // No new information, don't bother updating
+      }
+      event.target.percent = p;
+
+      setProgress(p);
     }
 
+    function setPercent(percent = 0) {
+      _("progressBar").value = percent;
+    }
+
+    function setProgress(percent = 0) {
+      var p = Math.round(percent);
+      setPercent(p);
+      setStatus(p + "% Uploaded...");
+    }
+
+    function setStatus(str) {
+      _("status").innerHTML = str;
+    }
     </script>
       <form id="upload_form" enctype="multipart/form-data" method="post">
       <input type="file" name="file" id="file" onchange="uploadFile()"><br>
