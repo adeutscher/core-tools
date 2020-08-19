@@ -8,7 +8,6 @@ set_colours(){
   GREEN='\033[1;32m'
   RED='\033[1;31m'
   YELLOW='\033[1;93m'
-  PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
   grep -Pq c <<< "${label_switches}" || label_switches="${label_switches}c"
@@ -39,13 +38,15 @@ warning(){
 ########################
 
 ip2dec(){
-  local a b c d ip="${@}"
+  local a b c d ip
+  ip="${1}"
   IFS=. read -r a b c d <<< "${ip}"
   printf '%d\n' "$((a * 256 ** 3 + b * 256 ** 2 + c * 256 + d))"
 }
 
 dec2ip(){
-  local ip dec="${@}"
+  local ip dec
+  dec="${1}"
   for e in {3..0}
   do
     ((octet = dec / (256 ** e) ))
@@ -58,7 +59,8 @@ dec2ip(){
 }
 
 cidr_low(){
-  printf $(dec2ip $(cidr_low_dec "$1"))
+  # shellcheck disable=SC2059
+  printf "$(dec2ip "$(cidr_low_dec "$1")")"
 }
 
 cidr_low_dec(){
@@ -69,8 +71,10 @@ cidr_low_dec(){
   # Calculating netmask manually because ipcalc does not support
   #   calculating the minimum/maximum addresses in all distributions.
 
-  local network=$(cut -d'/' -f1 <<< "$1")
-  local netmask=$(cut -d'/' -f2 <<< "$1")
+  local network
+  network=$(cut -d'/' -f1 <<< "$1")
+  local netmask
+  netmask=$(cut -d'/' -f2 <<< "$1")
 
   local plus=1
   if grep -qP "255.255.255.255|32" <<< "$netmask"; then
@@ -79,11 +83,13 @@ cidr_low_dec(){
     local plus=0
   fi
 
-  printf $(($(ip2dec "${network}")+${plus}))
+  # shellcheck disable=SC2059
+  printf "$(($(ip2dec "${network}")+plus))"
 }
 
 cidr_high(){
-  printf $(dec2ip $(cidr_high_dec "$1"))
+  # shellcheck disable=SC2059
+  printf "$(dec2ip "$(cidr_high_dec "$1")")"
 }
 
 cidr_high_dec(){
@@ -94,24 +100,28 @@ cidr_high_dec(){
   # Calculating netmask manually because ipcalc does not support
   #   calculating the minimum/maximum addresses in all distributions.
 
-  local network="$(cut -d'/' -f1 <<< "$1")"
-  local netmask="$(cut -d'/' -f2 <<< "$1")"
+  local network
+  network="$(cut -d'/' -f1 <<< "$1")"
+  local netmask
+  netmask="$(cut -d'/' -f2 <<< "$1")"
 
   if ! grep -qP "^\d{1,}$" <<< "${netmask}"; then
     # Netmask was not in CIDR format.
-    local netmask=$(printf %.$2f $(awk '{ print 32-log(4294967295-'"$(ip2dec "${netmask}")"')/log(2)}' <<< ""))
+    netmask=$(printf "%.$2f" "$(awk '{ print 32-log(4294967295-'"$(ip2dec "${netmask}")"')/log(2)}' <<< "")")
   fi
 
   # Subtract 2 for network id and broadcast addresss
   #   (unless we have a /32 address)
-  local subtract=2
+  local subtract
+  subtract=2
   if [ "${netmask}" -eq "32" ]; then
     # /32 networks are single-host networks,
     #   wherein the network ID is the only usable address.
-    local subtract=0
+    subtract=0
   fi
 
-  printf $(($(ip2dec "${network}")+(2 ** (32-netmask))-${subtract}))
+  # shellcheck disable=2059
+  printf $(($(ip2dec "${network}")+(2 ** (32-netmask))-subtract))
 }
 
 # Script Functions
@@ -209,12 +219,14 @@ get_interface_info(){
   # Get networks for interfaces
   local interface="${1}"
   local index="${2}"
+  local networks
   if (( "${INTERFACE_RANGES:-0}" )); then
-    local networks="$(route -n | grep -P "^\d" | awk '{if($2=="0.0.0.0"){print $1"/"$3" "$8}}' | grep -w "${interface}" | cut -d' ' -f1 | sort | uniq | sed '/^169\.254/d')"
+    networks="$(route -n | grep -P "^\d" | awk '{if($2=="0.0.0.0"){print $1"/"$3" "$8}}' | grep -w "${interface}" | cut -d' ' -f1 | sort | uniq | sed '/^169\.254/d')"
   else
-    local networks="$(ip a s "${interface}" | grep -Pwo "inet [^\/]+" | cut -d' ' -f2 | tr '\n' ' ' | sed -e 's/ $//')"
+    networks="$(ip a s "${interface}" | grep -Pwo "inet [^\/]+" | cut -d' ' -f2 | tr '\n' ' ' | sed -e 's/ $//')"
   fi
-  local network_count=$(wc -w <<< "$networks")
+  local network_count
+  network_count="$(wc -w <<< "$networks")"
 
   if [ "$network_count" -gt 0 ]; then
     for network in $networks; do
@@ -328,7 +340,7 @@ print_line(){
     printf "%s,%s,%s,%d,%d\n" "${from}" "${to}" "${proto}" "${to_p}" "${count:-1}"
   elif (( "${SUMMARIZE:-0}" )); then
     message="$(printf "${GREEN}%s${NC} -> ${GREEN}%s${NC} (%s/%d" "${from}" "${to}" "${proto}" "${to_p}")"
-    [ ${count:-0} -gt 1 ] && message="${message}, ${count} connections"
+    [ "${count:-0}" -gt 1 ] && message="${message}, ${count} connections"
     message="${message})"
     notice "${message}"
   else
@@ -337,7 +349,8 @@ print_line(){
   fi
 
   if (( "${1:-0}" )) && (( "${VERBOSE:-0}" )); then
-    getlabel -${label_switches}l "${last_from}"
+    # shellcheck disable=SC2154
+    getlabel "-${label_switches}l" "${last_from}"
   fi
 
 }
@@ -360,7 +373,7 @@ INCOMING=1
 STDIN=0
 
 while [ -n "${1}" ]; do
-  while getopts ":acCDhlLmoPqrRsSv" OPT $@; do
+  while getopts ":acCDhlLmoPqrRsSv" OPT "$@"; do
     case "${OPT}" in
       a)
         SHOW_ALL=1
@@ -465,7 +478,7 @@ else
     # Conntrack checking
     type conntrack 2> /dev/null >&2 || error "$(printf "${BLUE}%s${NC} command is not installed (${BOLD}%s${NC} package)." "conntrack" "conntrack-tools")"
 
-    (( ${EUID} )) && error "$(printf "Must be ${RED}%s${NC} to track connections via ${BLUE}%s${NC}." "root" "conntrack")"
+    (( EUID )) && error "$(printf "Must be ${RED}%s${NC} to track connections via ${BLUE}%s${NC}." "root" "conntrack")"
 
   else
     # Netstat checking
@@ -501,7 +514,7 @@ if (( "${MONITOR:-0}" )); then
   fi
 
   HEADER="$(printf "%s connections via ${BLUE}%s${NC} %s the following sources:" "${DIRECTION_WORDING_A}" "${METHOD}" "${DIRECTION_WORDING_B}")"
-  (( "${ITEM_COUNT}" )) || HEADER="$(sed 's/the following/all/' <<< "${HEADER}")"
+  (( "${ITEM_COUNT}" )) || HEADER="${HEADER//the following/all}"
 
   if (( "${ITEM_COUNT}" )); then
     i=0;
@@ -534,7 +547,7 @@ while (( 1 )); do
   get_data
 
   if [ -n "${CONNECTIONS}" ]; then
-    while read connection; do
+    while read -r connection; do
       [ -n "${connection}" ] || continue
 
       # Connection lines generated by get_data are of a standard format.
@@ -615,7 +628,7 @@ while (( 1 )); do
         for subject in ${subjects}; do
           item=0
           while [ "${item}" -lt "${ITEM_COUNT}" ]; do
-            item="$((${item}+1))"
+            item=$((item+1))
             if (( "${IS_ADDRESS[${item}]}" )); then
               # Filter option is an IPv4 address.
               [[ "${ITEMS[${item}]}" == "${subject}" ]] && display=1
@@ -652,7 +665,7 @@ while (( 1 )); do
       # In verbose mode, track remaining unlabeled destinations to see if they can be labeled.
       for dst in ${destinations}; do
         if [ -n "${dst}" ] && needs_label "${dst}"; then
-          LABEL_CONTENT="$(getlabel -${label_switches}l "${dst}")"
+          LABEL_CONTENT="$(getlabel "-${label_switches}l" "${dst}")"
           if [ -n "${LABEL_CONTENT}" ]; then
             trailers="${trailers} ${dst}"
             TRAILER_CONTENT="$(printf "%s\n%s" "${TRAILER_CONTENT}" "${LABEL_CONTENT}")"
@@ -679,7 +692,7 @@ while (( 1 )); do
   (( "${MONITOR:-0}" )) && clear
 
   # Print content, skipping empty lines (assumed to be headerspace in one-off listing).
-  printf "${CONTENT}" | sed '/^$/d'
+  sed '/^$/d' <<< "${CONTENT}"
 
   if (( "${MONITOR:-0}" )); then
     sleep 1
