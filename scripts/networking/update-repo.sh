@@ -14,28 +14,28 @@ if [ -t 1 ]; then
 fi
 
 error(){
-  printf "${RED}"'Error'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename ${0})" "${@}"
+  printf "${RED}"'Error'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
   __error_count=$((${__error_count:-0}+1))
 }
 
 notice(){
-  printf "${BLUE}"'Notice'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename ${0})" "${@}"
+  printf "${BLUE}"'Notice'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
 }
 
 success(){
-  printf "${GREEN}"'Success'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename ${0})" "${@}"
+  printf "${GREEN}"'Success'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
   __success_count=$((${__success_count:-0}+1))
 }
 
 warning(){
-  printf "${YELLOW}"'Warning'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename ${0})" "${@}"
+  printf "${YELLOW}"'Warning'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
   __warning_count=$((${__warning_count:-0}+1))
 }
 
 # Script Functions
 ####################
 
-_command_timeout="$(which timeout)"
+_command_timeout="$(command -v "timeout")"
 
 __is_git_repo(){
   # Default, assume not a directory
@@ -58,7 +58,7 @@ function __is_svn_repo(){
   if ! qtype svn; then
     [ -n "${2}" ] && error "$(printf "${BLUE}%s${NC} is not installed." "svn")"
     return 1
-  elif [ ! -n "${1}" ] || [ ! -d "${1}/.svn" ] || ! svn info "${1}" 2> /dev/null >&2; then
+  elif [ -z "${1}" ] || [ ! -d "${1}/.svn" ] || ! svn info "${1}" 2> /dev/null >&2; then
     [ -n "${2}" ] && error "$(printf "${GREEN}%s${NC} does not appear to be a readable SVN checkout!" "${1}")"
     return 1
   fi
@@ -78,7 +78,7 @@ qtype(){
    # The help text on the type command's 'silent' switch has some wording that throws me for a loop, so making this instead.
    # Super-lazy.
    if [ -n "${1}" ]; then
-       type ${@} 2> /dev/null >&2
+       type "${1}" 2> /dev/null >&2
        return ${?}
    fi
    return 1
@@ -86,9 +86,13 @@ qtype(){
 
 function update-git-repo(){
 
-  local repoDir="$(readlink -f "${1}")"
-  local label="${2}"
-  local repoDirDisplay="$(sed "s|^${HOME}|~|" <<< "${repoDir}")"
+  local repoDir
+  repoDir="$(readlink -f "${1}")"
+  local label
+  label="${2}"
+  local repoDirDisplay
+  # shellcheck disable=SC2001
+  repoDirDisplay="$(sed "s|^${HOME}|~|" <<< "${repoDir}")"
 
   cd "${repoDir}" || exit 1
 
@@ -118,11 +122,12 @@ function update-git-repo(){
     return 4
   fi
 
-  local __num=1
-
-  local remote="$(git branch -vv | grep -m1 "^*" | cut -d '[' -f2 | cut -d'/' -f1)"
-  local repoUrl="$(git remote -v | grep -w "^${remote}" | grep -m1 "(fetch)$" | awk -F' ' '{ print $2}')"
-  local branch="$(git branch | grep -m1 "^*" | cut -d' ' -f2)"
+  local remote
+  remote="$(git branch -vv | grep -m1 "^\*" | cut -d '[' -f2 | cut -d'/' -f1)"
+  local repoUrl
+  repoUrl="$(git remote -v | grep -w "^${remote}" | grep -m1 "(fetch)$" | awk -F' ' '{ print $2}')"
+  local branch
+  branch="$(git branch | grep -m1 "^\*" | cut -d' ' -f2)"
 
   if [ -z "${remote}" ] || [ -z "${repoUrl}" ]; then
     error "$(printf "Was unable to determine upstream information: ${GREEN}%s${NC}" "${repoDirDisplay}")"
@@ -130,7 +135,9 @@ function update-git-repo(){
   fi
 
   # Trimming a little bit of the file URI (for local checkouts) to save a character or two.
-  local repoUrlDisplay="$(sed "s|^file://||" <<< "${repoUrl}")"
+  local repoUrlDisplay
+  # shellcheck disable=SC2001
+  repoUrlDisplay="$(sed "s|^file://||" <<< "${repoUrl}")"
 
   # Print our updating notice.
   if [ -n "${label}" ]; then
@@ -145,28 +152,33 @@ function update-git-repo(){
 
   # Get our test domain name to try and resolve it.
   # If the domain name can be resolved, then it is assumed to be reachable.
+  local repoDomain
   if grep -qP "^(https?|git)://" <<< "${repoUrl}"; then
     # HTTP Clone
-    local repoDomain=$(cut -d'/' -f 3 <<< "${repoUrl}" | sed 's/^[^@]*@//')
+    repoDomain=$(cut -d'/' -f 3 <<< "${repoUrl}" | sed 's/^[^@]*@//')
   else
     # SSH Clone
-    local repoDomain=$(cut -d':' -f 1 <<< "${repoUrl}" | cut -d'@' -f2)
+    repoDomain=$(cut -d':' -f 1 <<< "${repoUrl}" | cut -d'@' -f2)
 
     # In case checkout was done using an alias, look within SSH config file.
     # Warning: Would not play nicely with the literal word hostname as anything other than a config directive.
     if [ -r "${HOME}/.ssh/config" ]; then
-      local startPoint="$(grep -nwm1 "${repoDomain}" "${HOME}/.ssh/config" | grep -iw Host | cut -d':' -f1)"
+      local startPoint
+      startPoint="$(grep -nwm1 "${repoDomain}" "${HOME}/.ssh/config" | grep -iw Host | cut -d':' -f1)"
       if [ -n "${startPoint}" ]; then
         # Hostname was found in config
-        local endInterval="$(tail -n +$((${startPoint}+1)) "${HOME}/.ssh/config" | grep -winm1 Host | cut -d':' -f1)"
+        local endInterval
+        endInterval="$(tail -n +$((startPoint+1)) "${HOME}/.ssh/config" | grep -winm1 Host | cut -d':' -f1)"
+        local endPoint
         if [ -z "${endInterval}" ]; then
           # No end, set end to file line count.
-          local endPoint="$(wc -l < "${HOME}/.ssh/config")"
+          endPoint="$(wc -l < "${HOME}/.ssh/config")"
         else
           # Found next host entry, only search for 'hostname' directive in these bounds.
-          local endPoint="$((startPoint + ${endInterval} - 1))"
+          endPoint="$((startPoint + endInterval - 1))"
         fi
-        local aliasHost="$(sed -n "${startPoint},${endPoint}p" "${HOME}/.ssh/config" | grep -iwP "hostname\s+[^\s]+" | tail -n1 | awk '{print $2}')"
+        local aliasHost
+        aliasHost="$(sed -n "${startPoint},${endPoint}p" "${HOME}/.ssh/config" | grep -iwP "hostname\s+[^\s]+" | tail -n1 | awk '{print $2}')"
         if [ -n "${aliasHost}" ]; then
           if [[ "${aliasHost}" != "${repoDomain}" ]]; then
             # There's an actual difference between the detected alias and the hostname that we already have.
@@ -198,9 +210,10 @@ function update-git-repo(){
       error "$(printf "Unable to ping repo server at ${GREEN}%s${NC}." "${repoDomain}")"
       return 7
     fi
-    success "$(printf "Pinged repo server at ${GREEN}${repoDomain}${NC}" "${repoDomain}")"
+    success "$(printf "Pinged repo server at ${GREEN}%s${NC}" "${repoDomain}")"
   elif grep -w "$(sed 's/\./\\./g' <<< "${repoDomain}")" < /etc/hosts | sed -r 's/^\s+//g' | grep -qPm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})"; then
-    local repoIp="$(grep -w "$(sed 's/\./\\./g' <<< "${repoDomain}")" < /etc/hosts | sed -r 's/^\s+//g' | grep -Pm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})" | awk '{print $1}')"
+    # shellcheck disable=SC2001
+    repoIp="$(grep -w "$(sed 's/\./\\./g' <<< "${repoDomain}")" < /etc/hosts | sed -r 's/^\s+//g' | grep -Pm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})" | awk '{print $1}')"
     notice "$(printf "${GREEN}%s${NC} (${GREEN}%s${NC}) found in ${GREEN}%s${NC}" "${repoDomain}" "${repoIp}" "/etc/hosts")"
 
     if ! ping -c 1 -w0.75 "${repoIp}" 2> /dev/null >&2; then
@@ -209,7 +222,7 @@ function update-git-repo(){
     fi
     success "$(printf "Pinged repo server at ${GREEN}%s${NC} (${GREEN}%s${NC})" "${repoDomain}" "${repoIp}")"
   elif ! qtype host; then
-    warning "$(printf "The ${BLUE}host${NC} command was not detected on this machine.")"
+    warning "$(printf "The ${BLUE}%s${NC} command was not detected on this machine." "host")"
     warning "Continuing, but unable to verify that we can resolve the domain name for the upstream git repository."
   else
     # Host command is present
@@ -229,8 +242,10 @@ function update-git-repo(){
   fi # end else block executed after doing "pre-flight" checks for reaching the repository server.
 
   # Track old and new revisions (at least on our current branch).
-  local oldCommit="$(git branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
-  local oldCommitCount="$(git log | grep "^commit" | wc -l)"
+  local oldCommit
+  oldCommit="$(git branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+  local oldCommitCount
+  oldCommitCount="$(git log | grep -c "^commit")"
 
   if git --version | grep -q "git version 1\."; then
     # Need to add another switch for older git versions
@@ -240,12 +255,14 @@ function update-git-repo(){
   # Update directory.
   unset cbranch
   [ "$(git --version | grep -Pom1  "\d" | head -n1)" -ge 2 ] && cbranch="${branch}"
-  if git pull ${oldGitSwitch} ${remote} ${cbranch}; then
-    local newCommit="$(git branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
-    local newCommitCount="$(git log | grep "^commit" | wc -l)"
+  if git pull ${oldGitSwitch} "${remote}" "${cbranch}"; then
+    local newCommit
+    newCommit="$(git branch -v | sed -e '/^[^*]/d' | cut -d' ' -f3)"
+    local newCommitCount
+    newCommitCount="$(git log | grep -c "^commit")"
 
     if [[ "${oldCommit}" != "${newCommit}" ]]; then
-      success "$(printf "Repository updated (${BOLD}%s${NC} to ${BOLD}%s${NC}). New commits: ${BOLD}%d${NC}" "${oldCommit}" "${newCommit}" "$((${newCommitCount} - ${oldCommitCount}))")"
+      success "$(printf "Repository updated (${BOLD}%s${NC} to ${BOLD}%s${NC}). New commits: ${BOLD}%d${NC}" "${oldCommit}" "${newCommit}" "$((newCommitCount - oldCommitCount))")"
     else
       success "$(printf "Branch \"${BOLD}%s${NC}\" already up to date (or checked out to a specific revision). Revision: ${BOLD}%s${NC}." "${branch}" "${oldCommit}")"
     fi
@@ -273,9 +290,13 @@ function update-repo(){
 
 function update-svn-repo(){
 
-  local repoDir="${1}"
-  local label="${2}"
-  local repoDirDisplay="$(sed "s|^${HOME}|~|" <<< "${repoDir}")"
+  local repoDir
+  repoDir="${1}"
+  local label
+  label="${2}"
+  local repoDirDisplay
+  # shellcheck disable=SC2001
+  repoDirDisplay="$(sed "s|^${HOME}|~|" <<< "${repoDir}")"
 
   # Double-Check to see if SVN is even installed.
   # MobaXterm has an alias for saying that SVN is not found which throws off qtype,
@@ -311,7 +332,8 @@ function update-svn-repo(){
     return 4
   fi
 
-  local repoUrl="$(svn info "${repoDir}" | grep "^URL" | cut -d' ' -f 2-)"
+  local repoUrl
+  repoUrl="$(svn info "${repoDir}" | grep "^URL" | cut -d' ' -f 2-)"
   if [ -z "${repoUrl}" ]; then
     error "$(printf "Was unable to determine repository URL: ${GREEN}%s${NC}" "${repoDirDisplay}")"
     # If we can't tell the repository URL with `svn info`, then the svn command won't be able to tell either.
@@ -319,7 +341,9 @@ function update-svn-repo(){
   fi
 
   # Trimming a little bit of the file URI (for local checkouts) to save a character or two.
-  local repoUrlDisplay="$(sed "s|^file://||" <<< "${repoUrl}")"
+  local repoUrlDisplay
+  # shellcheck disable=2001
+  repoUrlDisplay="$(sed "s|^file://||" <<< "${repoUrl}")"
 
   # Print our updating notice.
   if [ -n "${label}" ]; then
@@ -339,6 +363,7 @@ function update-svn-repo(){
       fi
     else
       # Directory does not exist.
+      # shellcheck disable=SC2001
       error "$(printf "Repository cannot be found at ${GREEN}%d${NC}..." "$(sed "s|file://||" <<< "${repoUrl}")")"
       return 8
     fi
@@ -347,7 +372,8 @@ function update-svn-repo(){
 
     # Get our test domain name to try and resolve it.
     # If the domain name can be resolved, then it is assumed to be reachable.
-    local repoDomain=$(cut -d'/' -f 3 <<< "${repoUrl}")
+    local repoDomain
+    repoDomain=$(cut -d'/' -f 3 <<< "${repoUrl}")
     if [ -z "${repoDomain}" ]; then
       # If we can't tell the repository domain with `svn info`, then the svn command won't be able to tell either.
       error "$(printf "Was unable to determine our repository domain from our workspace: ${GREEN}%s${NC}" "${repoDirDisplay}")"
@@ -362,9 +388,12 @@ function update-svn-repo(){
         error "$(printf "Unable to ping repo server at ${GREEN}%s${NC}" "${repoDomain}")"
         return 7
       fi
-      success "$(printf "Pinged repo server at ${GREEN}${repoDomain$}{NC}" "${repoDomain}")"
+      # shellcheck disable=SC2001
+      success "$(printf "Pinged repo server at ${GREEN}%s${NC}" "${repoDomain}")"
     elif grep -w "$(sed 's/\./\\./g' <<< "${repoDomain}")" < /etc/hosts | sed -r 's/^\s+//g' | grep -qPm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})"; then
-      local repoIp="$(grep -w "$(sed 's/\./\\./g' <<< "${repoDomain}")" < /etc/hosts | sed -r 's/^\s+//g' | grep -Pm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})" | awk '{print $1}')"
+      local repoIp
+      # shellcheck disable=SC2001
+      repoIp="$(grep -w "$(sed 's/\./\\./g' <<< "${repoDomain}")" < /etc/hosts | sed -r 's/^\s+//g' | grep -Pm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})" | awk '{print $1}')"
       notice "$(printf "${GREEN}%s${NC} (${GREEN}%s${NC}) found in ${GREEN}%s${NC}" "${repoDomain}" "${repoIp}" "/etc/hosts")"
 
       if ! ping -c 1 -w0.75 "${repoIp}" 2> /dev/null >&2; then
@@ -373,9 +402,9 @@ function update-svn-repo(){
       fi
       success "$(printf "Pinged repo server at ${GREEN}%s${NC} (${GREEN}%s${NC})" "${repoDomain}" "${repoIp}")"
     elif ! qtype host; then
-      warning "$(printf "The ${BLUE}host${NC} command was not detected on this machine.")"
+      warning "$(printf "The ${BLUE}%s${NC} command was not detected on this machine." "host")"
       warning "Continuing, but unable to verify that we can resolve the domain name for our SVN repository."
-    elif ! timeout 1 host ${repoDomain} 2> /dev/null >&2; then
+    elif ! timeout 1 host "${repoDomain}" 2> /dev/null >&2; then
       # Note: This check will not account for cached entries in the local BIND server (if applicable)
       # Note: Avoiding "for" phrasing in non-comments to appease pluma colouring.
       error "$(printf "${BLUE}%s${NC} was unable to resolve the address of ${GREEN}%s${NC}. Quitting...\n" "host" "${repoDomain}")"
@@ -385,10 +414,12 @@ function update-svn-repo(){
 
   # Track old and new revisions.
 
-  local oldRev="$(svn info "${repoDir}" 2> /dev/null | grep '^Revision' | cut -d' ' -f2)"
+  local oldRev
+  oldRev="$(svn info "${repoDir}" 2> /dev/null | grep '^Revision' | cut -d' ' -f2)"
   # Update directory.
   if svn up "${repoDir}"; then
-    local newRev="$(svn info "${repoDir}" 2> /dev/null | grep '^Revision' | cut -d' ' -f2)"
+    local newRev
+    newRev="$(svn info "${repoDir}" 2> /dev/null | grep '^Revision' | cut -d' ' -f2)"
     if [ "${oldRev}" -lt "${newRev}" ]; then
       success "$(printf "SVN repository updated (${BOLD}r%d${NC} to ${BOLD}r%d${NC})." "${oldRev}" "${newRev}")"
     else
@@ -401,4 +432,4 @@ function update-svn-repo(){
   fi
 }
 
-update-repo ${@}
+update-repo "$@"
