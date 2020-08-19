@@ -1,3 +1,4 @@
+#!/bin/bash
 
 ##
 ## Reboot to Windows ##
@@ -33,21 +34,21 @@ if [ -t 1 ]; then
 fi
 
 error(){
-  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __error_count=$((${__error_count:-0}+1))
 }
 
 notice(){
-  printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
 }
 
 success(){
-  printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __success_count=$((${__success_count:-0}+1))
 }
 
 warning(){
-  printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __warning_count=$((${__warning_count:-0}+1))
 }
 
@@ -73,7 +74,8 @@ reboot_windows_prep(){
     fi
 
     # Assume that a distro will only have one grubenv until proven otherwise.
-    local grubenv=$(find /boot -type f -name grubenv 2> /dev/null | head -n1)
+    local grubenv
+    grubenv=$(find /boot -type f -name grubenv 2> /dev/null | head -n1)
 
     # Only call sudo if we cannot already write to the file.
     if [ -z "$grubenv" ]; then
@@ -89,7 +91,7 @@ reboot_windows_prep(){
     #   give a non-zero exit code (with an unedited grub2-reboot script)...
 
     # Decrease by one to fix the variable to zero indexing.
-    $sudo $command $(($WINDOWS_BOOT_INDEX-1)) && warning "On this computer's next boot only, Windows will be the default."
+    $sudo $command $((WINDOWS_BOOT_INDEX-1)) && warning "On this computer's next boot only, Windows will be the default."
 }
 
 check_env
