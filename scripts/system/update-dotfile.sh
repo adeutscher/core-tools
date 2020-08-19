@@ -1,3 +1,4 @@
+#!/bin/bash
 
 # Update a segment in file.
 
@@ -24,7 +25,6 @@ if [ -t 1 ]; then
   GREEN='\033[1;32m'
   RED='\033[1;31m'
   YELLOW='\033[1;93m'
-  PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
 fi
@@ -51,6 +51,7 @@ warning(){
 # Script variables
 
 TARGET_FILE="${1}"
+# shellcheck disable=SC2001
 TARGET_FILE_DISPLAY="$(sed "s|^${HOME}|~|" <<< "${TARGET_FILE}")"
 CONTENT_MARKER="${2}" # e.g. core-tools-marker
 CONTENT_TARGET="${3}"
@@ -75,8 +76,7 @@ if [ -n "${SECTION_START}" ] && [ -n "${SECTION_END}" ] && [ "${SECTION_START}" 
   exit 1
 fi
 
-# Double-check that we can write to the file and parent directory.
-if ( [ -f "${TARGET_FILE}" ] && [ ! -w "${TARGET_FILE}" ] ) || [ ! -w "$(dirname "${TARGET_FILE}")" ]; then
+if [ -f "${TARGET_FILE}" ] && [ ! -w "${TARGET_FILE}" ] || [ ! -w "$(dirname "${TARGET_FILE}")" ]; then
   error "$(printf "Content for ${BOLD}%s${NC} cannot be written to ${GREEN}%s${NC}." "${CONTENT_MARKER}" "${TARGET_FILE_DISPLAY}")"
   notice "We will still check for potential updates, though..."
   NO_WRITE=1
@@ -101,7 +101,8 @@ if [ -z "$SECTION_END" ]; then
   fi
 
   # Append header, content.
-  (printf "${COMMENT_CHARACTER} marker:${CONTENT_MARKER} checksum:${CONTENT_CHECKSUM}\n\n${CONTENT}\n\n${COMMENT_CHARACTER} end:${CONTENT_MARKER}\n" 2> /dev/null) >> "${TARGET_FILE}";
+  # shellcheck disable=SC2188
+  (printf "%s marker:%s checksum:%s\n\n%s\n\n%s end:%s\n" "${COMMENT_CHARACTER}" "${CONTENT_MARKER}" "${CONTENT_CHECKSUM}" "${CONTENT}" "${COMMENT_CHARACTER}" "${CONTENT_MARKER}" 2> /dev/null) >> "${TARGET_FILE}";
 
   if [ -z "${SECTION_START}" ]; then
     success "$(printf "${GREEN}Inserted${NC} content for ${BOLD}%s${NC} to ${GREEN}%s${NC}" "${CONTENT_MARKER}" "${TARGET_FILE_DISPLAY}")"
@@ -120,10 +121,11 @@ elif [[ "${CONTENT_CHECKSUM}" != "${SECTION_CHECKSUM}" ]]; then
   CONFIG_LINES=$(wc -l < "${TARGET_FILE}" 2> /dev/null)
 
   # Write previous content, header
-  (head -n "$((${SECTION_START}-1))" "${TARGET_FILE}"; printf "${COMMENT_CHARACTER} marker:${CONTENT_MARKER} checksum:${CONTENT_CHECKSUM}\n\n${CONTENT}\n\n${COMMENT_CHARACTER} end:${CONTENT_MARKER} \n"; 2> /dev/null) > "${TARGET_FILE}.new"
+  # shellcheck disable=SC2188
+  (head -n "$((SECTION_START-1))" "${TARGET_FILE}"; printf "%s marker:%s checksum:%s\n\n%s\n\n%s end:%s \n" "${COMMENT_CHARACTER}" "${CONTENT_MARKER}" "${CONTENT_CHECKSUM}" "${CONTENT}" "${COMMENT_CHARACTER}" "${CONTENT_MARKER}"; 2> /dev/null) > "${TARGET_FILE}.new"
 
   # If trailing content exists, append it to new file.
-  TAIL_TARGET="$(($CONFIG_LINES-$SECTION_END))"
+  TAIL_TARGET="$((CONFIG_LINES-SECTION_END))"
   [ "${TAIL_TARGET}" -gt 0 ] && tail -n "${TAIL_TARGET}" "${TARGET_FILE}" >> "${TARGET_FILE}.new"
 
   # Overwrite old version.
