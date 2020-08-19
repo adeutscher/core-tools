@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Common message functions.
 
 set_colours(){
@@ -5,7 +7,6 @@ set_colours(){
   BLUE='\033[1;34m'
   GREEN='\033[1;32m'
   RED='\033[1;31m'
-  YELLOW='\033[1;93m'
   PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
@@ -30,10 +31,11 @@ session(){
 
 do_mux(){
   if [ -z "$1" ]; then
-    local sessions="$(tmux list-sessions 2> /dev/null)"
-    if [ "$(expr length "$sessions")" -gt 1 ]; then
+    local sessions
+    sessions="$(tmux list-sessions 2> /dev/null)"
+    if [ -n "${sessions}" ]; then
       error "$(printf "No session name provided. Session(s) available: ${BOLD}%d${NC}" "$(wc -l <<< "${sessions}")")"
-      while read s; do
+      while read -r s; do
         s_name="$(cut -d':' -f1 <<< "${s}")"
         s_other="$(cut -d':' -f2- <<< "${s}")"
         session "$(printf "${BOLD}%s${NC}:%s" "${s_name}" "${s_other}")"
@@ -45,6 +47,7 @@ do_mux(){
   fi
 
   if [ -n "${TMUX}" ]; then
+    # shellcheck disable=SC2059
     error "$(printf "sessions should be nested with care, unset ${PURPLE}\$TMUX${NC} to force" )"
     return 2
   fi
@@ -72,7 +75,7 @@ do_mux(){
   # Check if the session already exists.
   if tmux list-sessions 2> /dev/null | grep -qP "^${1}:"; then
       # Session exists, attach.
-      tmux attach -${__etas}t "$1"
+      tmux attach "-${__etas}t" "$1"
   else
       # Session does not exist.
 
