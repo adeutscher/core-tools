@@ -19,27 +19,27 @@ if [ -t 1 ]; then
 fi
 
 error(){
-  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __error_count=$((${__error_count:-0}+1))
 }
 
 notice(){
-  printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
 }
 
 success(){
-  printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __success_count=$((${__success_count:-0}+1))
 }
 
 warning(){
-  printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __warning_count=$((${__warning_count:-0}+1))
 }
 
 # Script content
 
-if [ -z "$@" ]; then
+if [ -z "${1}" ]; then
   error "No PIDs specified in arguments."
   exit 1
 elif ! type gdb 2> /dev/null >&2; then
@@ -47,7 +47,7 @@ elif ! type gdb 2> /dev/null >&2; then
   exit 1
 fi
 
-for pid in $@; do
+for pid in "$@"; do
 
   map="/proc/${pid}/maps"
 
@@ -68,7 +68,7 @@ for pid in $@; do
 
   notice "$(printf "Dumping contents of process ${BOLD}%d${NC} to ${GREEN}%s${NC}." "${pid}" "${dir}")"
 
-  while read start stop; do
+  while read -r start stop; do
     [ -z "$start" ] && continue
     gdb --batch --pid "${pid}" -ex "dump memory ${dir}/process-${pid}-$start-$stop-memory.dump 0x$start 0x$stop";
   done <<< "$(grep rw-p "${map}" | sed -n 's/^\([0-9a-f]*\)-\([0-9a-f]*\) .*$/\1 \2/p')"
