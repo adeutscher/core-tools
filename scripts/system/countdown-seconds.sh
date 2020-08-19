@@ -35,60 +35,69 @@ __translate_seconds(){
     local __modules=(seconds:60 minutes:60 hours:24 days:7 weeks:52 years:100 centuries:100:century)
   fi
 
-  local __modules_count="$(wc -w <<< "${__modules[*]}")"
+  local __modules_count
+  __modules_count="$(wc -w <<< "${__modules[*]}")"
   while [ "$__i" -lt "$__modules_count" ]; do
     # Cycling through to get values for each unit.
-    local __value="$(cut -d':' -f2 <<< "${__modules[$__i]}")"
+    local __value
+    __value="$(cut -d':' -f2 <<< "${__modules[$__i]}")"
 
-    local __mod_value="$(($__num % $__value))"
-    local __num="$((__num / $__value))"
+    local __mod_value
+    __mod_value=$((__num % __value))
+    local __num
+    __num=$((__num / __value))
 
     local __times[$__i]="$__mod_value"
-    local __c=$(($__c+1))
-    local __i=$(($__i+1))
-    if (( ! $__num )); then
+    local __c
+    __c=$((__c+1))
+    local __i
+    __i=$((__i+1))
+    if (( ! __num )); then
       break
     fi
   done
   unset __module
 
-  local __i=$(($__c-1))
+  local __i=$((__c-1))
   while [ "$__i" -ge "0" ]; do
     # Splitting logic for compressed version (mode 2) and
     #   other phrasings requires much less tangled code.
     if [ "${2:-0}" -eq 2 ]; then
       # Short, compressed, and space-efficient version.
 
-      printf "${__times[$__i]}$(cut -d':' -f1 <<< "${__modules[$__i]}")"
+      printf "%s%s" "${__times[$__i]}" "$(cut -d':' -f1 <<< "${__modules[$__i]}")"
 
-      if (( $__i )); then
+      if (( __i )); then
         printf " "
       fi
     else
       # Long version
 
       # Cycling through used units in reverse.
-      if [ "${2:-0}" -eq 0 ] && (( ! $__i )) && [ "$__c" -gt 1 ]; then
+      if [ "${2:-0}" -eq 0 ] && (( ! __i )) && [ "$__c" -gt 1 ]; then
         printf "and "
       fi
 
       # Handle plural
       if [ "${__times[$__i]}" -eq 1 ]; then
+
         # Attempt special singluar unit.
-        local __s="$(cut -d':' -f3 <<< "${__modules[$__i]}")"
+        local __s
+        __s="$(cut -d':' -f3 <<< "${__modules[$__i]}")"
+
         if [ -n "$__s" ]; then
           # Singular unit had content.
-          printf "${__times[$__i]} $__s"
+          printf "%s %s" "${__times[$__i]}" "$__s"
         else
           # Lop the 's' off of unit plural for singular.
-          printf "${__times[$__i]} $(cut -d':' -f1 <<< "${__modules[$__i]}" | sed 's/s$//')"
+          printf "%s %s" "${__times[$__i]}" "$(cut -d':' -f1 <<< "${__modules[$__i]}" | sed 's/s$//')"
         fi
       else
         # Standard plural.
-        printf "${__times[$__i]} $(cut -d':' -f1 <<< "${__modules[$__i]}")"
+        printf "%s %s" "${__times[$__i]}" "$(cut -d':' -f1 <<< "${__modules[$__i]}")"
       fi
 
-      if (( $__i )); then
+      if (( __i )); then
         # Prepare for the next unit.
         # If you aren't a fan of the Oxford comma, then take out this line
         [ "$__c" -ge 2 ] && printf ","
@@ -97,14 +106,14 @@ __translate_seconds(){
       fi
     fi
 
-    local __i=$(($__i-1))
+    local __i=$((__i-1))
   done
 }
 
 countdown_seconds(){
 
   # If not a positive integer integer, return
-  egrep -q "^[0-9]{1,}$" <<< "${1}" || return 1
+  grep -Eq "^[0-9]{1,}$" <<< "${1}" || return 1
   (( "${1:-0}" )) || return 1
 
   duration="${1}"
@@ -112,7 +121,7 @@ countdown_seconds(){
 
   while (( 1 )); do
     current="$(date +%s)"
-    remaining="$((${target}-${current}))"
+    remaining="$((target-current))"
 
     if [ "${remaining}" -ge 0 ] && [ "${remaining}" -ne "${old_remaining:-0}" ]; then
       # Print new output if remaining time has changed.
