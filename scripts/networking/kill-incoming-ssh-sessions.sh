@@ -11,8 +11,6 @@ set_colours(){
   BLUE='\033[1;34m'
   GREEN='\033[1;32m'
   RED='\033[1;31m'
-  YELLOW='\033[1;93m'
-  PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
 }
@@ -50,6 +48,8 @@ fi
 
 (( "${__error_count}" )) && exit 1
 
+# Need ps specifically in order to get additional output.
+# shellcheck disable=SC2009
 PIDS="$(ps axo user:20,pid,ppid,cmd | grep -w sshd | grep -w "^${user}" | grep -P "\s${user}@pts" | awk '{print $2","$3}' | grep -P '^\d+,\d+$')"
 
 COUNT=0
@@ -72,7 +72,7 @@ for entry in ${PIDS}; do
     # Likely that the script is being run as a non-root user.
     notice "$(printf "Killing SSH PID: ${BOLD}%s${NC}" "${pid}")"
   fi
-  kill "${pid}" && COUNT="$((${COUNT}+1))"
+  kill "${pid}" && COUNT="$((COUNT+1))"
 done
 
 if (( "${COUNT}" )); then
