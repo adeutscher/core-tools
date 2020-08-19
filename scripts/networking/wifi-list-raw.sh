@@ -5,8 +5,6 @@ if [ -t 1 ]; then
   BLUE='\033[1;34m'
   GREEN='\033[1;32m'
   RED='\033[1;31m'
-  YELLOW='\033[1;93m'
-  PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
 fi
@@ -24,7 +22,8 @@ network(){
 # Script Functions
 
 list_networks(){
-  local iface=$1
+  local iface
+  iface=$1
   [ -z "${iface}" ] && return 1
 
   if (( "${EUID:-1}" )); then
@@ -100,17 +99,18 @@ wifi_list_raw(){
   local iface=$1
 
   if ! iwconfig "$iface" 2> /dev/null | grep -q "IEEE"; then
-    error "$(printf "Interface ${Colour_Bold}%s${Colour_Off} not found or not a wireless interface..." "${iface}")"
+    error "$(printf "Interface ${BOLD}%s${NC} not found or not a wireless interface..." "${iface}")"
     return 2
   fi
 
   if (( "${VERBOSE}" )); then
-    list_networks "${iface}" | while read line; do
+    list_networks "${iface}" | while read -r line; do
       [ -z "${line}" ] && continue
 
       network "${line}"
 
-      local mac="$(cut -d' ' -f1 <<< "${line}")"
+      local mac
+      mac="$(cut -d' ' -f1 <<< "${line}")"
       getlabel "-l${VERBOSE_SWITCH}" "${mac}"
     done
 
@@ -124,7 +124,7 @@ wifi_list_raw(){
 VERBOSE=0
 
 while [ -n "${1}" ]; do
-  while getopts ":v" OPT $@; do
+  while getopts ":v" OPT "$@"; do
     # Handle switches up until we encounter a non-switch option.
     case "$OPT" in
       v)
@@ -135,6 +135,9 @@ while [ -n "${1}" ]; do
           # Add verbose switch onto getlabel.
           VERBOSE_SWITCH="v"
         fi
+        ;;
+      *)
+        printf "Unhandled option: %s" "${OPT}"
         ;;
     esac
   done # getopts loop
