@@ -3,7 +3,7 @@
 # Lazy script to add a trusted CA Certificate.
 
 # Only use sudo if we are not already root.
-if (( ${EUID} )); then
+if (( EUID )); then
   _s="sudo"
 fi
 
@@ -16,7 +16,6 @@ if [ -t 1 ]; then
   RED='\033[1;31m'
   YELLOW='\033[1;93m'
   PURPLE='\033[1;95m'
-  BOLD='\033[1m'
   NC='\033[0m' # No Color
 fi
 
@@ -31,10 +30,11 @@ notice(){
 
 question(){
   unset __response
+  local __o
+  [ -n "${2}" ] && __o="-s"
   while [ -z "${__response}" ]; do
-    printf "$PURPLE"'Question'"$NC"'['"$GREEN"'%s'"$NC"']: %s: ' "$(basename $0)" "${1}"
-    [ -n "${2}" ] && local __o="-s"
-    read ${__o} -p "" __response
+    printf "$PURPLE"'Question'"$NC"'['"$GREEN"'%s'"$NC"']: %s: ' "$(basename "${0}")" "${1}"
+    read -r ${__o?} -p "" __response
     [ -n "${2}" ] && printf "\n"
     if [ -z "${__response}" ]; then
       error "Empty input."
@@ -58,24 +58,24 @@ warning(){
 
 add_prompt(){
   local _f="${1}"
-  local _r=""
+  local _code=""
 
   while (( 1 )); do
     question "$(printf "Add ${GREEN}%s${NC} as a trusted certificate? (y/n)" "${_f}")"
 
     if grep -iPq "y(es)?" <<< "${__response}"; then
-      local _r=0
+      local _code=0
     elif grep -iPq "n(o(pe)?)?" <<< "${__response}"; then
-      local _r=1
+      local _code=1
     else
       error "Invalid input. Please respond with a yes/no."
       # Negate error increment, not a permanent error
       __error_count=$((${__error_count:-0}-1))
     fi
 
-    if [ ! -z "${_r}" ]; then
+    if [ -n "${_code}" ]; then
       unset __response
-      return "${_r}"
+      return "${_code}"
     fi
   done
 }
@@ -86,10 +86,15 @@ add_cert(){
 
   local __error_count_initial="${__error_count:-0}"
 
-  local newCert="${1}"
+  local newCert
+  newCert="${1}"
 
-  local newCertPath="$(readlink -f "${1}")"
-  local newCertDisplay="$(sed "s|^${HOME}|\\~|g" <<< "${newCertPath}")"
+  local newCertPath
+  newCertPath="$(readlink -f "${1}")"
+
+  local newCertDisplay
+  # shellcheck disable=SC2001
+  newCertDisplay="$(sed "s|^${HOME}|\\~|g" <<< "${newCertPath}")"
 
   # Initial error checks
   if [ -z "${newCert}" ]; then
@@ -107,7 +112,7 @@ add_cert(){
     return 0
   fi
 
-  add_cert_${method} "${newCertPath}"
+  "add_cert_${method}" "${newCertPath}"
 }
 
 add_cert_redhat(){
@@ -140,7 +145,7 @@ if (( "${__error_count:-0}" )); then
   exit 2
 fi
 
-for _f in $@; do
+for _f in "$@"; do
   add_cert "${_f}"
 done
 
