@@ -14,22 +14,26 @@ if [ -t 1 ]; then
 fi
 
 error(){
-  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __error_count=$((${__error_count:-0}+1))
 }
 
 notice(){
-  printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
 }
 
 success(){
-  printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __success_count=$((${__success_count:-0}+1))
 }
 
 warning(){
-  printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __warning_count=$((${__warning_count:-0}+1))
+}
+
+substitute_home(){
+    sed "s|^${HOME}|~|" <<< "${1}"
 }
 
 # Other SSH Commands
@@ -43,39 +47,47 @@ ssh_compile_config(){
   # This function looks through each of your tools modules for
   #     an ./ssh/config file and loads it into ~/.ssh/config
 
-  local initialToolDirVariables=$((set -o posix; set) | grep -i toolsDir= | cut -d'=' -f1)
+  local initialToolDirVariables
+  initialToolDirVariables=$( (set -o posix; set) | grep -i toolsDir= | cut -d'=' -f1)
 
   # Do a loop to extablish ordering
   for toolDir in $initialToolDirVariables; do
 
-    local moduleSSHDir="$(eval echo \${$toolDir})/ssh"
-    local moduleSSHConfig="$moduleSSHDir/config"
+    #local moduleSSHDir="$(eval echo \${$toolDir})/ssh"
+    local moduleSSHDir
+    moduleSSHDir="$(eval echo "\${${toolDir}}")/ssh"
+
+    local moduleSSHConfig
+    moduleSSHConfig="$moduleSSHDir/config"
 
     # Check for a recorded priority.
-    local priority=$(grep -Pom1 "priority:\d{1,}" "$moduleSSHConfig" 2> /dev/null | cut -d':' -f 2)
+    local priority
+    priority=$(grep -Pom1 "priority:\d{1,}" "$moduleSSHConfig" 2> /dev/null | cut -d':' -f 2)
     # Note: Priority will currently not be able to insert a newly-added 5-priority in between a 1-priority and a 10 priority.
     #       It was mostly made as a way to make sure that modules with lots of wildcard configs got placed above other modules.
 
-    local toolDirVariables=$(printf "$toolDirVariables\n%d:%s" "${priority:-10}" "$toolDir")
+    local toolDirVariables
+    toolDirVariables=$(printf "$toolDirVariables\n%d:%s" "${priority:-10}" "$toolDir")
+
     unset priority
   done
 
   # If the configuration file exists but cannot be read for for markers,
   #   then assume that it also cannot be written to.
-  if [ -f "$sshConfig" ] && [ ! -r "$sshConfig" ]; then
-    error "$(printf "Existing config file ${C_FILEPATH}%s${NC} cannot be read for markers. Aborting..." "$(sed "s|^$HOME|~|" <<< "$sshConfig")")"
+  if [ -f "${sshConfig}" ] && [ ! -r "${sshConfig}" ]; then
+    error "$(printf "Existing config file ${C_FILEPATH}%s${NC} cannot be read for markers. Aborting..." "$(substitute_home "$sshConfig")")"
     return 1
   fi
 
   # Double-check that the parent directory exists
-  if ! mkdir -p "$(dirname $sshConfig)" 2> /dev/null; then
-    error "$(printf "Unable to create ${C_FILEPATH}%s${NC} directory." "$(dirname $sshConfig)")"
+  if ! mkdir -p "$(dirname "${sshConfig}")" 2> /dev/null; then
+    error "$(printf "Unable to create ${C_FILEPATH}%s${NC} directory." "$(dirname "$sshConfig")")"
     return 1
   fi
 
   # Double-check that we can write to the file and parent directory.
-  if ( [ -f "$sshConfig" ] && [ ! -w "$sshConfig" ] ) || [ ! -w "$(dirname "$sshConfig")" ]; then
-    error "$(printf "Config file ${C_FILEPATH}%s${NC} cannot be written to." "$(sed "s|^$HOME|~|" <<< "$sshConfig")")"
+  if ( [ -f "${sshConfig}" ] && [ ! -w "${sshConfig}" ] ) || [ ! -w "$(dirname "${sshConfig}")" ]; then
+    error "$(printf "Config file ${C_FILEPATH}%s${NC} cannot be written to." "$(substitute_home "${sshConfig}")")"
     notice "We will still check all modules for potential updates, though..."
     local noWrite=1
   fi
@@ -84,18 +96,20 @@ ssh_compile_config(){
   updatedConfigCount=0
   totalConfigCount=0
 
-  for toolDir in $(sort -t ':' -k 1n,2 <<< "$toolDirVariables" | cut -d':' -f2-); do
+  while read -r toolDir; do
 
-    totalModuleCount=$(($totalModuleCount+1))
-    moduleDir="$(eval echo \${$toolDir})"
+    [ -z "${toolDir}" ] && continue
+
+    totalModuleCount=$((totalModuleCount+1))
+    moduleDir="$(eval echo "\${${toolDir}}")"
     moduleParent="$(readlink -f "${moduleDir}/..")"
     moduleSSHDir="${moduleDir}/ssh"
     moduleSSHConfig="$moduleSSHDir/config"
     # Replace $HOME with ~ for display purposes
-    moduleSSHDirDisplay="$(sed "s|^$HOME|~|" <<< "$moduleSSHDir")"
+    moduleSSHDirDisplay="$(substitute_home "${moduleSSHDir}")"
     if [ -f "$moduleSSHConfig" ]; then
 
-      totalConfigCount=$(($totalConfigCount+1))
+      totalConfigCount=$((totalConfigCount+1))
 
       local moduleSSHMarker="$toolDir-marker"
       # Get a checksum from all loaded files.
@@ -103,12 +117,12 @@ ssh_compile_config(){
 
       if [ -f "$sshConfig" ]; then
         # SSH Configuration exist, probe for existing versions.
-        sectionStart=$(grep -wnm1 "$moduleSSHMarker" "$sshConfig" | cut -d':' -f1)
-        sectionEnd=$(grep -wnm1 "$moduleSSHMarker-end" "$sshConfig" | cut -d':' -f1)
-        sectionChecksum=$(grep -wm1 "$moduleSSHMarker" "$sshConfig" | grep -o "checksum:[^ ]*" | cut -d':' -f2)
+        sectionStart=$(grep -wnm1 "${moduleSSHMarker}" "${sshConfig}" | cut -d':' -f1)
+        sectionEnd=$(grep -wnm1 "${moduleSSHMarker}-end" "${sshConfig}" | cut -d':' -f1)
+        sectionChecksum=$(grep -wm1 "${moduleSSHMarker}" "${sshConfig}" | grep -o "checksum:[^ ]*" | cut -d':' -f2)
       fi
 
-      local updatedConfigCount=$(($updatedConfigCount+1))
+      local updatedConfigCount=$((updatedConfigCount+1))
 
       if [ -z "$sectionEnd" ]; then
         # This module does not exist in our SSH config. Just append it onto the existing config.
@@ -129,7 +143,7 @@ ssh_compile_config(){
         fi
 
         # Write header and general configs.
-        (printf "# $moduleSSHMarker checksum:${checksum}\n\n"; cat "${moduleSSHConfig}" 2> /dev/null; printf "\n") >> "${sshConfig}";
+        (printf "# %s checksum:%s\n\n" "${moduleSSHMarker}" "${checksum}"; cat "${moduleSSHConfig}" 2> /dev/null; printf "\n") >> "${sshConfig}";
 
         append_fluid "${sshConfig}"
 
@@ -140,7 +154,7 @@ ssh_compile_config(){
         append_host_config "${sshConfig}"
 
         # Write tail.
-        printf "\n# $moduleSSHMarker-end \n\n" >> "$sshConfig"
+        printf "\n# %s-end \n\n" "${moduleSSHMarker}" >> "$sshConfig"
 
         # Perform substitutions
         sed -i "s|TOOLS_DIR|${moduleDir}|g" "${sshConfig}"
@@ -161,10 +175,11 @@ ssh_compile_config(){
           continue
         fi
 
-        local configLines=$(wc -l < "${sshConfig}")
+        local configLines
+        configLines=$(wc -l < "${sshConfig}")
 
         # Write previous content, header, and general configs.
-        (head -n "$(($sectionStart-1))" "$sshConfig"; printf "# ${moduleSSHMarker} checksum:${checksum}\n\n"; cat "${moduleSSHConfig}" 2> /dev/null; printf "\n") > "${sshConfig}.new"
+        (head -n "$((sectionStart-1))" "$sshConfig"; printf "# %s checksum:%s\n\n" "${moduleSSHMarker}" "${checksum}"; cat "${moduleSSHConfig}" 2> /dev/null; printf "\n") > "${sshConfig}.new"
 
         append_fluid "${sshConfig}.new"
 
@@ -174,7 +189,7 @@ ssh_compile_config(){
 
         append_host_config "${sshConfig}.new"
 
-        (printf "\n# $moduleSSHMarker-end \n\n"; tail -n "-$(($configLines-$sectionEnd-1))" "$sshConfig") >> "$sshConfig.new"
+        (printf "\n# %s-end \n\n" "${moduleSSHMarker}"; tail -n "-$((configLines-sectionEnd-1))" "$sshConfig") >> "$sshConfig.new"
         mv "$sshConfig.new" "$sshConfig"
 
         # Perform substitutions
@@ -185,32 +200,32 @@ ssh_compile_config(){
         success "$(printf "${BLUE}Updated${NC} SSH configuration from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
 
       else
-        local updatedConfigCount=$(($updatedConfigCount-1))
+        local updatedConfigCount=$((updatedConfigCount-1))
         notice "$(printf "No changes to SSH config from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
       fi
 
     else
       # Only making the lack of a configuration give notice (as opposed to a warning or error). I think that this message is more likely to be a silly FYI than a serious error.
       if [ -d "$(sed -r "s/(\/[^\/]+){2}$//g" <<< "${moduleSSHConfig}")" ]; then
-        notice "$(printf "No SSH configuration located at ${GREEN}%s${NC}" "$(sed "s|^$HOME|~|" <<< "$moduleSSHConfig")")"
+        notice "$(printf "No SSH configuration located at ${GREEN}%s${NC}" "$(substitute_home "$moduleSSHConfig")")"
       else
-        error "$(printf "Module directory not found: ${GREEN}%s${NC}" "$(sed "s|^$HOME|~|" <<< "$(sed -r "s/(\/[^\/]+){2}$//g" <<< "${moduleSSHConfig}")")")"
+        error "$(printf "Module directory not found: ${GREEN}%s${NC}" "$(substitute_home "$(sed -r "s/(\/[^\/]+){2}$//g" <<< "${moduleSSHConfig}")")")"
       fi
     fi # End the else of the check for configuration file existing.
-  done # End config loop.
+  done <<< "$(sort -t ':' -k 1n,2 <<< "${toolDirVariables}" | cut -d':' -f2-)" # End config loop.
 
   if [ "${updatedConfigCount}" -ne 1 ]; then
     pluralSection="s"
   fi
   countsPhrasing="$(printf "(${BOLD}%d${NC} SSH section${pluralSection} updated, ${BOLD}%d${NC} sections, ${BOLD}%d${NC} modules)" "${updatedConfigCount}" "${totalConfigCount}" "${totalModuleCount}")"
   if [ "${updatedConfigCount}" -eq 0 ]; then
-    notice "$(printf "No updates to ${C_FILEPATH}%s${NC} %s" "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "${countsPhrasing}")"
+    notice "$(printf "No updates to ${C_FILEPATH}%s${NC} %s" "$(substitute_home "$sshConfig")" "${countsPhrasing}")"
   elif [ -n "${noWrite}" ]; then
     # No-write message
-    error "$(printf "Could not update ${C_FILEPATH}%s${NC}, file was not writable... %s" "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "${countsPhrasing}")"
+    error "$(printf "Could not update ${C_FILEPATH}%s${NC}, file was not writable... %s" "$(substitute_home <<< "$sshConfig")" "${countsPhrasing}")"
   else
     # Standard message.
-    notice "$(printf "Updated ${C_FILEPATH}%s${NC} %s" "$(sed "s|^$HOME|~|" <<< "$sshConfig")" "${countsPhrasing}")"
+    notice "$(printf "Updated ${C_FILEPATH}%s${NC} %s" "$(substitute_home "$sshConfig")" "${countsPhrasing}")"
   fi
 
   # Correct permissions
@@ -221,21 +236,20 @@ ssh_compile_config(){
 
 append_config_d(){
   local target="${1}"
-
   # Print divided configurations
-  while read subConfigFile; do
+  while read -r subConfigFile; do
     [ -z "${subConfigFile}" ] && continue
 
     printf "\n###\n# Sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "${moduleSSHDir}"
-    cat "$subConfigFile" 2> /dev/null;
+    cat "${subConfigFile}" 2> /dev/null;
   done <<< "$(get_files "${moduleSSHDir}/config.d")" >> "${target}"
 }
 
 append_fluid(){
   local target="${1}"
-
-  if [ -f "${moduleSSHDir}/fluid" ]; then
-    (printf "\n###\n# Non-versioned subconfig: ${moduleSSHDir}/fluid\n\n"; cat "${moduleSSHDir}/fluid")
+    local fluid_file="${moduleSSHDir}/fluid"
+  if [ -f "${fluid_file}" ]; then
+    (printf "\n###\n# Non-versioned subconfig: %s\n\n" "${fluid_file}"; cat "${fluid_file}")
   fi >> "${target}"
 }
 
@@ -243,7 +257,7 @@ append_fluid_d(){
   local target="${1}"
 
   # Print divided unversioned configurations
-  while read subConfigFile; do
+  while read -r subConfigFile; do
     [ -z "${subConfigFile}" ] && continue
 
     printf "###\n# Non-versioned sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "$moduleSSHDir"
@@ -258,11 +272,11 @@ append_host_config(){
   if [ -f "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" ]; then
     if [[ "$HOSTNAME" != "${HOSTNAME%-*}" ]]; then
       # Enumerated hostname
-      printf "###\n# Host-specific config for $HOSTNAME (generated for ${HOSTNAME%-*})\n###\n\n"
+      printf "###\n# Host-specific config for %s (generated for %s)\n###\n\n" "${HOSTNAME}" "${HOSTNAME%-*}"
     else
-      printf "###\n# Host-specific config for $HOSTNAME\n###\n\n"
+      printf "###\n# Host-specific config for %s\n###\n\n" "${HOSTNAME}"
     fi
-    cat "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" 2> /dev/null;
+    cat "$moduleSSHDir/hosts/config-%s" "${HOSTNAME%-*}" 2> /dev/null;
   fi >> "${target}"
 }
 
@@ -274,7 +288,7 @@ checksum(){
     [ -z "${i}" ] && continue
 
     if [ -d "${i}" ]; then
-      while read f; do
+      while read -r f; do
         [ -z "${f}" ] && continue
 
         cat "${f}" 2> /dev/null
@@ -286,7 +300,7 @@ checksum(){
 }
 
 get_files(){
-  while read _possible_file; do
+  while read -r _possible_file; do
     [ -z "${_possible_file}" ] && continue
 
     if grep -qi "README" <<< "${_possible_file##*/}"; then
@@ -309,4 +323,4 @@ get_files(){
   done <<< "$(find "${1}" -type f 2> /dev/null)"
 }
 
-ssh_compile_config $@
+ssh_compile_config "${1}"
