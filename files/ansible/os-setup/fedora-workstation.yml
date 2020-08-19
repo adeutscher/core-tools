@@ -54,6 +54,7 @@
         - svn              # Subversion version control
         - git              # Git version control
         - astyle           # Artistic Style code formatter
+        - ShellCheck       # Shell script convention checker
         - wget             # Network downloaded
         - curl             # URL Handler
         - python2          # Python v2
