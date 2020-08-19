@@ -9,8 +9,6 @@ set_colours(){
   BLUE='\033[1;34m'
   GREEN='\033[1;32m'
   RED='\033[1;31m'
-  YELLOW='\033[1;93m'
-  PURPLE='\033[1;95m'
   BOLD='\033[1m'
   NC='\033[0m' # No Color
 }
@@ -73,6 +71,3 @@ else
 fi
 
 exit "${ret}"
-else
-
-fi
