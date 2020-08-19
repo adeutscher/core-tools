@@ -33,7 +33,7 @@ warning(){
 }
 
 substitute_home(){
-    sed "s|^${HOME}|~|" <<< "${1}"
+  sed "s|^${HOME}|~|" <<< "${1}"
 }
 
 # Other SSH Commands
@@ -86,7 +86,13 @@ ssh_compile_config(){
   fi
 
   # Double-check that we can write to the file and parent directory.
-  if ( [ -f "${sshConfig}" ] && [ ! -w "${sshConfig}" ] ) || [ ! -w "$(dirname "${sshConfig}")" ]; then
+  local fileWritable
+  fileWritable=0
+  if [ -f "${sshConfig}" ] && [ ! -w "${sshConfig}" ]; then
+    fileWritable=1
+  fi
+
+  if [ "${fileWritable}" -eq 0 ] || [ ! -w "$(dirname "${sshConfig}")" ]; then
     error "$(printf "Config file ${C_FILEPATH}%s${NC} cannot be written to." "$(substitute_home "${sshConfig}")")"
     notice "We will still check all modules for potential updates, though..."
     local noWrite=1
