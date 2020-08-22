@@ -206,7 +206,7 @@ function update-git-repo(){
       notice "Git workspace was checked out from an IP address."
     fi
 
-    if ! ping -c 1 -w0.75 "${repoDomain}" 2> /dev/null >&2; then
+    if ! ping -c 1 -w1 "${repoDomain}" 2> /dev/null >&2; then
       error "$(printf "Unable to ping repo server at ${GREEN}%s${NC}." "${repoDomain}")"
       return 7
     fi
@@ -216,7 +216,7 @@ function update-git-repo(){
     repoIp="$(grep -w "$(sed 's/\./\\./g' <<< "${repoDomain}")" < /etc/hosts | sed -r 's/^\s+//g' | grep -Pm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})" | awk '{print $1}')"
     notice "$(printf "${GREEN}%s${NC} (${GREEN}%s${NC}) found in ${GREEN}%s${NC}" "${repoDomain}" "${repoIp}" "/etc/hosts")"
 
-    if ! ping -c 1 -w0.75 "${repoIp}" 2> /dev/null >&2; then
+    if ! ping -c 1 -w1 "${repoIp}" 2> /dev/null >&2; then
       error "$(printf "Unable to ping repository server at ${GREEN}%s${NC} (${GREEN}%s${NC})" "${repoDomain}" "${repoIp}")"
       return 7
     fi
@@ -384,7 +384,7 @@ function update-svn-repo(){
     if grep -qP '^(([0-9]){1,3}\.){3}([0-9]{1,3})$' <<< "${repoDomain}"; then
       notice "Git workspace was checked out from an IP address."
 
-      if ! ping -c 1 -w0.75 "${repoDomain}" 2> /dev/nul >&2; then
+      if ! ping -c 1 -w1 "${repoDomain}" 2> /dev/nul >&2; then
         error "$(printf "Unable to ping repo server at ${GREEN}%s${NC}" "${repoDomain}")"
         return 7
       fi
@@ -396,7 +396,7 @@ function update-svn-repo(){
       repoIp="$(grep -w "$(sed 's/\./\\./g' <<< "${repoDomain}")" < /etc/hosts | sed -r 's/^\s+//g' | grep -Pm1 "^(([0-9]){1,3}\.){3}([0-9]{1,3})" | awk '{print $1}')"
       notice "$(printf "${GREEN}%s${NC} (${GREEN}%s${NC}) found in ${GREEN}%s${NC}" "${repoDomain}" "${repoIp}" "/etc/hosts")"
 
-      if ! ping -c 1 -w0.75 "${repoIp}" 2> /dev/null >&2; then
+      if ! ping -c 1 -w1 "${repoIp}" 2> /dev/null >&2; then
         error "$(printf "Unable to ping repository server at ${GREEN}%s${NC} (${GREEN}%s${NC})" "${repoDomain}" "${repoIp}")"
         return 7
       fi
