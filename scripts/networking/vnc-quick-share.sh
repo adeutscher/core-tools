@@ -25,9 +25,9 @@ notice(){
 question(){
   unset __response
   while [ -z "${__response}" ]; do
-    printf "$PURPLE"'Question'"$NC"'['"$GREEN"'%s'"$NC"']: %s: ' "$(basename $0)" "${1}"
+    printf "$PURPLE"'Question'"$NC"'['"$GREEN"'%s'"$NC"']: %s: ' "$(basename "${0}")" "${1}"
     [ -n "${2}" ] && local __o="-s"
-    read ${__o} -p "" __response
+    read -r ${__o?} -p "" __response
     [ -n "${2}" ] && printf "\n"
     if [ -z "${__response}" ]; then
       error "Empty input."
@@ -66,7 +66,7 @@ function check_environment(){
 function handle_arguments(){
 
   # Read Arguments
-  while getopts "cd:hlm:p:Pw" OPT $@; do
+  while getopts "cd:hlm:p:Pw" OPT "$@"; do
     case "${OPT}" in
       "c")
         __continue=1
@@ -98,7 +98,8 @@ function handle_arguments(){
           # Assumed to be an attempted monitor name.
 
           # Silly: For display, get the properly-cased name of the monitor that we asked for.
-          local __monitor=$(xrandr --current | grep -w connected | grep -i "^${OPTARG}\ " | cut -d' ' -f 1)
+          local __monitor
+          __monitor=$(xrandr --current | grep -w connected | grep -i "^${OPTARG}\ " | cut -d' ' -f 1)
 
           if [ -z "${__monitor}" ]; then
             error "$(printf "Monitor \"${BOLD}%s${NC}\" does not exist on this system." "${OPTARG}")"
@@ -130,7 +131,7 @@ function handle_arguments(){
     error "Please provide a password for write mode."
   fi
 
-  if [ "$(expr length "${__password}")" -gt 8 ]; then
+  if [ "$(wc -c <<< "${__password}")" -gt 8 ]; then
     warning "Due to VNC limitations, only the first 8 characters of the password will be used."
   fi
 
@@ -154,13 +155,17 @@ function vnc(){
     __monitor_info="${__custom_dimensions}"
   fi
 
+  __options=("")
+
   if [ -n "${__monitor_info}" ]; then
     notice "$(printf "Shared dimensions: ${BOLD}%s${NC}" "${__monitor_info}")"
-    __options="${__options} -clip ${__monitor_info}"
+    __opt=("-clip" "${__monitor_info}")
+    __options=("${__options[@]}" "${__opt[@]}")
   fi
 
   if ! (( ${__write:-0} )); then
-    __options="${__options} -viewonly"
+    __opt=("-viewonly")
+    __options=("${__options[@]}" "${__opt[@]}")
     notice "Sharing display in read-only mode."
   else
     notice "Sharing display in write mode."
@@ -168,28 +173,26 @@ function vnc(){
 
   if [ -n "${__password}" ]; then
     notice "Password \"security\" enabled."
+    __opt=("-passwd" "\"${__password}\"")
+    __options=("${__options[@]}" "${__opt[@]}")
   fi
 
   if (( "${__continue:-0}" )); then
     notice "Continually spawning VNC server in case of unexpected server process crashing."
-    __options="${__options} -loop100"
+    __opt=("-loop100")
+    __options=("${__options[@]}" "${__opt[@]}")
   fi
 
   # Sleep briefly to give the user time to read above notices.
   sleep 3
 
-  if [ -n "${__password}" ]; then
-    x11vnc -display :0 -auth guess -noxrecord -forever -shared ${__options} -passwd "${__password}"
-    local ret=$?
-  else
-    x11vnc -display :0 -auth guess -noxrecord -forever -shared ${__options}
-    local ret=$?
-  fi
-  if (( "${__continue:-0}" )) || [ "${ret:-0}" -eq 130 ]; then
-    local ongoing=0
-  fi
+  local ret
+  # shellcheck disable=SC2086
+  x11vnc -display :0 -auth guess -noxrecord -forever -shared "${__options[@]}"
+  ret=$?
+  return "${ret}"
 }
 
 check_environment
-handle_arguments $@ || exit 1
+handle_arguments "$@" || hexit 1
 vnc
