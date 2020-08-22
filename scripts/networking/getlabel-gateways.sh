@@ -1,3 +1,4 @@
+#!/bin/bash
 
 # Convenience wrapper around getlabel to fetch for all gateways.
 
@@ -50,7 +51,7 @@ fi
 
 
 for i in ${interfaces}; do
-  if ! "${command}" "${i}" ${@}; then
+  if ! "${command}" "${i}" "${@}"; then
     error "$(printf "Error running ${BLUE}%s${NC}" getlabel)"
   fi
 done
