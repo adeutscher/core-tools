@@ -40,267 +40,6 @@ substitute_home(){
 
 # Other SSH Commands
 
-ssh_compile_config(){
-
-  # Set the destination SSH config in a variable.
-  # Useful in the event of debugging without stepping on your actual config.
-  local sshConfig=${1:-$HOME/.ssh/config}
-
-  # This function looks through each of your tools modules for
-  #     an ./ssh/config file and loads it into ~/.ssh/config
-
-  local initialToolDirVariables
-  initialToolDirVariables=$( (set -o posix; set) | grep -i toolsDir= | cut -d'=' -f1)
-
-  # Do a loop to extablish ordering
-  for toolDir in $initialToolDirVariables; do
-
-    #local moduleSSHDir="$(eval echo \${$toolDir})/ssh"
-    local moduleSSHDir
-    moduleSSHDir="$(eval echo "\${${toolDir}}")/ssh"
-
-    local moduleSSHConfig
-    moduleSSHConfig="$moduleSSHDir/config"
-
-    # Check for a recorded priority.
-    local priority
-    priority=$(grep -Pom1 "priority:\d{1,}" "$moduleSSHConfig" 2> /dev/null | cut -d':' -f 2)
-    # Note: Priority will currently not be able to insert a newly-added 5-priority in between a 1-priority and a 10 priority.
-    #       It was mostly made as a way to make sure that modules with lots of wildcard configs got placed above other modules.
-
-    local toolDirVariables
-    toolDirVariables=$(printf "$toolDirVariables\n%d:%s" "${priority:-10}" "$toolDir")
-
-    unset priority
-  done
-
-  # If the configuration file exists but cannot be read for for markers,
-  #   then assume that it also cannot be written to.
-  if [ -f "${sshConfig}" ] && [ ! -r "${sshConfig}" ]; then
-    error "$(printf "Existing config file ${C_FILEPATH}%s${NC} cannot be read for markers. Aborting..." "$(substitute_home "$sshConfig")")"
-    return 1
-  fi
-
-  # Double-check that the parent directory exists
-  if ! mkdir -p "$(dirname "${sshConfig}")" 2> /dev/null; then
-    error "$(printf "Unable to create ${C_FILEPATH}%s${NC} directory." "$(dirname "$sshConfig")")"
-    return 1
-  fi
-
-  # Double-check that we can write to the file and parent directory.
-  if [ -f "${sshConfig}" ] && [ ! -w "${sshConfig}" ] || [ ! -w "$(dirname "${sshConfig}")" ]; then
-    error "$(printf "Config file ${C_FILEPATH}%s${NC} cannot be written to." "$(substitute_home "${sshConfig}")")"
-    notice "We will still check all modules for potential updates, though..."
-    local noWrite=1
-  fi
-
-  totalModuleCount=0
-  updatedConfigCount=0
-  totalConfigCount=0
-
-  while read -r toolDir; do
-
-    [ -z "${toolDir}" ] && continue
-
-    totalModuleCount=$((totalModuleCount+1))
-    moduleDir="$(eval echo "\${${toolDir}}")"
-    moduleParent="$(readlink -f "${moduleDir}/..")"
-    moduleSSHDir="${moduleDir}/ssh"
-    moduleSSHConfig="$moduleSSHDir/config"
-    # Replace $HOME with ~ for display purposes
-    moduleSSHDirDisplay="$(substitute_home "${moduleSSHDir}")"
-    if [ -f "$moduleSSHConfig" ]; then
-
-      totalConfigCount=$((totalConfigCount+1))
-
-      local moduleSSHMarker="$toolDir-marker"
-      # Get a checksum from all loaded files.
-      checksum="$(checksum "${moduleSSHConfig}" "${moduleSSHDir}/config.d/" "${moduleSSHDir}/fluid" "${moduleSSHDir}/fluid.d/" "${moduleSSHDir}/hosts/config-${HOSTNAME%-*}")"
-
-      if [ -f "$sshConfig" ]; then
-        # SSH Configuration exist, probe for existing versions.
-        sectionStart=$(grep -wnm1 "${moduleSSHMarker}" "${sshConfig}" | cut -d':' -f1)
-        sectionEnd=$(grep -wnm1 "${moduleSSHMarker}-end" "${sshConfig}" | cut -d':' -f1)
-        sectionChecksum=$(grep -wm1 "${moduleSSHMarker}" "${sshConfig}" | grep -o "checksum:[^ ]*" | cut -d':' -f2)
-      fi
-
-      local updatedConfigCount=$((updatedConfigCount+1))
-
-      if [ -z "$sectionEnd" ]; then
-        # This module does not exist in our SSH config. Just append it onto the existing config.
-
-        if [ -n "$noWrite" ]; then
-          if [ -z "$sectionStart" ]; then
-            warning "$(printf "SSH config from ${C_FILEPATH}%s${NC} could not be inserted." "$moduleSSHDirDisplay/")"
-          else
-            warning "$(printf "SSH config from ${C_FILEPATH}%s${NC} was corrupted. Data could not be inserted." "$moduleSSHDirDisplay/")"
-          fi
-          continue
-        fi
-
-        if [ -n "$sectionStart" ]; then
-          # If this executes (start is set, but end is not), then some joker deleted the end marker.
-          # If we cannot determine the proper end, delete everything below then add in.
-          sed -i "${sectionStart},${sectionStart}d;q" "$sshConfig"
-        fi
-
-        # Write header and general configs.
-        (printf "# %s checksum:%s\n\n" "${moduleSSHMarker}" "${checksum}"; cat "${moduleSSHConfig}" 2> /dev/null; printf "\n") >> "${sshConfig}";
-
-        append_fluid "${sshConfig}"
-
-        append_config_d "${sshConfig}"
-
-        append_fluid_d "${sshConfig}"
-
-        append_host_config "${sshConfig}"
-
-        # Write tail.
-        printf "\n# %s-end \n\n" "${moduleSSHMarker}" >> "$sshConfig"
-
-        # Perform substitutions
-        sed -i "s|TOOLS_DIR|${moduleDir}|g" "${sshConfig}"
-        sed -i "s|TOOLS_PARENT|${moduleParent}|g" "${sshConfig}"
-        sed -i "s|SSH_DIR|${moduleSSHDir}|g" "${sshConfig}"
-
-        if [ -z "$sectionStart" ]; then
-          success "$(printf "${GREEN}Inserted${NC} SSH config from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
-        else
-          warning "$(printf "SSH config from ${C_FILEPATH}%s${NC} was corrupted. Someone removed the end marker..." "$moduleSSHDirDisplay/")"
-        fi
-
-      elif [[ "$checksum" != "$sectionChecksum" ]]; then
-        # This section needs to be separate, as it involves inserting a config block into our existing config instead of just appending.
-
-        if [ -n "$noWrite" ]; then
-          warning "$(printf "SSH configuration updates from ${C_FILEPATH}%s${NC} could not be written." "$moduleSSHDirDisplay/")"
-          continue
-        fi
-
-        local configLines
-        configLines=$(wc -l < "${sshConfig}")
-
-        # Write previous content, header, and general configs.
-        (head -n "$((sectionStart-1))" "$sshConfig"; printf "# %s checksum:%s\n\n" "${moduleSSHMarker}" "${checksum}"; cat "${moduleSSHConfig}" 2> /dev/null; printf "\n") > "${sshConfig}.new"
-
-        append_fluid "${sshConfig}.new"
-
-        append_config_d "${sshConfig}.new"
-
-        append_fluid_d "${sshConfig}.new"
-
-        append_host_config "${sshConfig}.new"
-
-        (printf "\n# %s-end \n\n" "${moduleSSHMarker}"; tail -n "-$((configLines-sectionEnd-1))" "$sshConfig") >> "$sshConfig.new"
-        mv "$sshConfig.new" "$sshConfig"
-
-        # Perform substitutions
-        sed -i "s|TOOLS_DIR|${moduleDir}|g" "${sshConfig}"
-        sed -i "s|TOOLS_PARENT|${moduleParent}|g" "${sshConfig}"
-        sed -i "s|SSH_DIR|${moduleSSHDir}|g" "${sshConfig}"
-
-        success "$(printf "${BLUE}Updated${NC} SSH configuration from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
-
-      else
-        local updatedConfigCount=$((updatedConfigCount-1))
-        notice "$(printf "No changes to SSH config from ${C_FILEPATH}%s${NC}" "$moduleSSHDirDisplay/")"
-      fi
-
-    else
-      # Only making the lack of a configuration give notice (as opposed to a warning or error). I think that this message is more likely to be a silly FYI than a serious error.
-      if [ -d "$(sed -r "s/(\/[^\/]+){2}$//g" <<< "${moduleSSHConfig}")" ]; then
-        notice "$(printf "No SSH configuration located at ${GREEN}%s${NC}" "$(substitute_home "$moduleSSHConfig")")"
-      else
-        error "$(printf "Module directory not found: ${GREEN}%s${NC}" "$(substitute_home "$(sed -r "s/(\/[^\/]+){2}$//g" <<< "${moduleSSHConfig}")")")"
-      fi
-    fi # End the else of the check for configuration file existing.
-  done <<< "$(sort -t ':' -k 1n,2 <<< "${toolDirVariables}" | cut -d':' -f2-)" # End config loop.
-
-  if [ "${updatedConfigCount}" -ne 1 ]; then
-    pluralSection="s"
-  fi
-  countsPhrasing="$(printf "(${BOLD}%d${NC} SSH section${pluralSection} updated, ${BOLD}%d${NC} sections, ${BOLD}%d${NC} modules)" "${updatedConfigCount}" "${totalConfigCount}" "${totalModuleCount}")"
-  if [ "${updatedConfigCount}" -eq 0 ]; then
-    notice "$(printf "No updates to ${C_FILEPATH}%s${NC} %s" "$(substitute_home "$sshConfig")" "${countsPhrasing}")"
-  elif [ -n "${noWrite}" ]; then
-    # No-write message
-    error "$(printf "Could not update ${C_FILEPATH}%s${NC}, file was not writable... %s" "$(substitute_home <<< "$sshConfig")" "${countsPhrasing}")"
-  else
-    # Standard message.
-    notice "$(printf "Updated ${C_FILEPATH}%s${NC} %s" "$(substitute_home "$sshConfig")" "${countsPhrasing}")"
-  fi
-
-  # Correct permissions
-  ssh-fix-permissions
-
-  unset toolDir
-}
-
-append_config_d(){
-  local target="${1}"
-  # Print divided configurations
-  while read -r subConfigFile; do
-    [ -z "${subConfigFile}" ] && continue
-
-    printf "\n###\n# Sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "${moduleSSHDir}"
-    cat "${subConfigFile}" 2> /dev/null;
-  done <<< "$(get_files "${moduleSSHDir}/config.d")" >> "${target}"
-}
-
-append_fluid(){
-  local target="${1}"
-    local fluid_file="${moduleSSHDir}/fluid"
-  if [ -f "${fluid_file}" ]; then
-    (printf "\n###\n# Non-versioned subconfig: %s\n\n" "${fluid_file}"; cat "${fluid_file}")
-  fi >> "${target}"
-}
-
-append_fluid_d(){
-  local target="${1}"
-
-  # Print divided unversioned configurations
-  while read -r subConfigFile; do
-    [ -z "${subConfigFile}" ] && continue
-
-    printf "###\n# Non-versioned sub-config \"%s\" for %s\n###\n\n" "${subConfigFile##*/}" "$moduleSSHDir"
-    cat "$subConfigFile" 2> /dev/null;
-  done <<< "$(get_files "${moduleSSHDir}/fluid.d")" >> "${target}"
-}
-
-append_host_config(){
-  local target="${1}"
-
-  # Print a special flag for host-specific config. Helps to reduce confusion.
-  if [ -f "$moduleSSHDir/hosts/config-${HOSTNAME%-*}" ]; then
-    if [[ "$HOSTNAME" != "${HOSTNAME%-*}" ]]; then
-      # Enumerated hostname
-      printf "###\n# Host-specific config for %s (generated for %s)\n###\n\n" "${HOSTNAME}" "${HOSTNAME%-*}"
-    else
-      printf "###\n# Host-specific config for %s\n###\n\n" "${HOSTNAME}"
-    fi
-    cat "$moduleSSHDir/hosts/config-%s" "${HOSTNAME%-*}" 2> /dev/null;
-  fi >> "${target}"
-}
-
-checksum(){
-  while [ -n "${1}" ]; do
-    local i="${1}"
-    shift
-
-    [ -z "${i}" ] && continue
-
-    if [ -d "${i}" ]; then
-      while read -r f; do
-        [ -z "${f}" ] && continue
-
-        cat "${f}" 2> /dev/null
-      done <<< "$(get_files "${i}")"
-    elif [ -f "${i}" ]; then
-      cat "${i}"
-    fi
-  done | md5sum | cut -d' ' -f1
-}
-
 get_files(){
   while read -r _possible_file; do
     [ -z "${_possible_file}" ] && continue
@@ -322,7 +61,275 @@ get_files(){
     fi
 
     echo "${_possible_file}"
-  done <<< "$(find "${1}" -type f 2> /dev/null)"
+  done <<< "$(find "${1}" -type f 2> /dev/null | sort)"
+}
+
+get_module_directory_from_variable(){
+
+  eval "echo \"\${${1}}\""
+}
+
+get_module_variables_ordered(){
+
+  local moduleVariable
+  local priority
+
+  while read -r moduleVariable; do
+    [ -z "${moduleVariable}" ] && continue
+    # Check for a recorded priority.
+    priority="$(grep -Pom1 "priority:\d{1,}" "$(get_module_directory_from_variable "${moduleVariable}")/ssh/config" 2> /dev/null | cut -d':' -f 2)"
+    # Note: Priority will currently not be able to insert a newly-added 5-priority in between a 1-priority and a 10 priority.
+    #       It was mostly made as a way to make sure that modules with lots of wildcard configs got placed above other modules.
+
+    printf "%d:%s\n" "${priority:-10}" "${moduleVariable}"
+
+  done <<< "$( (set -o posix; set) | grep -i toolsDir= | cut -d'=' -f1)" | sort -t ':' -k 1n,2 | cut -d':' -f2-
+
+}
+
+print_module_config_to_file(){
+  # Print compiled configuration for a module
+  # The reason that I am redirecting a block within the function
+  #   rather than redirecting the whole module's output is that
+  #   I have plans for autogenerated configuration in the near future
+
+  local sshDir
+  sshDir="${1}"
+  local targetFile
+  targetFile="${2}"
+
+  # For '__.d' directories
+  local subFile
+
+  {
+    # Main config file
+    cat "${sshDir}/config"
+
+    # Fluid single-file
+    local fluidFile
+    fluidFile="${sshDir}/fluid"
+    if [ -f "${fluidFile}" ]; then
+      printf "\n###\n# Non-versioned subconfig: %s\n\n" "${fluidFile}"
+      cat "${fluidFile}"
+    fi
+
+    # Print divided configurations
+    while read -r subFile; do
+      [ -z "${subFile}" ] && continue
+      printf "\n###\n# Sub-config \"%s\" for %s\n###\n\n" "${subFile##*/}" "${sshDir}"
+      cat "${subFile}";
+    done <<< "$(get_files "${sshDir}/config.d")"
+
+    # Fluid.d directory
+    while read -r subFile; do
+      [ -z "${subFile}" ] && continue
+      printf "###\n# Non-versioned sub-config \"%s\" for %s\n###\n\n" "${subFile##*/}" "$sshDir"
+      cat "$subFile";
+    done <<< "$(get_files "${sshDir}/fluid.d")"
+
+    # Host-specific config
+    local hostConfig
+    hostConfig="$sshDir/hosts/config-${HOSTNAME%-*}"
+    # Be a bit flexible about what hostnames we accept
+    # The cause of this was a config for a computer lab with hostnames like 'labpc-01'.
+    # I didn't want to write a config for every single one for them.
+    if [ -f "${hostConfig}" ]; then
+      if [[ "$HOSTNAME" != "${HOSTNAME%-*}" ]]; then
+        # Enumerated hostname
+        printf "###\n# Host-specific config for %s (generated for %s)\n###\n\n" "${HOSTNAME}" "${HOSTNAME%-*}"
+      else
+        printf "###\n# Host-specific config for %s\n###\n\n" "${HOSTNAME}"
+      fi
+      cat "${hostConfig}";
+    fi
+  } > "${targetFile}"
+}
+
+ssh_compile_config(){
+
+  # Set the destination SSH config in a variable.
+  # Useful in the event of debugging without stepping on your actual config.
+  targetFile="${1:-$HOME/.ssh/config}"
+  stagingFile="${targetFile}.temp"
+
+  # If the configuration file exists but cannot be read for for markers,
+  #   then assume that it also cannot be written to.
+  if [ -f "${targetFile}" ] && [ ! -r "${targetFile}" ]; then
+    error "$(printf "Existing config file ${C_FILEPATH}%s${NC} cannot be read for markers. Aborting..." "$(substitute_home "$targetFile")")"
+    return 1
+  fi
+
+  # Double-check that the parent directory exists
+  if ! mkdir -p "$(dirname "${targetFile}")" 2> /dev/null; then
+    error "$(printf "Unable to create ${C_FILEPATH}%s${NC} directory." "$(dirname "$targetFile")")"
+    return 1
+  fi
+
+  # Double-check that we can write to the file and parent directory.
+  if [ -f "${targetFile}" ] && [ ! -w "${targetFile}" ] || [ ! -w "$(dirname "${targetFile}")" ]; then
+    error "$(printf "Config file ${C_FILEPATH}%s${NC} cannot be written to." "$(substitute_home "${targetFile}")")"
+    notice "We will still check all modules for potential updates, though..."
+    noWrite=1
+  fi
+
+  countModuleTotal=0
+  countUpdated=0
+  countConfigTotal=0
+
+  backupWritten=0
+
+  while read -r moduleVariable; do
+    [ -z "${moduleVariable}" ] && continue
+    countModuleTotal=$((countModuleTotal+1))
+
+    # This marker is used by the header for a section
+    marker="${moduleVariable}-marker"
+
+    # Resolve module variable to a path (moduleDir).
+    # This loop must receive a variable to resolve because the variable is used as a marker
+    #   for replacing the section in place.
+
+    # moduleDir is used by TOOLS_DIR token substitution
+    moduleDir="$(get_module_directory_from_variable "${moduleVariable}")"
+
+    # Record moduleParent for use with MODULE_PARENT token substitution
+    moduleParent="$(readlink -f "${moduleDir}/..")"
+    # Recore sshDir as a base for SSH configuration and for use with SSH_DIR token substitution
+    sshDir="${moduleDir}/ssh"
+    # Replace $HOME with ~ for display purposes
+    sshDirDisplay="$(substitute_home "${sshDir}/")"
+
+    if [ ! -f "${sshDir}/config" ]; then
+      if [ -d "${moduleDir}" ]; then
+        # No module directory exists, but no SSH configuration file could be found within it.
+        # Only making the lack of a configuration in a module give notice (as opposed to a warning or error).
+        #   I think that this message is more likely to be a silly FYI than a serious error.
+        notice "$(printf "No SSH configuration located at ${GREEN}%s${NC}" "$(substitute_home "${sshDir}/config")")"
+      else
+        # A module directory vanishing out from under us IS a cause for concern.
+        error "$(printf "Module directory not found: ${GREEN}%s${NC}" "$(substitute_home "${moduleDir}")")"
+      fi
+      continue
+    fi
+
+    countConfigTotal=$((countConfigTotal+1))
+
+    print_module_config_to_file "${sshDir}" "${stagingFile}"
+    # Perform substitutions on staging file.
+    sed -i "s|TOOLS_DIR|${moduleDir}|g" "${stagingFile}"
+    sed -i "s|TOOLS_PARENT|${moduleParent}|g" "${stagingFile}"
+    sed -i "s|SSH_DIR|${sshDir}|g" "${stagingFile}"
+    # Get a checksum from our staging file.
+    checksum="$(md5sum "${stagingFile}" | cut -d' ' -f1)"
+
+    if [ -f "$targetFile" ]; then
+      # SSH Configuration exists, probe for existing versions.
+      sectionStart=$(grep -wnm1 "${marker}" "${targetFile}" | cut -d':' -f1)
+      sectionEnd=$(grep -wnm1 "${marker}-end" "${targetFile}" | cut -d':' -f1)
+      sectionChecksum=$(grep -wm1 "${marker}" "${targetFile}" | grep -o "checksum:[^ ]*" | cut -d':' -f2)
+    fi
+
+    # Backup
+    if (( ! backupWritten )) && [ ! -f "${targetFile}" ] && [ -n "${sectionStart}" ] || [[ "$checksum" != "$sectionChecksum" ]]; then
+      # This is our first module with updates to an existing file.
+      # Perform a backup of the target file as it was.
+      # Putting this block up here because I'd rather duplicate
+      #  the if statements for the below update/insert blocks
+      #   than duplicate the backing up of a file.
+      backupPath="${targetFile}.bak"
+      if cp "${targetFile}" "${backupPath}"; then
+        notice "$(printf "Backed up ${C_FILEPATH}%s${NC} to ${C_FILEPATH}%s${NC}" "$(substitute_home "${targetFile}")" "$(substitute_home "${backupPath}")")"
+      else
+        error "$(printf "Failed to back up ${C_FILEPATH}%s${NC} to ${C_FILEPATH}%s${NC}" "$(substitute_home "${targetFile}")" "$(substitute_home "${backupPath}")")"
+        exit
+      fi
+      backupWritten=1
+    fi
+
+    local countUpdated=$((countUpdated+1))
+
+    if [ -z "$sectionEnd" ]; then
+      # An end-marker does not exist in our SSH config. Just append it onto the existing config.
+
+      if [ -n "$noWrite" ]; then
+        # Could not write to location. Print our warnings now and continue to the next loop.
+        if [ -z "$sectionStart" ]; then
+          warning "$(printf "SSH config from ${C_FILEPATH}%s${NC} could not be inserted." "${sshDirDisplay}")"
+        else
+          warning "$(printf "SSH config from ${C_FILEPATH}%s${NC} was corrupted. Data could not be inserted." "${sshDirDisplay}")"
+        fi
+        continue
+      fi
+
+      if [ -n "${sectionStart}" ]; then
+        # If this executes (start is set, but end is not), then some joker deleted the end marker.
+        # If we cannot determine the proper end, delete everything below then add in.
+        sed -i "${sectionStart},${sectionStart}d;q" "$targetFile"
+
+        warning "$(printf "SSH config from ${C_FILEPATH}%s${NC} was corrupted. Someone removed the end marker..." "${sshDirDisplay}")"
+        warning "$(printf "Clearing out all content below the ${BOLD}%s{NC} section." "${marker}")"
+      fi
+
+      # Write header and general configs.
+      {
+        printf "# %s checksum:%s\n\n" "${marker}" "${checksum}";
+        cat "${stagingFile}" >> "${targetFile}"
+        # Write tail.
+        printf "\n\n# %s-end\n\n" "${marker}"
+      } >> "${targetFile}"
+
+      if [ -z "$sectionStart" ]; then
+        success "$(printf "${GREEN}Inserted${NC} SSH config from ${C_FILEPATH}%s${NC}" "${sshDirDisplay}")"
+      fi
+
+    elif [[ "$checksum" != "$sectionChecksum" ]]; then
+      # This section needs to be separate, as it involves inserting a config block into our existing config instead of just appending.
+
+      if [ -n "$noWrite" ]; then
+        warning "$(printf "SSH configuration updates from ${C_FILEPATH}%s${NC} could not be written." "${sshDirDisplay}")"
+        continue
+      fi
+
+      configLines=$(wc -l < "${targetFile}")
+
+      # Write previous content, header, and general configs.
+      {
+        head -n "$((sectionStart-1))" "${targetFile}"
+        printf "# %s checksum:%s\n\n" "${marker}" "${checksum}"
+        cat "${stagingFile}"
+        # Write footer and tail
+        printf "\n\n# %s-end\n\n" "${marker}"
+        tail -n "-$((configLines-sectionEnd-1))" "${targetFile}"
+      } > "${targetFile}.new"
+      mv "${targetFile}.new" "${targetFile}"
+
+      success "$(printf "${BLUE}Updated${NC} SSH configuration from ${C_FILEPATH}%s${NC}" "${sshDirDisplay}")"
+
+    else
+      countUpdated=$((countUpdated-1))
+      notice "$(printf "No changes to SSH config from ${C_FILEPATH}%s${NC}" "${sshDirDisplay}")"
+    fi
+  done <<< "$(get_module_variables_ordered)" # End config loop.
+
+  if [ "${countUpdated}" -ne 1 ]; then
+    pluralSection="s"
+  fi
+  countsPhrasing="$(printf "(${BOLD}%d${NC} SSH section${pluralSection} updated, ${BOLD}%d${NC} sections, ${BOLD}%d${NC} modules)" "${countUpdated}" "${countConfigTotal}" "${countModuleTotal}")"
+  if [ "${countUpdated}" -eq 0 ]; then
+    notice "$(printf "No updates to ${C_FILEPATH}%s${NC} %s" "$(substitute_home "$targetFile")" "${countsPhrasing}")"
+  elif [ -n "${noWrite}" ]; then
+    # No-write message
+    error "$(printf "Could not update ${C_FILEPATH}%s${NC}, file was not writable... %s" "$(substitute_home <<< "$targetFile")" "${countsPhrasing}")"
+  else
+    # Standard message.
+    notice "$(printf "Updated ${C_FILEPATH}%s${NC} %s" "$(substitute_home "$targetFile")" "${countsPhrasing}")"
+  fi
+
+  # Correct permissions
+  ssh-fix-permissions
+
+  # Clean up
+  rm "${stagingFile}"
 }
 
 ssh_compile_config "${1}"
