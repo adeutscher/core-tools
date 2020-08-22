@@ -15,34 +15,34 @@ colours_on(){
 [ -t 1 ] && colours_on
 
 error(){
-  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __error_count=$((${__error_count:-0}+1))
 }
 
 notice(){
-  printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
 }
 
 record(){
-  printf "$GREEN"'Record'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$GREEN"'Record'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __record_count=$((${__record_count:-0}+1))
 }
 
 self(){
-  printf "$BLUE"'Self'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$BLUE"'Self'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
 }
 
 summary(){
-  printf "$PURPLE"'Summary'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$PURPLE"'Summary'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
 }
 
 unknown(){
-  printf "$RED"'Unknown'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$RED"'Unknown'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __unknown_count=$((${__unknown_count:-0}+1))
 }
 
 warning(){
-  printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+  printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
   __warning_count=$((${__warning_count:-0}+1))
 }
 
@@ -51,13 +51,15 @@ warning(){
 ########################
 
 ip2dec(){
-  local a b c d ip=$@
+  local a b c d ip
+  ip="$*"
   IFS=. read -r a b c d <<< "$ip"
   printf '%d\n' "$((a * 256 ** 3 + b * 256 ** 2 + c * 256 + d))"
 }
 
 dec2ip(){
-  local ip dec=$@
+  local ip dec
+  dec="$*"
   for e in {3..0}
   do
     ((octet = dec / (256 ** e) ))
@@ -77,7 +79,7 @@ is_in_cidr(){
   [ "${addr_dec}" -ge "$(cidr-low-dec "${cidr}")" ] && [ "${addr_dec}" -le "$(cidr-high-dec "${cidr}")" ]
 }
 cidr-low(){
-  printf $(dec2ip $(cidr-low-dec "$1"))
+  dec2ip "$(cidr-low-dec "$1")"
 }
 
 cidr-low-dec(){
@@ -88,21 +90,26 @@ cidr-low-dec(){
   # Calculating netmask manually because ipcalc does not support
   #   calculating the minimum/maximum addresses in all distributions.
 
-  local network=$(cut -d'/' -f1 <<< "$1")
-  local netmask=$(cut -d'/' -f2 <<< "$1")
+  local network
+  local netmask
 
-  local plus=1
+  network=$(cut -d'/' -f1 <<< "$1")
+  netmask=$(cut -d'/' -f2 <<< "$1")
+
+  local plus
+  plus=1
   if grep -qP "255.255.255.255|32" <<< "$netmask"; then
     # /32 networks are single-host networks,
     #   wherein the network ID is the only usable address.
     local plus=0
   fi
 
-  printf $(($(ip2dec "$network")+$plus))
+  #shellcheck disable=SC2059
+  printf $(($(ip2dec "$network")+plus))
 }
 
 cidr-high(){
-  printf $(dec2ip $(cidr-high-dec "$1"))
+  dec2ip "$(cidr-high-dec "$1")"
 }
 
 cidr-high-dec(){
@@ -113,47 +120,58 @@ cidr-high-dec(){
   # Calculating netmask manually because ipcalc does not support
   #   calculating the minimum/maximum addresses in all distributions.
 
-  local network=$(cut -d'/' -f1 <<< "$1")
-  local netmask=$(cut -d'/' -f2 <<< "$1")
+  local network
+  local netmask
+  network=$(cut -d'/' -f1 <<< "$1")
+  netmask=$(cut -d'/' -f2 <<< "$1")
 
   if ! grep -qP "^\d{1,}$" <<< "$netmask"; then
     # Netmask was not in CIDR format.
-    local netmask=$(printf %.$2f $(awk '{ print 32-log(4294967295-'"$(ip2dec "$netmask")"')/log(2)}' <<< ""))
+    netmask=$(printf "%.$2f" "$(awk '{ print 32-log(4294967295-'"$(ip2dec "$netmask")"')/log(2)}' <<< "")")
   fi
 
   # Subtract 2 for network id and broadcast addresss
   #   (unless we have a /32 address)
-  local subtract=2
+  local subtract
+  subtract=2
   if [ "$netmask" -eq "32" ]; then
     # /32 networks are single-host networks,
     #   wherein the network ID is the only usable address.
-    local subtract=0
+    subtract=0
   fi
 
-  printf $(($(ip2dec "$network")+(2 ** (32-netmask))-$subtract))
+  #shellcheck disable=SC2059
+  printf $(($(ip2dec "${network}")+(2 ** (32-netmask))-subtract))
 }
 
 cidr2mask(){
   # Convert short-form CIDR notation to a full-form subnet mask.
-  local _mmask="$((32-${1}))"
+  local _mmask
+  local _t
+  _mmask="$((32-${1}))"
+
   while [ "${_mmask}" -lt 32 ]; do
-    local _t="$((${_t:-0}+2**${_mmask}))"
-    local _mmask="$(("${_mmask}" + 1))"
+    _t="$((${_t:-0}+2**_mmask))"
+    _mmask="$((_mmask + 1))"
   done
-  echo "$(dec2ip "${_t}")"
+  dec2ip "${_t}"
 }
 
 mask2cidr(){
   # Convert a full-form subnet mask to short-form CIDR notation.
-  local _cmask=$(ip2dec "${1}")
-  local _mmask="$(ip2dec 255.255.255.255)"
-  local _rmask=0
+  local _cmask
+  local _mmask
+  local _rmask
+
+  _cmask=$(ip2dec "${1}")
+  _mmask="$(ip2dec 255.255.255.255)"
+  _rmask=0
 
   while [ "${_cmask}" -lt "${_mmask}" ]; do
-    _cmask=$((${_cmask}+2**${_rmask}))
-    _rmask="$((${_rmask}+1))"
+    _cmask=$((_cmask+2**_rmask))
+    _rmask="$((_rmask+1))"
   done
-  echo "$((32 - ${_rmask}))"
+  echo "$((32 - _rmask))"
 }
 
 # Environment Checking
@@ -162,6 +180,7 @@ if [ -n "$WINDIR" ]; then
   error "This script was only meant to work on a Unix system."
   exit 1
 else
+  # shellcheck disable=SC2043
   for i in toolsCache; do
     if [ -z "$(eval "echo \"\${$i}\"")" ]; then
       error "$(printf "${BOLD}%s${NC} variable not set. Try running ${BLUE}%s${NC}..." "$i" "reload")"
@@ -255,7 +274,8 @@ __get_mac_from_ip_address(){
   # Search ARP table for an IP address entry.
   # Given its own function since I call on it in multiple places.
   if [ -z "$WINDIR" ]; then
-    arp -an 2> /dev/null | grep -vP "(^Address)|incomplete" | grep -m1 "$(sed 's/\./\\\./g' <<< "$1"))" | cut -d' ' -f 4
+    # Unix system
+    arp -an 2> /dev/null | grep -vP "(^Address)|incomplete" | grep -m1 "${1//./\\.})" | cut -d' ' -f 4
   else
     # MobaXterm grep doesn't seem to care about being fed in a string with literal '.' characters.
     # Doesn't treat them as wildcards like Unix. Strange.
@@ -268,12 +288,21 @@ __get_mac_from_ip_address(){
 
 getlabel(){
 
+  local mac
+  local address
+  local network
+  local networks
+  local netmask
+  local count
+
+  local statement
+
   location="${1}"
   if grep -Pq '^(([0-9]){1,3}\.){3}([0-9]{1,3})/((([0-9]){1,3}\.){3}([0-9]{1,3})|\d{1,2})$' <<< "$location"; then
     # CIDR Address
 
-    local network=$(cut -d'/' -f1 <<< "$location")
-    local netmask=$(cut -d'/' -f2 <<< "$location")
+    network=$(cut -d'/' -f1 <<< "$location")
+    netmask=$(cut -d'/' -f2 <<< "$location")
 
     if ! type nmap 2> /dev/null >&2; then
       warning "$(printf "This function leans heavily on ${BLUE}%s${NC} when given a network range!" "nmap")"
@@ -284,39 +313,44 @@ getlabel(){
     # Assuming valid input.
     # Input format is either like "10.20.30.0/24" or "10.20.30.0/255.255.255.0".
 
-    local low=$(cidr-low-dec "$location")
-    local high=$(cidr-high-dec "$location")
+    local low
+    low=$(cidr-low-dec "${location}")
+    local high
+    high=$(cidr-high-dec "${location}")
 
     # Determine if the low end is within one of our routes.
-    local count=0
+    count=0
 
-    local __low_is_in=0
-    local __high_is_in=0
+    local __low_is_in
+    local __high_is_in
+
+    __low_is_in=0
+    __high_is_in=0
 
     # Exclude tun networks from consideration.
     for range in $(route -n | grep -v 'tun' | awk '{if ($2 == "0.0.0.0"){ print $1"/"$3 }}'); do
       __current_low=$(cidr-low-dec "$range")
       __current_high=$(cidr-high-dec "$range")
 
-      local count=$((count+1))
+      count=$((count+1))
 
       if [ "$low" -ge "$__current_low" ] && [ "$low" -le "$__current_high" ]; then
         if [ "$__low_is_in" -eq 0 ]; then
-          local __low_is_in=$count
+          __low_is_in=$count
         fi
       fi
 
       if [ "$high" -ge "$__current_low" ] && [ "$high" -le "$__current_high" ]; then
         if [ "$__high_is_in" -eq 0 ]; then
-          local __high_is_in=$count
+          __high_is_in=$count
         fi
       fi
 
       if [ "$__low_is_in" -eq "$count" ] || [ "$__high_is_in" -eq "$count" ]; then
         if [ -n "$statement" ]; then
-          local statement="$statement&&((ipAsDec>=$__current_low)&&(ipAsDec<=$__current_high))"
+          statement="$statement&&((ipAsDec>=$__current_low)&&(ipAsDec<=$__current_high))"
         else
-          local statement="((ipAsDec>=$__current_low)&&(ipAsDec<=$__current_high))"
+          statement="((ipAsDec>=$__current_low)&&(ipAsDec<=$__current_high))"
         fi
       fi
     done
@@ -351,43 +385,49 @@ getlabel(){
     if ! (( "${lazy:-0}" )) && type nmap 2> /dev/null >&2; then
       # Run nmap for entries, then also check arp to see if there were any hosts that did not respond to nmap's ping scan.
 
-      local network_id="$(cut -d'/' -f1 <<< "$location")"
-      local network_mask="$(cut -d'/' -f2 <<< "$location")"
+      local network_id
+      network_id="$(cut -d'/' -f1 <<< "$location")"
+      local network_mask
+      network_mask="$(cut -d'/' -f2 <<< "$location")"
 
       if ! grep -qP "^\d+$" <<< "${network_mask}"; then
         # The network size was not specified in CIDR short-form.
         # e.g. 192.168.0.0/255.255.255.0
-        local network_mask=$(mask2cidr "${network_mask}")
+        network_mask=$(mask2cidr "${network_mask}")
       fi
-      notice "$(printf "Scanning ${GREEN}%s${NC} (${BOLD}%d${NC} addresses to try from ${GREEN}%s${NC} to ${GREEN}%s${NC}) for ARP entries..." "${network_id}/${network_mask}" "$(($high-$low+1))" "$(cidr-low "$location")" "$(cidr-high "$location")")"
+      notice "$(printf "Scanning ${GREEN}%s${NC} (${BOLD}%d${NC} addresses to try from ${GREEN}%s${NC} to ${GREEN}%s${NC}) for ARP entries..." "${network_id}/${network_mask}" "$((high-low+1))" "$(cidr-low "${location}")" "$(cidr-high "${location}")")"
 
-      local nmap_address_list="$(nmap -n -T5 -sn "${network_id}/${network_mask}" | grep 'Nmap scan report' | cut -d' ' -f 5)"
+      local nmap_address_list
+      nmap_address_list="$(nmap -n -T5 -sn "${network_id}/${network_mask}" | grep 'Nmap scan report' | cut -d' ' -f 5)"
     elif ! (( "${lazy:-0}" )); then
-      notice "$(printf "Looking for ARP entries in ${GREEN}%s${NC} (${BOLD}%d${NC} addresses to try from ${GREEN}%s${NC} to ${GREEN}%s${NC})" "$location" "$(($high-$low+1))" "$(cidr-low "$location")" "$(cidr-high "$location")")"
+      notice "$(printf "Looking for ARP entries in ${GREEN}%s${NC} (${BOLD}%d${NC} addresses to try from ${GREEN}%s${NC} to ${GREEN}%s${NC})" "$location" "$((high-low+1))" "$(cidr-low "${location}")" "$(cidr-high "${location}")")"
     fi
 
-    local arp_address_list=$(arp -n | grep -vP "(^Address)|incomplete" | awk 'function ip2dec(ip){split(ip,octets,"."); return octets[1] * 256^3 + octets[2] * 256^2 + octets[3] * 256 + octets[4]} {ipAsDec=ip2dec($1); if('$statement'){print $1}}');
+    local arp_address_list
+    arp_address_list=$(arp -n | grep -vP "(^Address)|incomplete" | awk 'function ip2dec(ip){split(ip,octets,"."); return octets[1] * 256^3 + octets[2] * 256^2 + octets[3] * 256 + octets[4]} {ipAsDec=ip2dec($1); if('"${statement}"'){print $1}}');
 
-    arp -n | grep -vP "(^Address)|incomplete" | awk 'function ip2dec(ip){split(ip,octets,"."); return octets[1] * 256^3 + octets[2] * 256^2 + octets[3] * 256 + octets[4]} {i=ip2dec($1); if('$statement'){print $1}}'
+    arp -n | grep -vP "(^Address)|incomplete" | awk 'function ip2dec(ip){split(ip,octets,"."); return octets[1] * 256^3 + octets[2] * 256^2 + octets[3] * 256 + octets[4]} {i=ip2dec($1); if('"${statement}"'){print $1}}'
     # Merge our two lists into one. 99% sure that the nmap list would be a subset of the arp list, though...
-    local total_address_list="$(sed 's/ /\n/g' <<< "$nmap_address_list $arp_address_list" | sort -nu -t'.' -k1n,1n -k 2n,2n -k 3n,3n -k 4n,4n)"
-    local count="$(wc -w <<< "$total_address_list")"
+    local total_address_list
+    # shellcheck disable=SC2001
+    total_address_list="$(sed 's/ /\n/g' <<< "${nmap_address_list} ${arp_address_list}" | sort -nu -t'.' -k1n,1n -k 2n,2n -k 3n,3n -k 4n,4n)"
+    count="$(wc -w <<< "$total_address_list")"
 
     # Silly branching for plural
     if [ "$count" -gt 1 ]; then
       notice "$(printf "Scan complete (%d records). Searching records..." "$count")"
     elif [ "$count" -eq 0 ]; then
-      # Found zip. Somehow...
+      # Found nothing. Somehow...
       notice "$(printf "No records found by either your scan or your machine's ARP table. How did you manage that?")"
     else
       # 1 record
       notice "$(printf "Scan complete (%d record, and it's probably our own device). Searching record..." "$count")"
     fi
 
+    local current_address
     for current_address in ${total_address_list}; do
       getlabel "${current_address}"
     done
-    unset current_address
 
     return
 
@@ -396,7 +436,8 @@ getlabel(){
     # Treating any MAC address-like sequence with at least three digit groups as a MAC address.
 
     # Format dashes out in case someone pasted in a Windows-style formatting
-    local mac="$(sed 's/-/:/g' <<< "$location" | sed -e 's/\(.*\)/\L\1/')"
+    # shellcheck disable=SC2001
+    mac="$(sed -e 's/\(.*\)/\L\1/' <<< "${location//-/:/}")"
   else
 
     # Provided location was not already a MAC address or a network range.
@@ -404,11 +445,11 @@ getlabel(){
       # Provided location not an IP address format,
       #     so start by trying to resolve it as a hostname.
       if ! type host 2> /dev/null >&2; then
-        (( "${lazy:-0}" )) || error "$(printf "${BLUE}host${NC} command not found! Please install bind utilities...")"
+        (( "${lazy:-0}" )) || error "$(printf "${BLUE}%s${NC} command not found! Please install bind utilities..." "host")"
         return 2;
       fi
 
-      local address="$(host "$location" | grep -m1 "has address" | cut -d' ' -f 4)"
+      address="$(host "$location" | grep -m1 "has address" | cut -d' ' -f 4)"
 
       # Confirm that we were actually able to get an IP address.
       if ! grep -Pq '^(([0-9]){1,3}\.){3}([0-9]{1,3})$' <<< "$address"; then
@@ -420,7 +461,7 @@ getlabel(){
 
     else # IP address format else
       # Provided address already is an IP address.
-      local address="${location}"
+      address="${location}"
     fi # end IP address format check
 
     if [ -z "$WINDIR" ]; then
@@ -433,7 +474,7 @@ getlabel(){
         return 0
       fi
 
-      local networks="$(route -n | sed -r '/(tun|tap)[0-9]{1,}/d' | grep -P "^\d" | awk '{if($2=="0.0.0.0"){print $1"/"$3" "$8}}' | cut -d' ' -f1 | sort | uniq | sed '/^169\.254/d')"
+      networks="$(route -n | sed -r '/(tun|tap)[0-9]{1,}/d' | grep -P "^\d" | awk '{if($2=="0.0.0.0"){print $1"/"$3" "$8}}' | cut -d' ' -f1 | sort | uniq | sed '/^169\.254/d')"
       local present=0
       for network in ${networks}; do
         is_in_cidr "${address}" "${network}" && present=1 && break
@@ -453,190 +494,201 @@ getlabel(){
       fi
     fi
 
-      # Attempt to use our existing ARP cache without spending time on arping.
-      local mac="$(__get_mac_from_ip_address "$address")"
+    # Attempt to use our existing ARP cache without spending time on arping.
+    mac="$(__get_mac_from_ip_address "$address")"
 
-      # If we were not able to get a MAC address, try to add it to our cache the old-fashioned way.
+    # If we were not able to get a MAC address, try to add it to our cache the old-fashioned way.
+    if [ -z "$mac" ]; then
+
+      # Do not attempt to resolve if being lazy, exit silently.
+      (( "${lazy:-0}" )) && return 1
+
+      if [ -z "$WINDIR" ]; then
+
+        notice "$(printf "Attempting to find \"${GREEN}%s${NC}\" with ${BLUE}%s${NC}..." "${address}" "arping")"
+
+        # Cycle through our UP-state interfaces (excluding lo and tun_ interfaces)
+        # Run through sort in a lazy attempt to prioritize ethernet interfaces (often starting with 'e') over wireless (often starting with 'w').
+
+        # Add the -f switch to arping on distributions that support it (RHEL-based).
+        # Decide outside of interface loop to save a try or two on interface-heavy systems.
+        local arping_switch
+        if [ -f "/etc/redhat-release" ]; then
+          arping_switch="-f"
+        fi
+
+        for interface in $(ip a s | grep -e "^[0-9]*:" | grep UP | awk '{ print $2 }' | sed -r 's/(@.*|:)//g' | grep -Pv 'lo|tun[0-9]*' | sort); do
+
+          # If arping was successful, break the loop.
+          if arping -I "${interface}" "${arping_switch}" -c 1 -q "${address}"; then
+            break
+          fi
+        done
+
+        # Check if arping generated a valid entry in the ARP table.
+        mac="$(__get_mac_from_ip_address "$address")"
+
+      fi # end [ -z "$WINDIR" ] check
+
+      if [ -z "$mac" ]; then # start ping-check block
+
+        # If the MAC address is still empty, we are either on a Windows machine via MobaXterm,
+        #     or a UNIX system that failed to arping.
+
+        notice "$(printf "Attempting to find \"${GREEN}%s${NC}\" with ${BLUE}%s${NC}..." "${address}" "ping")"
+
+        # Do a quick ping to try and add/refresh the arp entry.
+        # We don't really care if it the actual ICMP echo succeeds or not.
+        ping -n 1 -w 1 "$address" 2> /dev/null >&2
+
+      fi # end ping-check block
+
+
+      # If Unix: After the above 'for' loop, we have either successfully run arping on at least one interface, or unsuccessfully run through all of our interfaces.
+      # If Windows: We've tried to ping the remote address.
+      # Attempt to get the MAC address for the requested address with 'arp'
       if [ -z "$mac" ]; then
+        mac="$(__get_mac_from_ip_address "$address")"
+      fi
 
-        # Do not attempt to resolve if being lazy, exit silently.
-        (( "${lazy:-0}" )) && return 1
+    fi # end check for $mac being empty
 
-        if [ -z "$WINDIR" ]; then
+  fi # end else of MAC address format check (IP Address Handling)
 
-          notice "$(printf "Attempting to find \"${GREEN}$address${NC}\" with ${BLUE}arping${NC}...")"
-
-          # Cycle through our UP-state interfaces (excluding lo and tun_ interfaces)
-          # Run through sort in a lazy attempt to prioritize ethernet interfaces (often starting with 'e') over wireless (often starting with 'w').
-
-          # Add the -f switch to arping on distributions that support it (RHEL-based).
-          # Decide outside of interface loop to save a try or two on interface-heavy systems.
-          if [ -f "/etc/redhat-release" ]; then
-            local other_switches="-f"
-          fi
-
-          for interface in $(ip a s | grep -e ^[0-9]*: | grep UP | awk '{ print $2 }' | sed -r 's/(@.*|:)//g' | egrep -v 'lo|tun[0-9]*' | sort); do
-
-            # If arping was successful, break the loop.
-            if arping -I $interface $other_switches -c 1 -q "$address"; then
-              break
-            fi
-          done
-
-          # Check if arping generated a valid entry in the ARP table.
-          local mac="$(__get_mac_from_ip_address "$address")"
-
-        fi # end [ -z "$WINDIR" ] check
-
-        if [ -z "$mac" ]; then # start ping-check block
-
-          # If the MAC address is still empty, we are either on a Windows machine via MobaXterm,
-          #     or a UNIX system that failed to arping.
-
-          notice "$(printf "Attempting to find \"${GREEN}$address${NC}\" with ${BLUE}ping${NC}...")"
-
-          # Do a quick ping to try and add/refresh the arp entry.
-          # We don't really care if it the actual ICMP echo succeeds or not.
-          ping -n 1 -w 1 "$address" 2> /dev/null >&2
-
-        fi # end ping-check block
-
-
-        # If Unix: After the above 'for' loop, we have either successfully run arping on at least one interface, or unsuccessfully run through all of our interfaces.
-        # If Windows: We've tried to ping the remote address.
-        # Attempt to get the MAC address for the requested address with 'arp'
-        if [ -z "$mac" ]; then
-          local mac="$(__get_mac_from_ip_address "$address")"
-        fi
-
-      fi # end check for $mac being empty
-
-    fi # end else of MAC address format check (IP Address Handling)
-
-    # Finished resolving our MAC address (if necessary, start searching records.
-    if [ -n "$mac" ]; then
-      local label="$(__get_mac_label "$mac")"
-      if [ -n "$label" ]; then
-        if [ -n "$address" ]; then
-          # User provided an IP address
-          record "$(printf "Record for ${GREEN}%s${NC} (${BOLD}%s${NC}): ${BOLD}%s${NC}" "$address" "$mac" "$label")"
-        else
-          # User only provided a MAC address
-          record "$(printf "Record for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "$mac" "$label")"
-        fi
-
-        # look for other fields to print if we are in verbose mode.
-        if (( "$verbose" )); then
-          local description="$(__get_mac_description "$mac")"
-          local general_location="$(__get_mac_general_location "$mac")"
-          local specific_location="$(__get_mac_specific_location "$mac")"
-          local owner="$(__get_mac_owner "$mac")"
-          local category="$(__get_mac_type "$mac")"
-          local vendor="$(__get_mac_vendor "$mac")"
-          # TODO: There has got to be a tidier way to get a count of fields...
-          local field_count="$(( $(cut -d' ' -f 1 <<< "$description" | wc -w) + $(cut -d' ' -f 1 <<< "$general_location" | wc -w) + $(cut -d' ' -f 1 <<< "$specific_location" | wc -w) + $(cut -d' ' -f 1 <<< "$owner" | wc -w) + $(cut -d' ' -f 1 <<< "$category" | wc -w) + $(cut -d' ' -f 1 <<< "$vendor" | wc -w) ))"
-
-          count=1
-
-          if [ -n "$owner" ]; then
-            if [ "$count" -lt "$field_count" ]; then
-              local box="┣━"
-            else
-              local box="┗━"
-            fi
-            count="$(($count + 1))"
-            printf "\t\t %s${BOLD}Owner:${NC} %s\n" "$box" "$owner"
-          fi
-
-          if [ -n "$category" ]; then
-            if [ "$count" -lt "$field_count" ]; then
-              local box="┣━"
-            else
-              local box="┗━"
-            fi
-            count="$(($count + 1))"
-            printf "\t\t %s${BOLD}Type:${NC} %s\n" "$box" "$category"
-          fi
-
-          if [ -n "$general_location" ]; then
-            if [ "$count" -lt $field_count ]; then
-              local box="┣━"
-            else
-              local box="┗━"
-            fi
-            count="$(($count + 1))"
-            printf "\t\t %s${BOLD}General Location:${NC} %s\n" "$box" "$general_location"
-          fi
-
-          if [ -n "$specific_location" ]; then
-            if [ "$count" -lt $field_count ]; then
-              local box="┣━"
-            else
-              local box="┗━"
-            fi
-            count="$(($count + 1))"
-            printf "\t\t %s${BOLD}Specific Location:${NC} %s\n" "$box" "$specific_location"
-          fi
-
-          if [ -n "$description" ]; then
-            if [ "$count" -lt $field_count ]; then
-              local box="┣━"
-            else
-              local box="┗━"
-            fi
-            count="$(($count + 1))"
-            printf "\t\t %s${BOLD}Description:${NC} %s\n" "$box" "$description"
-          fi
-
-          if [ -n "$vendor" ]; then
-            if [ "$count" -lt $field_count ]; then
-              local box="┣━"
-            else
-              local box="┗━"
-            fi
-
-            count="$(($count + 1))"
-            printf "\t\t %s${BOLD}NIC Vendor:${NC} %s\n" "$box" "$vendor"
-          fi
-        fi # end verbose flag check
-      else
-        # Unable to find a specific label in our network index.
-        # As a fallback, attempt to determine the vendor of the unknown device.
-        local vendor="$(__get_mac_vendor "$mac")"
-        if [ -n "$vendor" ]; then
-          if [ -n "$address" ]; then
-            # User provided resolveable domain name or IP address
-            if ! (( "${lazy:-0}" )); then
-              unknown "$(printf "No record for ${GREEN}%s${NC} (${BOLD}%s${NC}) Vendor: ${BOLD}%s${NC}" "$address" "$mac" "$vendor")"
-            fi
-          elif ! grep -iPq '^[a-f0-9]{2}([:|-][a-f0-9]{2}){5}$' <<< "${mac}"; then
-            # User provided an incomplete MAC address.
-            # Assuming that the user did this intentionally in order
-            #   to specifically check a vendor.
-            record "$(printf "Vendor for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "${mac}" "${vendor}")"
-          elif ! (( "${lazy:-0}" )); then
-            # User only provided a full-fledged MAC address
-            unknown "$(printf "No record for ${BOLD}%s${NC} (Vendor: ${BOLD}%s${NC})..." "$mac" "$vendor")"
-          fi
-        else
-          if [ -n "$address" ]; then
-            # User provided resolveable domain name or IP address
-            unknown "$(printf "No records for ${GREEN}%s${NC} (${BOLD}%s${NC})..." "$address" "$mac")"
-          else
-            # User only provided a MAC address
-            unknown "$(printf "No record sfor ${BOLD}%s${NC}..." "$mac")"
-          fi
-        fi
-
-        return 5
-    fi
-  else
+  # Finished resolving our MAC address (if necessary, start searching records.
+  if [ -z "$mac" ]; then
     error "$(printf "Unable to find a MAC address for ${GREEN}%s${NC}" "$address")"
     return 4
   fi
 
+  local label
+  label="$(__get_mac_label "$mac")"
+
+  local box
+
+  local vendor
+  vendor="$(__get_mac_vendor "$mac")"
+
+  if [ -n "$label" ]; then
+    if [ -n "$address" ]; then
+      # User provided an IP address
+      record "$(printf "Record for ${GREEN}%s${NC} (${BOLD}%s${NC}): ${BOLD}%s${NC}" "$address" "$mac" "$label")"
+    else
+      # User only provided a MAC address
+      record "$(printf "Record for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "$mac" "$label")"
+    fi
+
+    # look for other fields to print if we are in verbose mode.
+    if (( "$verbose" )); then
+      local description
+      description="$(__get_mac_description "$mac")"
+      local general_location
+      general_location="$(__get_mac_general_location "$mac")"
+      local specific_location
+      specific_location="$(__get_mac_specific_location "$mac")"
+      local owner
+      owner="$(__get_mac_owner "$mac")"
+      local category
+      category="$(__get_mac_type "$mac")"
+
+      # TODO: There has got to be a tidier way to get a count of fields...
+      local field_count="$(( $(cut -d' ' -f 1 <<< "$description" | wc -w) + $(cut -d' ' -f 1 <<< "$general_location" | wc -w) + $(cut -d' ' -f 1 <<< "$specific_location" | wc -w) + $(cut -d' ' -f 1 <<< "$owner" | wc -w) + $(cut -d' ' -f 1 <<< "$category" | wc -w) + $(cut -d' ' -f 1 <<< "$vendor" | wc -w) ))"
+
+      count=1
+
+      if [ -n "$owner" ]; then
+        if [ "$count" -lt "$field_count" ]; then
+          box="┣━"
+        else
+          box="┗━"
+        fi
+        count="$((count + 1))"
+        printf "\t\t %s${BOLD}Owner:${NC} %s\n" "$box" "$owner"
+      fi
+
+      if [ -n "$category" ]; then
+        if [ "$count" -lt "$field_count" ]; then
+          box="┣━"
+        else
+          box="┗━"
+        fi
+        count="$((count + 1))"
+        printf "\t\t %s${BOLD}Type:${NC} %s\n" "$box" "$category"
+      fi
+
+      if [ -n "$general_location" ]; then
+        if [ "$count" -lt $field_count ]; then
+          box="┣━"
+        else
+          box="┗━"
+        fi
+        count="$((count + 1))"
+        printf "\t\t %s${BOLD}General Location:${NC} %s\n" "$box" "$general_location"
+      fi
+
+      if [ -n "$specific_location" ]; then
+        if [ "$count" -lt $field_count ]; then
+          box="┣━"
+        else
+          box="┗━"
+        fi
+        count="$((count + 1))"
+        printf "\t\t %s${BOLD}Specific Location:${NC} %s\n" "$box" "$specific_location"
+      fi
+
+      if [ -n "$description" ]; then
+        if [ "$count" -lt $field_count ]; then
+          box="┣━"
+        else
+          box="┗━"
+        fi
+        count="$((count + 1))"
+        printf "\t\t %s${BOLD}Description:${NC} %s\n" "$box" "$description"
+      fi
+
+      if [ -n "$vendor" ]; then
+        if [ "$count" -lt $field_count ]; then
+          box="┣━"
+        else
+          box="┗━"
+        fi
+
+        count="$((count + 1))"
+        printf "\t\t %s${BOLD}NIC Vendor:${NC} %s\n" "$box" "$vendor"
+      fi
+    fi # end verbose flag check
+  elif [ -n "${vendor}" ]; then
+    # Unable to find a specific label in our network index.
+    # As a fallback, attempt to determine the vendor of the unknown device.
+
+    if [ -n "${address}" ]; then
+      # User provided resolveable domain name or IP address
+      if ! (( "${lazy:-0}" )); then
+        unknown "$(printf "No record for ${GREEN}%s${NC} (${BOLD}%s${NC}) Vendor: ${BOLD}%s${NC}" "$address" "$mac" "$vendor")"
+      fi
+    elif ! grep -iPq '^[a-f0-9]{2}([:|-][a-f0-9]{2}){5}$' <<< "${mac}"; then
+      # User provided an incomplete MAC address.
+      # Assuming that the user did this intentionally in order
+      #   to specifically check a vendor.
+      record "$(printf "Vendor for ${BOLD}%s${NC}: ${BOLD}%s${NC}" "${mac}" "${vendor}")"
+    elif ! (( "${lazy:-0}" )); then
+      # User only provided a full-fledged MAC address
+      unknown "$(printf "No record for ${BOLD}%s${NC} (Vendor: ${BOLD}%s${NC})..." "$mac" "$vendor")"
+    fi
+    return 5
+  else
+    # No vendor was not found either
+    if [ -n "$address" ]; then
+      # User provided resolveable domain name or IP address
+      unknown "$(printf "No records for ${GREEN}%s${NC} (${BOLD}%s${NC})..." "$address" "$mac")"
+    else
+      # User only provided a MAC address
+      unknown "$(printf "No records for ${BOLD}%s${NC}..." "$mac")"
+    fi
+    return 5
+  fi
+
   # Unsetting interface down here in case we realize we want it later.
-  # Main objective is just to keep it from leaking out to the main shell session.
   unset interface
 }
 
@@ -649,21 +701,22 @@ getlabel(){
 getlabel_all(){
   # Cycle through all of our UP-state interfaces.
 
-  for interface in $(ip a s | grep -e ^[0-9]*: | grep UP | awk '{ print $2 }' | sed -r 's/(@.*|:)//g' | egrep -v '^(lo|tun[0-9]*)$' | sort); do
+  for interface in $(ip a s | grep -e "^[0-9]*:" | grep UP | awk '{ print $2 }' | sed -r 's/(@.*|:)//g' | grep -Pv '^(lo|tun[0-9]*)$' | sort); do
     # Add any interface with an address to our list.
-    if ip a s $interface | egrep -q 'inet\ (([0-9]){1,3}\.){3}([0-9]{1,3})'; then
+    if ip a s "${interface}" | grep -Pq 'inet\ (([0-9]){1,3}\.){3}([0-9]{1,3})'; then
       local interface_list="$interface_list ${interface}"
     fi
   done
 
   if [ -n "${interface_list}" ]; then
-    local count=$(wc -w <<< "$interface_list")
+    local count
+    count=$(wc -w <<< "$interface_list")
 
     # Silly branching for plural.
-    if [ "$count" -gt 1 ]; then
-      notice "$(printf "Scanning ${BOLD}%d${NC} networks with IP addresses." "$count")"
+    if [ "${count}" -gt 1 ]; then
+      notice "$(printf "Scanning ${BOLD}%d${NC} networks with IP addresses." "${count}")"
     else
-      notice "$(printf "Scanning our one ${BOLD}%d${NC} interface with an IP address." "$count")"
+      notice "$(printf "Scanning our one ${BOLD}%d${NC} interface with an IP address." "${count}")"
     fi
 
     for current_interface in $interface_list; do
@@ -688,7 +741,7 @@ getlabel_if(){
   local interface="$1"
 
   # Check to see that the interface exists.
-  local ip_output="$(ip a s "${interface}" 2> /dev/null)"
+  ip_output="$(ip a s "${interface}" 2> /dev/null)"
   if [ -z "${ip_output}" ]; then
     error "$(printf "Interface ${BOLD}%s${NC} not found..." "${interface}")"
     return 2
@@ -700,9 +753,11 @@ getlabel_if(){
     return 2
   fi
 
-  local networks="$(route -n | sed -r '/(tun|tap)[0-9]{1,}/d' | grep -P "^\d" | awk '{if($2=="0.0.0.0"){print $1"/"$3" "$8}}' | grep -w "${interface}" | cut -d' ' -f1 | sort | uniq | sed '/^169\.254/d')"
+  local networks
+  networks="$(route -n | sed -r '/(tun|tap)[0-9]{1,}/d' | grep -P "^\d" | awk '{if($2=="0.0.0.0"){print $1"/"$3" "$8}}' | grep -w "${interface}" | cut -d' ' -f1 | sort | uniq | sed '/^169\.254/d')"
 
-  local network_count=$(wc -w <<< "$networks")
+  local network_count
+  network_count=$(wc -w <<< "$networks")
 
   if [ "$network_count" -gt 0 ]; then
     notice "$(printf "Looking for devices on the same network as our ${BOLD}%s${NC} interface (%d subnets)." "${interface}" "$network_count")"
@@ -713,7 +768,8 @@ getlabel_if(){
   else
     # Interface is not attached to any networks.
     # Check to see if it isn't a bridge member.
-    local bridge="$(brctl show 2> /dev/null | awk -F' ' '
+    local bridge
+    bridge="$(brctl show 2> /dev/null | awk -F' ' '
     BEGIN {
       bridge="";
     }
@@ -782,7 +838,7 @@ EOF
 }
 
 while [ -n "${1}" ]; do
-  while getopts ":chlv" OPT $@; do
+  while getopts ":chlv" OPT "$@"; do
     case "$OPT" in
       "c")
         colours_on
