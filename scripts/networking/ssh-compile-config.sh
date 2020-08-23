@@ -64,11 +64,6 @@ get_files(){
   done <<< "$(find "${1}" -type f 2> /dev/null | sort)"
 }
 
-get_module_directory_from_variable(){
-
-  eval "echo \"\${${1}}\""
-}
-
 get_module_variables_ordered(){
 
   local moduleVariable
@@ -77,7 +72,7 @@ get_module_variables_ordered(){
   while read -r moduleVariable; do
     [ -z "${moduleVariable}" ] && continue
     # Check for a recorded priority.
-    priority="$(grep -Pom1 "priority:\d{1,}" "$(get_module_directory_from_variable "${moduleVariable}")/ssh/config" 2> /dev/null | cut -d':' -f 2)"
+    priority="$(grep -Pom1 "priority:\d{1,}" "${!moduleVariable}/ssh/config" 2> /dev/null | cut -d':' -f 2)"
     # Note: Priority will currently not be able to insert a newly-added 5-priority in between a 1-priority and a 10 priority.
     #       It was mostly made as a way to make sure that modules with lots of wildcard configs got placed above other modules.
 
@@ -185,29 +180,22 @@ ssh_compile_config(){
     # This marker is used by the header for a section
     marker="${moduleVariable}-marker"
 
-    # Resolve module variable to a path (moduleDir).
-    # This loop must receive a variable to resolve because the variable is used as a marker
-    #   for replacing the section in place.
-
-    # moduleDir is used by TOOLS_DIR token substitution
-    moduleDir="$(get_module_directory_from_variable "${moduleVariable}")"
-
     # Record moduleParent for use with MODULE_PARENT token substitution
-    moduleParent="$(readlink -f "${moduleDir}/..")"
+    moduleParent="$(readlink -f "${!moduleVariable}/..")"
     # Recore sshDir as a base for SSH configuration and for use with SSH_DIR token substitution
-    sshDir="${moduleDir}/ssh"
+    sshDir="${!moduleVariable}/ssh"
     # Replace $HOME with ~ for display purposes
     sshDirDisplay="$(substitute_home "${sshDir}/")"
 
     if [ ! -f "${sshDir}/config" ]; then
-      if [ -d "${moduleDir}" ]; then
+      if [ -d "${!moduleVariable}" ]; then
         # No module directory exists, but no SSH configuration file could be found within it.
         # Only making the lack of a configuration in a module give notice (as opposed to a warning or error).
         #   I think that this message is more likely to be a silly FYI than a serious error.
         notice "$(printf "No SSH configuration located at ${GREEN}%s${NC}" "$(substitute_home "${sshDir}/config")")"
       else
         # A module directory vanishing out from under us IS a cause for concern.
-        error "$(printf "Module directory not found: ${GREEN}%s${NC}" "$(substitute_home "${moduleDir}")")"
+        error "$(printf "Module directory not found: ${GREEN}%s${NC}" "$(substitute_home "${!moduleVariable}")")"
       fi
       continue
     fi
@@ -216,7 +204,7 @@ ssh_compile_config(){
 
     print_module_config_to_file "${sshDir}" "${stagingFile}"
     # Perform substitutions on staging file.
-    sed -i "s|TOOLS_DIR|${moduleDir}|g" "${stagingFile}"
+    sed -i "s|TOOLS_DIR|${!moduleVariable}|g" "${stagingFile}"
     sed -i "s|TOOLS_PARENT|${moduleParent}|g" "${stagingFile}"
     sed -i "s|SSH_DIR|${sshDir}|g" "${stagingFile}"
     # Get a checksum from our staging file.
@@ -230,20 +218,22 @@ ssh_compile_config(){
     fi
 
     # Backup
-    if (( ! backupWritten )) && [ ! -f "${targetFile}" ] && [ -n "${sectionStart}" ] || [[ "$checksum" != "$sectionChecksum" ]]; then
-      # This is our first module with updates to an existing file.
-      # Perform a backup of the target file as it was.
-      # Putting this block up here because I'd rather duplicate
-      #  the if statements for the below update/insert blocks
-      #   than duplicate the backing up of a file.
-      backupPath="${targetFile}.bak"
-      if cp "${targetFile}" "${backupPath}"; then
-        notice "$(printf "Backed up ${C_FILEPATH}%s${NC} to ${C_FILEPATH}%s${NC}" "$(substitute_home "${targetFile}")" "$(substitute_home "${backupPath}")")"
-      else
-        error "$(printf "Failed to back up ${C_FILEPATH}%s${NC} to ${C_FILEPATH}%s${NC}" "$(substitute_home "${targetFile}")" "$(substitute_home "${backupPath}")")"
-        exit
+    if (( ! backupWritten )) && [ -f "${targetFile}" ]; then
+      if [ -n "${sectionStart}" ] || [[ "$checksum" != "$sectionChecksum" ]]; then
+        # This is our first module with updates to an existing file.
+        # Perform a backup of the target file as it was.
+        # Putting this block up here because I'd rather duplicate
+        #  the if statements for the below update/insert blocks
+        #   than duplicate the backing up of a file.
+        backupPath="${targetFile}.bak"
+        if cp "${targetFile}" "${backupPath}"; then
+          notice "$(printf "Backed up ${C_FILEPATH}%s${NC} to ${C_FILEPATH}%s${NC}" "$(substitute_home "${targetFile}")" "$(substitute_home "${backupPath}")")"
+        else
+          error "$(printf "Failed to back up ${C_FILEPATH}%s${NC} to ${C_FILEPATH}%s${NC}" "$(substitute_home "${targetFile}")" "$(substitute_home "${backupPath}")")"
+          exit
+        fi
+        backupWritten=1
       fi
-      backupWritten=1
     fi
 
     local countUpdated=$((countUpdated+1))
