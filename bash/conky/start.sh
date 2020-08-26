@@ -1,6 +1,7 @@
 #!/bin/bash
 
-dir="$(dirname $0)"
+dir="$(dirname "${0}")"
+# shellcheck disable=SC1090
 . "$dir/functions/common.sh"
 
 usage(){
@@ -53,8 +54,8 @@ do_dynamic_setup(){
     if [ -n "$configDir" ]; then
         cd "$configDir" || return 1
     fi
-    cp -f "$CONKYRC_PRIMARY_TEMPLATE" "$CONKYRC_PRIMARY"
-    (( ${CONKY_ENABLE_TASKS:-0} )) && cp -f "$CONKYRC_SECONDARY_TEMPLATE" "$CONKYRC_SECONDARY"
+    cp -f "${CONKYRC_PRIMARY}_TEMPLATE" "${CONKYRC_PRIMARY}"
+    (( ${CONKY_ENABLE_TASKS:-0} )) && cp -f "${CONKYRC_SECONDARY}_TEMPLATE" "${CONKYRC_SECONDARY}"
 
     # * Setting own_window_type to 'desktop' on Fedora 23 (conky 1.9) makes the conky
     #     display vanish when the desktop is clicked on. Fixed by
@@ -84,11 +85,11 @@ do_dynamic_setup(){
     local window_type="${CONKY_WINDOW_TYPE:-${default_window_type:-override}}"
     if [[ "$window_type" == "none" ]]; then
         # Eliminate the line altogether
-        sed -i "/OWN_WINDOW_TYPE/d" "$CONKYRC_PRIMARY"
-        (( ${CONKY_ENABLE_TASKS:-0} )) && sed -i "/OWN_WINDOW_TYPE/d" "$CONKYRC_SECONDARY"
+        sed -i "/OWN_WINDOW_TYPE/d" "${CONKYRC_PRIMARY}"
+        (( ${CONKY_ENABLE_TASKS:-0} )) && sed -i "/OWN_WINDOW_TYPE/d" "${CONKYRC_SECONDARY}"
     else
-        sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "$CONKYRC_PRIMARY"
-        (( ${CONKY_ENABLE_TASKS:-0} )) && sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "$CONKYRC_SECONDARY"
+        sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "${CONKYRC_PRIMARY}"
+        (( ${CONKY_ENABLE_TASKS:-0} )) && sed -i "s/OWN_WINDOW_TYPE/$window_type/g" "${CONKYRC_SECONDARY}"
     fi
     # Original version-based check.
     #if conky --version | head -n1 | grep -qiP "^Conky 1\.1\d\."; then
@@ -114,7 +115,7 @@ handle_arguments(){
         return 0
     fi
 
-    while getopts "dhs:r" OPT $@; do
+    while getopts "dhs:r" OPT "$@"; do
         case $OPT in
             d)
                 printf "Enabling debug mode.\n"
@@ -134,7 +135,7 @@ handle_arguments(){
                     if [ -n "$CONKY_SCREEN" ]; then
                        printf "Screen set to %s (overriding CONKY_SCREEN value of %s).\n" "$OPTARG" "$CONKY_SCREEN"
                     else
-                        printf "Screen set to %s.\n"
+                        printf "Screen blanked out.\n"
                     fi
                     CONKY_SCREEN=$OPTARG
                 else
@@ -152,7 +153,7 @@ handle_arguments(){
     done
 
     # Only kill previous instances if we've successfully parsed our arguments.
-    if (( $RESTART )); then
+    if (( RESTART )); then
         printf "Restarting conky...\n"
         killall conky
     fi
@@ -180,11 +181,11 @@ get_coords(){
         return 1
     fi
 
-    if (( $__is_bl )); then
+    if (( __is_bl )); then
         # Bottom-left display.
         # Despite my ongoing troubles with right-aligned displays,
         #   the bottom-left display remains more consistent.
-        TARGET_X="$((- ( $__primary_monitor_bl_x - $MONITOR_CORNER_BL_X ) + $__add_x ))"
+        TARGET_X="$((- ( __primary_monitor_bl_x - MONITOR_CORNER_BL_X ) + __add_x ))"
     else
         # Bottom-right
 
@@ -196,11 +197,11 @@ get_coords(){
         # The Y-axis issue is currently unsolved (see below by the TARGET_Y calculation).
 
         # Calculate the value required to place the display on the right edge of our overall conky display.
-        X_POS_CORRECTION="$(((${__primary_monitor_offset_x} + ${__primary_monitor_br_x}) - ${__total_x}))"
+        X_POS_CORRECTION="$(((__primary_monitor_offset_x + __primary_monitor_br_x) - __total_x))"
         # Calculate number required to reach target screen.
         # This is a separate calculation from X_POS_CORRECTION to make debugging easier and to leave room for all these comments.
         # The two uses of $__total_x that cancel each other out are also intentionally left in.
-        TARGET_X="$((${X_POS_CORRECTION} + (${__total_x} - ${MONITOR_CORNER_BR_X}) + ${__add_x}))"
+        TARGET_X=$((X_POS_CORRECTION + (__total_x - MONITOR_CORNER_BR_X) + __add_x))
     fi
 
     # With testing for the most recent X co-ordinates fix, it appears that there
@@ -210,7 +211,7 @@ get_coords(){
     #   arranged properly, then it makes troubleshooting very difficult.
     # Taking the win with X positioning for the moment and shelving Y-axis
     #   problem for another session.
-    TARGET_Y="$(( $MONITOR_CORNER_BR_Y - $__primary_monitor_br_y + $__add_y ))"
+    TARGET_Y=$(( MONITOR_CORNER_BR_Y - __primary_monitor_br_y + __add_y ))
 }
 
 # Get dimensions for a monitor.
@@ -220,7 +221,8 @@ get_monitor_info(){
     local __is_primary=${2:-0}
 
     [ -z "$__monitor" ] && return 1
-    local __monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "^$__monitor " | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
+    local __monitor_info
+    __monitor_info="$(xrandr --current 2> /dev/null | grep -m1 "^$__monitor " | grep -oPm1 "\d{1,}x\d{1,}(\+\d{1,}){2}")"
 
     [ -z "$__monitor_info" ] && return 1
 
@@ -254,8 +256,8 @@ get_monitor_info(){
 
     # X coordinates work a bit differently, with (0,0) being in the top-right. +Y is down, and +X is right
     # For convenience, calculating the coordinates of the bottom-right corner with (0,0) being the bottom-left. +Y is up, +X is right
-    MONITOR_CORNER_BR_X=$(($MONITOR_WIDTH+$MONITOR_OFFSET_X))
-    MONITOR_CORNER_BR_Y=$(($__total_y-$MONITOR_OFFSET_Y-$MONITOR_HEIGHT))
+    MONITOR_CORNER_BR_X=$((MONITOR_WIDTH+MONITOR_OFFSET_X))
+    MONITOR_CORNER_BR_Y=$((__total_y-MONITOR_OFFSET_Y-MONITOR_HEIGHT))
 
     # For future use with the secondary display (which is relative to bottom-left), also collecting the co-ords of the bottom-left corner.
     MONITOR_CORNER_BL_X=$MONITOR_OFFSET_X
@@ -345,7 +347,7 @@ setup_global_values(){
         __primary_monitor="$(xrandr --current 2> /dev/null | grep -w "connected" | cut -d' ' -f1)"
     fi
 
-    __num_monitors="$(xrandr --current | grep -w connected | wc -l)"
+    __num_monitors="$(xrandr --current | grep -cw connected)"
     if [ "$__num_monitors" -le 1 ]; then
       # If we only have the one monitor, then ignore any monitor settings.
       if [[ "${CONKY_SCREEN:-${__primary_monitor}}" != "${__primary_monitor}" ]] || [[ "${CONKY_SECONDARY_SCREEN:-${__primary_monitor}}" != "${__primary_monitor}" ]]; then
@@ -377,7 +379,7 @@ setup_global_values(){
     __primary_monitor_bl_y=$MONITOR_CORNER_BR_Y
 }
 
-handle_arguments $@
+handle_arguments "$@"
 
 setup_global_values
 
@@ -399,25 +401,38 @@ if (( ${CONKY_ENABLE_TASKS:-0} )); then
    POS_SECONDARY_Y=$TARGET_Y
 fi
 
-# Clear cache.
-rm -rf "$tempRoot/cache"
-# Re-make cache, plus reports directory
-mkdir -p "$tempRoot/cache" "$tempRoot/reports"
+# tempRoot is defined in common.sh
+# shellcheck disable=SC2154
+if [ -n "${tempRoot}" ]; then
+    # Clear cache.
+    rm -rf "$tempRoot/cache"
+    # Re-make cache, plus reports directory
+    mkdir -p "$tempRoot/cache" "$tempRoot/reports"
+fi
 
 # Check for tmpfs
+# tempRoot is defined in common.sh
+# shellcheck disable=SC2154
 if [ -n "$tempRoot" ] && mkdir -p "$tempRoot" && df "$tempRoot" 2> /dev/null | grep -q '^tmpfs' && [ "$DEBUG" -ne "1" ]; then
     # Transfer to /tmp so that we're reading off of tmpfs instead of our hard drive
     # Do not bother if we are on a distribution that doesn't put a tmpfs on /tmp
     printf "Starting conky from tmpfs.\n"
+
     configDir="$tempRoot/config"
     mkdir -p "$configDir" || printf "Failed to create directory: %s\n" "$configDir"
     (rsync -av "$dir/" "$configDir/" 2> /dev/null >&2 && printf "Successfully synced files to tmpfs...\n") || printf "Failed to sync files...\n"
     echo "$dir/../../" > "$tempRoot/tools-dir"
-    cd "$configDir"
+    if ! cd "${configDir}"; then
+      print "Failed to navigate to directory: %s\n" "${configDir}"
+      exit 1
+    fi
     location=tmpfs
 else
     printf "Starting conky from regular location.\n"
-    cd "$dir"
+    if ! cd "$dir"; then
+      print "Failed to navigate to directory: %s\n" "${dir}"
+      exit 1
+    fi
     location=tools
 fi
 
@@ -467,7 +482,7 @@ if [[ "$TERM" =~ ^dumb$ ]]; then
   fi
   # Justified delay
   message="$(printf "Conky should appear in %ds..." "$countdown")"
-elif (( "$DEBUG" )); then
+elif (( DEBUG )); then
   message="Running conky in debug mode..."
 else
   message="Starting conky..."
@@ -485,21 +500,23 @@ if (( "${DEBUG:-0}" )); then
     # If we're in debug mode, run conky immediately in the foreground.
 
     # Print off the conky command being used for good measure.
-    printf "\nconky -c '$CONKYRC_PRIMARY' -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y\n\n"
+    # shellcheck disable=SC2059
+    printf "\nconky -c '${CONKYRC_PRIMARY}' -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y\n\n"
 
     # Start conky session(s)
     if (( ${CONKY_ENABLE_TASKS:-0} )); then
-      printf "\nconky -c '$CONKYRC_SECONDARY' -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y\n\n"
-      conky -c "$CONKYRC_SECONDARY" -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y &
+      # shellcheck disable=SC2059
+      printf "\nconky -c '${CONKYRC_SECONDARY}' -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y\n\n"
+      conky -c "${CONKYRC_SECONDARY}" -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y &
     fi
-    conky -c "$CONKYRC_PRIMARY" -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y
+    conky -c "${CONKYRC_PRIMARY}" -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y
 else
     # Standard mode
     # Sleep and start
-    sleep $countdown && conky -c "$CONKYRC_PRIMARY" -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y &
+    sleep $countdown && conky -c "${CONKYRC_PRIMARY}" -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y &
     if (( ${CONKY_ENABLE_TASKS:-0} )); then
-        sleep $countdown && conky -c "$CONKYRC_SECONDARY" -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y &
+        sleep $countdown && conky -c "${CONKYRC_SECONDARY}" -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y &
     fi
 fi
 
-cd "$OLDPWD"
+cd "${OLDPWD}" || exit 1
