@@ -8,6 +8,10 @@ __pycache__
 # Ansible retry files
 *.retry
 
+# Python code coverage
+htmlcov
+.coverage
+
 # OS generated files (though very few Linux items) #
 # ##################################################
 .DS_Store
