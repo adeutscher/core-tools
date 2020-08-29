@@ -1,23 +1,25 @@
 #!/usr/bin/python
 
+'''rdp.py: Wrapper script for xfreerdp'''
+
 from __future__ import print_function
-import base64, getopt, getpass, os, re, subprocess, sys, time
-
-# Defaults
-
-DEFAULT_HEIGHT = 900
-DEFAULT_WIDTH = 1600
+import argparse, base64, getpass, os, re, socket, subprocess, sys, time
 
 #
 # Common Colours and Message Functions
 ###
 
-def __print_message(colour, header, message):
-    print("%s[%s]: %s" % (colour_text(colour, header), colour_text(COLOUR_GREEN, os.path.basename(sys.argv[0])), message))
+def _print_message(header_colour, header_text, message, stderr=False):
+    f=sys.stdout
+    if stderr:
+        f=sys.stderr
+    print('%s[%s]: %s' % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
 
-def colour_text(colour, text):
+def colour_text(text, colour = None):
+    if not colour:
+        colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
-    return "%s%s%s" % (colour, text, COLOUR_OFF)
+    return '%s%s%s' % (colour, text, COLOUR_OFF)
 
 def enable_colours(force = False):
     global COLOUR_PURPLE
@@ -51,566 +53,592 @@ error_count = 0
 def print_error(message):
     global error_count
     error_count += 1
-    __print_message(COLOUR_RED, "Error", message)
+    _print_message(COLOUR_RED, 'Error', message)
+
+def print_exception(e, msg=None):
+    # Shorthand wrapper to handle an exception.
+    # msg: Used to provide more context.
+    sub_msg = ''
+    if msg:
+        sub_msg = ' (%s)' % msg
+    print_error('Unexpected %s%s: %s' % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
 
 def print_notice(message):
-    __print_message(COLOUR_BLUE, "Notice", message)
-
-def print_usage(message):
-    __print_message(COLOUR_PURPLE, "Usage", message)
+    _print_message(COLOUR_BLUE, 'Notice', message)
 
 def print_warning(message):
-    __print_message(COLOUR_YELLOW, "Warning", message)
+    _print_message(COLOUR_YELLOW, 'Warning', message)
 
-# Script Variables and Functions
-###
+class EC2InventoryItem:
+    '''Represents an EC2 instance'''
+    def __init__(self, entry):
 
-# Defaults
-DEFAULT_RDP_SECURITY = True
-DEFAULT_USER = os.getlogin()
-DEFAULT_VERBOSE = False
+        self.state = entry.get('State', {}).get('Name', 'unknown')
+        self.ip_public = entry.get('PublicIpAddress')
+        self.ip_internal = entry.get('PrivateIpAddress')
+        self.instance_id = entry.get('InstanceId')
+        self.platform = entry.get('Platform')
+        self.key = entry.get('KeyName')
 
-# Environment Variables
-ENV_DOMAIN = "RDP_DOMAIN"
-ENV_PASSWORD = "RDP_PASSWORD"
-ENV_USER = "RDP_USER"
-ENV_HEIGHT = "RDP_HEIGHT"
-ENV_WIDTH = "RDP_WIDTH"
+        self.name = None
+        for tag in entry.get('Tags', []):
+            if tag.get('Key') == 'Name':
+                self.name = tag.get('Value', '')
+                break
 
-# Store argument titles as variables
-TITLE_SERVER = "server"
-TITLE_RDP_SECURITY = "RDP Security"
-TITLE_DOMAIN = "domain"
-TITLE_USER = "user"
-TITLE_PASSWORD = "password"
-TITLE_HEIGHT = "height"
-TITLE_WIDTH = "width"
-TITLE_VERBOSE = "verbose"
-TITLE_EC2_FILE = "EC2 Key File"
+    def __colour_host(self):
+        '''Get text colouring for hostname.'''
+        if self.is_windows:
+            return COLOUR_BLUE
 
-def format_bytes(content):
-    if sys.version_info.major == 2:
-        return bytes(content)
-    elif type(content) is bytes:
-        return content # Already bytes
-    return bytes(content, 'ascii')
+        return COLOUR_BOLD
 
-def get_user(display = False):
+    def __colour_state(self):
+        '''Get text colouring for state'''
+        if self.is_running:
+            return COLOUR_GREEN
 
-    if TITLE_EC2_FILE in args:
-        user = "administrator" # Assume to always be 'administrator' for EC2 instances.
-    elif display and TITLE_DOMAIN in args:
-        user = "%s\\%s" % (args[TITLE_DOMAIN], get_user())
-    else:
-        user = args.get(TITLE_USER, os.environ.get(ENV_USER, DEFAULT_USER))
+        if self.state == 'pending':
+            return COLOUR_YELLOW
 
-    return user
+        return COLOUR_RED
 
-def print_summary():
+    def __is_running(self):
+        return self.state == 'running'
 
-    message = "Connecting to %s (display: %s) as %s" % (colour_text(COLOUR_GREEN, args[TITLE_SERVER]), colour_text(COLOUR_BOLD, "%sx%s" % (args[TITLE_WIDTH], args[TITLE_HEIGHT])), colour_text(COLOUR_BOLD, get_user(True)))
+    def __is_windows(self):
+        return self.platform == 'windows'
 
-    if TITLE_PASSWORD in args:
-        message += " with a password"
-    message += "."
+    def __str__(self):
 
-    print_notice(message)
+        display_values = {
+            'id': colour_text(self.instance_id),
+            'state': colour_text(self.state, self.__colour_state()),
+            'name': colour_text(self.name, self.__colour_host()),
+            'ip-internal': colour_text(self.ip_internal, COLOUR_BLUE),
+            'ip-public': colour_text(self.ip_public, COLOUR_BLUE),
+            'key': colour_text(self.key)
+        }
 
-    if TITLE_EC2_FILE in args:
-        print_warning("'%s' user is assumed for connecting to an EC2 instance." % colour_text(COLOUR_BOLD, get_user()))
+        s = '[%(id)s][%(state)s]: %(name)s' % display_values
 
-def get_ec2_cipher():
-    cipher = None
-    if not os.path.isfile(args[TITLE_EC2_FILE]):
-        print_error("EC2 Keyfile not found: %s" % colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE]))
-    else:
+        if self.is_running:
+            s+= ' @ %(ip-public)s (Internal: %(ip-internal)s). Key: %(key)s' % display_values
+
+        return s
+
+    is_running = property(__is_running)
+    is_windows = property(__is_windows)
+
+class RdpWrapper:
+    '''Main wrapper around xfreerdp'''
+
+    CMD = 'xfreerdp'
+
+    # Defaults
+    DEFAULT_HEIGHT = 900
+    DEFAULT_WIDTH = 1600
+    # Environment Variables
+    ENV_DOMAIN = 'RDP_DOMAIN'
+    ENV_USER = 'RDP_USER'
+    ENV_HEIGHT = 'RDP_HEIGHT'
+    ENV_WIDTH = 'RDP_WIDTH'
+
+    def __get_command_new(self, display):
+        '''Get command string for new-style xfreerdp switches.'''
+
+        # Static switches
+        cmd = '%s +auto-reconnect +clipboard +compression +heartbeat /compression-level:2' % self.CMD
+        switches = cmd.split(' ')
+
+        if self.is_legacy_security:
+            switches.append('/sec:rdp')
+
+        if self.args.ignore_certs:
+            switches.append('/cert:ignore')
+
+        # Display size
+        switches.append('/h:%d' % self.height)
+        switches.append('/w:%d' % self.width)
+        # Domain/Password/User
+        if self.args.domain:
+            switches.append('/d:%s' % self.args.domain)
+        if self.password:
+            if display:
+                switches.append('/p:%s' % colour_text(''.join([c*len(self.password) for c in '*'])))
+            else:
+                switches.append('/p:%s' % self.password)
+
+        switches.append('/u:%s' % self.user)
+        # Server address
+        switches.append('/v:%s' % self.server)
+
+        return switches
+
+    def __get_command_old(self, display):
+        '''Get command string for old-style xfreerdp switches.
+           The old style of switches probably aren't in use anymore,
+           but it's a short and straightforward method.
+
+           This entire script came about because I didn't want to juggle
+           switches between a machine with the old style and a script with
+           the new one.'''
+
+        # Static switches
+        cmd = '%s --plugin cliprdr' % self.CMD
+        switches = cmd.split(' ')
+
+        # RDP Security Switch
+        if self.legacy_security:
+            switches.extend('--sec rdp'.split(' '))
+
+        # Display size
+        switches.extend(['-g', self.geometry])
+        # Domain/Password/User
+        if self.args.domain:
+            switches.extend(['-d', self.args.domain])
+        if self.password:
+            if display:
+                switches.extend(['-p', colour_text(''.join([c*len(self.password) for c in '*']))])
+            else:
+                switches.extend(['-p', self.password])
+        switches.extend(['-u', self.user])
+        # Server address
+        switches.append(self.server)
+
+        return switches
+
+    def __get_ec2_cipher(self):
+        if not os.path.isfile(self.args.ec2_key_file):
+            print_error('EC2 key file not found: %s' % colour_text(self.args.ec2_key_file, COLOUR_GREEN))
+            return None
+
         # File exists.
         try:
             from Crypto.Cipher import PKCS1_v1_5
             from Crypto.PublicKey import RSA
 
-            input = open(args[TITLE_EC2_FILE])
-            key = RSA.importKey(input.read())
-            input.close()
-            cipher = PKCS1_v1_5.new(key)
+            with open(self.args.ec2_key_file, 'r') as handle:
+                key = RSA.importKey(handle.read())
+            return PKCS1_v1_5.new(key)
+
         except NameError as e:
             print_error("Could not load EC2 key file because required RSA module was not loaded from pycrypto.")
         except Exception as e:
             # Most likely: Path provided was not to a file with a proper RSA key.
-            print_error("Encountered %s loading EC2 key file ('%s'): %s" % (colour_text(COLOUR_RED, type(e).__name__), colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE]), str(e)))
-    return cipher
+            print_error("Encountered %s loading EC2 key file '%s': %s" % (colour_text(type(e).__name__, COLOUR_RED), colour_text(self.args.ec2_key_file, COLOUR_GREEN), str(e)))
 
-def process_args():
-    values = {}
+    def __get_geometry(self):
+        '''Return window dimensions in WxH format.'''
+        return '%dx%d' % (self.width, self.height)
 
-    # Errors that have not been resolved.
-    good_args = True
+    def __get_height(self):
+        '''Return the highest-priority window height'''
+        try:
+            env_height = int(os.environ.get(self.ENV_HEIGHT))
+        except ValueError:
+            env_height = self.DEFAULT_HEIGHT
 
-    try:
-        opts, operands = getopt.gnu_getopt(sys.argv, "d:De:g:h:p:Psu:Uvw:")
-    except getopt.GetoptError as e:
-        print_error(e)
-        exit(1)
+        return self.args.height or self.__geo_height or env_height
 
-    for opt,optarg in opts:
-        if opt == "-d":
-            if validate_string(optarg, TITLE_DOMAIN):
-                set_var(values, TITLE_DOMAIN, optarg)
-            else:
-                good_args = False
-        if opt == "-D":
-            # Manual domain input
-            record_var(values, TITLE_DOMAIN, COLOUR_BOLD, False)
-        if opt in ('-e'):
-            set_var(values, TITLE_EC2_FILE, optarg)
-        if opt == "-g":
-            # Single-arg geometry
-            # Try a few different delimiters ('x', ',', and ' ')
-            for delim in ["x", ",", " "]:
-                split = optarg.split(delim)
-                if len(split) > 1:
-                    break
-            if not len(split) > 1:
-                print_error("Geometry requires to integers (accepted delimiters: 'x', ',', and ' ')")
-                good_args = False
-                continue
+    def __get_password(self):
+        '''Return the highest-priority password source'''
+        return self.format_string(self.__prompted_password or self.__stored_password or self.args.password)
 
-            w_check = validate_int(split[0], TITLE_WIDTH)
-            h_check = validate_int(split[1], TITLE_HEIGHT)
-            if w_check and h_check:
-                set_var(values, TITLE_WIDTH, int(split[0]))
-                set_var(values, TITLE_HEIGHT, int(split[1]))
-            else:
-                good_args = False
+    def __get_server(self):
+        '''Return the highest-priority server source'''
+        return self.__stored_server or self.args.server
 
-        if opt == "-h":
-            if validate_int(optarg, TITLE_HEIGHT):
-                set_var(values, TITLE_HEIGHT, int(optarg))
-            else:
-                good_args = False
-        if opt == "-p":
-            # Password has no validation, since an exotic password
-            #   could have features that invalidate it.
-            set_var(values, TITLE_PASSWORD, optarg, COLOUR_BOLD, False)
-        if opt == "-P":
-            # Manual password input
-            record_var(values, TITLE_PASSWORD, COLOUR_BOLD, False)
-        elif opt == "-s":
-            values[TITLE_RDP_SECURITY] = False
-        if opt == "-u":
-            if validate_string(optarg, TITLE_USER):
-                set_var(values, TITLE_USER, optarg)
-            else:
-                good_args = False
-        if opt == "-U":
-            # Manual user input
-            record_var(values, TITLE_USER, COLOUR_BOLD, False)
-        if opt in ("-v"):
-            values[TITLE_VERBOSE] = True
-        if opt == "-w":
-            if validate_int(optarg, TITLE_WIDTH):
-                set_var(values, TITLE_WIDTH, int(optarg))
-            else:
-                good_args = False
+    def __get_width(self):
+        '''Return the highest-priority window width'''
+        try:
+            env_width = int(os.environ.get(self.ENV_WIDTH))
+        except ValueError:
+            env_width = self.DEFAULT_WIDTH
 
-    for operand in operands[1:]:
-        set_var(values, TITLE_SERVER, operand, COLOUR_GREEN)
+        return self.args.width or self.__geo_width or env_width
 
-    # If no values were set, load in defaults instead.
-    # Doing this after loading because of the override notice.
-    if TITLE_HEIGHT not in values:
-        values[TITLE_HEIGHT] = int(os.environ.get(ENV_HEIGHT, DEFAULT_HEIGHT))
-    if TITLE_WIDTH not in values:
-        values[TITLE_WIDTH] = int(os.environ.get(ENV_WIDTH, DEFAULT_WIDTH))
-    if TITLE_DOMAIN not in values and ENV_DOMAIN in os.environ:
-        set_var(values, TITLE_DOMAIN, os.environ.get(ENV_DOMAIN))
-    if TITLE_PASSWORD not in values and ENV_PASSWORD in os.environ:
-        set_var(values, TITLE_PASSWORD, os.environ.get(ENV_PASSWORD))
+    def __get_user(self):
+        '''Return the highest-priority user'''
+        if self.args.user:
+            return self.args.user
 
-    return values, good_args
+        if self.args.ec2_key_file:
+            # If an EC2 key file is being used, then assume that the user is 'administrator'
+            return 'administrator'
 
-def process_switches(args):
+        return os.environ.get(self.ENV_USER, os.getlogin())
 
-    # Read no-arg output to determine xfreerdp version
-    new_switches=False
+    def __init__(self):
+        self.__geo_width = None
+        self.__geo_height = None
+        self.__stored_password = None
+        self.__stored_server = None
 
-    try:
-        p = subprocess.Popen(['xfreerdp'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    def __is_installed(self):
 
-        # Read the first 10 lines for the usage summary.
-        # Not counting on it being on a specific line.
-        i = 0
-        for line in p.stdout.readlines():
-            i += 1
-            if i > 10:
-                break
-            if format_bytes("[/v:<server>[:port]]") in line:
-                new_switches=True
-                break
-    except OSError:
-        # Since we are already checking for xfreerdp, this probably will not come up.
-        # This is mostly here because I was doing some initial development on a machine without xfreerdp.
-        pass
+        program = self.CMD
+        # Credit: 'Jay': https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
+        is_exe = lambda p : os.path.isfile(p) and os.access(p, os.X_OK)
 
-    if new_switches:
-        # New switch scheme
+        fpath, fname = os.path.split(program)
+        if fpath and is_exe(program):
+            return True
 
-        # Static switches
-        switches = "xfreerdp +auto-reconnect +clipboard +compression +heartbeat /compression-level:2".split(" ")
-
-        if args.get(TITLE_RDP_SECURITY, DEFAULT_RDP_SECURITY) and not TITLE_EC2_FILE in args:
-            switches.append("/sec:rdp")
-
-        # Display size
-        switches.append("/h:%d" % args[TITLE_HEIGHT])
-        switches.append("/w:%d" % args[TITLE_WIDTH])
-        # Domain/Password/User
-        if TITLE_DOMAIN in args:
-            switches.append("/d:%s" % args[TITLE_DOMAIN])
-        if TITLE_PASSWORD in args:
-            switches.append("/p:%s" % args[TITLE_PASSWORD])
-        switches.append("/u:%s" % get_user())
-        # Server address
-        switches.append("/v:%s" % args[TITLE_SERVER])
-    else:
-        # Old switch scheme
-
-        # Static switches
-        switches = "xfreerdp --plugin cliprdr".split(" ")
-
-        # RDP Security Switch
-        if args.get(TITLE_RDP_SECURITY, DEFAULT_RDP_SECURITY) and not TITLE_EC2_FILE in args:
-            switches.extend("--sec rdp".split(" "))
-
-        # Display size
-        switches.extend(["-g", "%dx%d" % (args[TITLE_WIDTH], args[TITLE_HEIGHT])])
-        # Domain/Password/User
-        if TITLE_DOMAIN in args:
-            switches.extend(["-d", args[TITLE_DOMAIN]])
-        if TITLE_PASSWORD in args:
-            switches.extend(["-p", args[TITLE_PASSWORD]])
-        switches.extend(["-u", get_user()])
-        # Server address
-        switches.append(args[TITLE_SERVER])
-    return switches
-
-def record_var(values, title, colour=COLOUR_BOLD, reportOverwrite=True):
-    temp = ""
-    while not temp:
-        temp = getpass.getpass("Enter %s: " % title)
-        if not temp:
-            continue # Immediately loop again if empty.
-
-        # Validation may or may not be required depending on title.
-        if title == TITLE_PASSWORD:
-            # Passwords need no validation
-            continue
-        elif title == TITLE_USER:
-            # Check to see if the user provided their username in a format like 'DOMAIN\user'.
-            split = temp.split("\\")
-            if len(split) > 1:
-                if validate_string(split[0], TITLE_DOMAIN) and validate_string(split[1], TITLE_USER):
-                    set_var(values, TITLE_DOMAIN, split[0])
-                    temp = split[1]
-                else:
-                    # Invalid string, reset for next loop
-                    temp = ""
-            elif not validate_string(temp, TITLE_USER):
-                # Invalid string, reset for next loop
-                temp = ""
-        elif title == TITLE_DOMAIN:
-            if not validate_string(temp, TITLE_DOMAIN):
-                # Invalid string, reset for next loop
-                temp = ""
-    set_var(values, title, temp, colour, reportOverwrite)
-
-def set_ec2_info():
-
-    tag_name = 'Name'
-    label_instance_id = "instance ID"
-    label_public_ip = "public IP"
-    label_public_dns = "public DNS"
-    label_tag_name = "'%s' tag" % tag_name
-
-    good = False
-    target = args.get(TITLE_SERVER)
-
-    end = False
-
-    try:
-        import boto3
-        ec2client = boto3.client('ec2')
-        response = ec2client.describe_instances()
-
-        for reservation in response["Reservations"]:
-            for instance in reservation["Instances"]:
-
-                state = instance.get('State')
-                if not state or state.get('Name') != 'running':
-                    # Immediately ignore anything that isn't running.
-                    continue
-
-                public_dns = instance.get('PublicDnsName')
-                public_ip = instance.get('PublicIpAddress')
-                instance_id = instance.get('InstanceId')
-                platform = instance.get('Platform')
-
-                # Attempt to match from InstanceId, public IP, public DNS name, or 'Name' tag.
-
-                label = None
-                name = ""
-                if instance_id == target:
-                    label = label_instance_id
-                elif public_ip == target:
-                    label = label_public_ip
-                elif public_dns == target:
-                    label = label_public_dns
-                else:
-                    tags = instance.get("Tags", [])
-                    for tag in tags:
-                        if tag.get("Key") == tag_name:
-                            name = tag.get("Value", "")
-                            if name == target:
-                                label = label_tag_name
-                            break
-
-                if not label:
-                    # Could not find a matching instance.
-                    continue
-
-                # After finding an instance, confirm that it is a Windows instance.
-                # If a matching case is not Windows, then print a warning and try
-                # the next entry.
-                if not public_ip or instance.get('Platform') != 'windows':
-                    print_warning("EC2 instance %s matches requested %s, but is not a Windows instance." % (instance_id, colour_text(COLOUR_BOLD, label)))
-                    continue
-
-                print_notice("Connecting to EC2 instance by %s matching target: %s" % (label, colour_text(COLOUR_BOLD, target)))
-
-                # Found our target instance.
-                # Whether or not we are able to get a password, we will be stopping with this item.
-                end = True
-
-                password_data =  ec2client.get_password_data(InstanceId = instance_id)
-                raw_password = base64.b64decode(password_data.get("PasswordData", "").strip())
-
-                if not raw_password:
-                    print_error("Unable to get encrypted password data from instance '%s' matching %s: %s" % (colour_text(COLOUR_BOLD, instance_id), label, colour_text(COLOUR_BOLD, target)))
-                    continue
-
-                # Attempt to get password.
-                cipher = get_ec2_cipher()
-                plain_password = cipher.decrypt(raw_password, None)
-                if not plain_password:
-                    print_error("Unable to decode encrypted password data from instance '%s', decryption key is probably be incorrect. File: %s" % (colour_text(COLOUR_BOLD, instance_id), colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE])))
-                    continue
-
-                # If we get past this point, then we have successfully obtained a password for the instance.
-
-                args[TITLE_SERVER] = public_ip
-                args[TITLE_PASSWORD] = plain_password.decode()
-
-                # Note: Username is handled by get_user().
-                # Assumed to always be 'administrator' for EC2 connections using a private key.
-                if TITLE_DOMAIN in args:
-                    del args[TITLE_DOMAIN]
-
-                good = True
-                break
-            if end:
-                break
-    except Exception as e:
-        print_error("Error resolving EC2 identifier (%s) to an active instance: %s" % (colour_text(COLOUR_BOLD, target), str(e)))
-        raise
-        good = False
-
-    if not good:
-        print_error("Unable to resolve target to a running EC2 instance secured with key file '%s'. Target: %s" % (colour_text(COLOUR_GREEN, args[TITLE_EC2_FILE]), colour_text(COLOUR_BOLD, target)))
-        print_notice("The following properties are checked: %s, %s, %s, and %s" % (label_instance_id, label_public_ip, label_public_dns, label_tag_name))
-    else:
-        if label in (label_public_ip, label_public_dns):
-            label_colour = COLOUR_GREEN
-        else:
-            label_colour = COLOUR_BOLD
-
-        print_notice("Resolved target %s '%s' to EC2 instance '%s'." % (label, colour_text(label_colour, target), colour_text(COLOUR_BOLD, instance_id)))
-
-    return good
-
-def set_var(values, title, value, colour=COLOUR_BOLD, reportOverwrite=True):
-    if title in values and value != values[title]:
-        # Print a warning if a value is already set.
-        # Don't bother raising a fuss if the same value has been specified twice.
-        if reportOverwrite:
-            print_warning("More than one %s specified in arguments: Replacing '%s' with '%s'" % (title, colour_text(colour, value), colour_text(colour, values[title])))
-        else:
-            print_warning("More than one %s specified in arguments. Using latest value." % colour_text(COLOUR_BOLD, title))
-    values[title] = value
-
-def translate_seconds(duration, add_and = False):
-    modules = [("seconds", 60, None), ("minutes",60,None), ("hours",24,None), ("days",7,None), ("weeks",52,None), ("years",100,None), ("centuries",100,"century")]
-    num = int(duration)
-    i = -1
-    c = -1
-
-    times = []
-    for i in range(len(modules)):
-
-        noun = modules[i][0]
-        value = modules[i][1]
-        mod_value = num % value
-
-        if mod_value == 1:
-            if modules[i][2]:
-                noun = modules[i][2]
-            else:
-                noun = re.sub("s$", "", noun)
-
-        if mod_value:
-            times.append("%s %s" % (mod_value, noun))
-
-        num = int(num / modules[i][1])
-        if not num:
-            break # No more modules to process
-
-    if len(times) == 1:
-        return " ".join(times)
-    elif len(times) == 2:
-        return ", ".join(reversed(times))
-    else:
-        # Oxford comma
-        d = ", and "
-        s = d.join(reversed(times))
-        sl = s.split(d, len(times) - 2)
-        return ", ".join(sl)
-
-def validate_args(args):
-    all_clear = True
-
-    if TITLE_SERVER not in args:
-        print_error("No server specified.")
-        all_clear = False
-
-    if TITLE_EC2_FILE in args and not get_ec2_cipher():
-        all_clear = False
-
-    return all_clear
-
-
-def validate_environment():
-    all_clear = True
-    if not which("xfreerdp"):
-        print_error("xfreerdp is not found in PATH.")
-        all_clear = False
-
-    if not "DISPLAY" in os.environ:
-        print_error("No DISPLAY variable set.")
-        all_clear = False
-    return all_clear
-
-def validate_int(candidate, title):
-    try:
-        t = int(candidate)
-        return True
-    except ValueError:
-        print_error("Must express %s as an integer." % title)
-        return False
-
-def validate_string(candidate, title):
-    if title in (TITLE_USER, TITLE_DOMAIN) and not re.match(r'^[^\s]+$', candidate):
-        print_error("A %s may not contain any spaces." % title)
-        return False
-    return True
-
-def which(program):
-    # Credit: "Jay": https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
-    def is_exe(fpath):
-        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-
-    fpath, fname = os.path.split(program)
-    if fpath:
-        if is_exe(program):
-            return program
-    else:
-        for path in os.environ["PATH"].split(os.pathsep):
+        for path in os.environ.get('PATH', '').split(os.pathsep):
             path = path.strip('"')
             exe_file = os.path.join(path, program)
             if is_exe(exe_file):
-                return exe_file
-    return None
+                return True
+        return False
 
-def run():
-    good_env = validate_environment()
+    def __is_legacy_security(self):
+        return self.args.legacy_security and not self.is_using_ec2
 
-    global args
-    args, good_args = process_args()
-
-    if args.get(TITLE_EC2_FILE):
-        # Must load modules outside of functions.
+    def __is_new_rdp(self):
         try:
-            import base64, boto3
+            p = subprocess.Popen([self.CMD], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            # Read the first 10 lines for the usage summary.
+            # Not counting on it being on a specific line within this.
+            i = 0
+            for line in p.stdout.readlines():
+                i += 1
+                if i > 10:
+                    break
+                if self.format_bytes('[/v:<server>[:port]]') in line:
+                    return True
+                    break
+        except OSError:
+            # Since we are already checking for xfreerdp, this probably will not come up.
+            # This is mostly here because I was doing some initial development on a machine without xfreerdp.
+            pass
+        return False
+
+    def __is_using_ec2(self):
+        return self.args.ec2_key_file is not None
+
+    def collect_password(self, prompt):
+        temp = ''
+        while not temp.strip():
+            temp = getpass.getpass('%s: ' % prompt)
+        return temp
+
+    ec2_cipher = property(__get_ec2_cipher)
+
+    def format_bytes(self, content):
+        if sys.version_info.major == 2:
+            return bytes(content)
+        elif type(content) is bytes:
+            return content # Already bytes
+        return bytes(content, 'utf-8')
+
+    def format_string(self, content):
+        if content is None:
+            return ''
+        if sys.version_info.major == 2:
+            return str(content)
+        elif type(content) is str:
+            return content # Already string
+        return str(content, 'utf-8')
+
+    geometry = property(__get_geometry)
+
+    def get_command(self, display=False):
+        initial = ''
+        if self.is_new_rdp:
+            return self.__get_command_new(display)
+        return self.__get_command_old(display)
+
+    height = property(__get_height)
+    is_installed = property(__is_installed)
+    is_legacy_security = property(__is_legacy_security)
+    is_new_rdp = property(__is_new_rdp)
+    is_using_ec2 = property(__is_using_ec2)
+    password = property(__get_password)
+    server = property(__get_server)
+    width = property(__get_width)
+
+    def print_error(self, msg):
+        '''Lazy wrapper around printing to sys.stderr'''
+        print(msg, file=sys.stderr)
+
+    def print_summary(self):
+        '''Output a summary of what xfreerdp will be doing.'''
+
+        user = self.user
+        if self.args.domain:
+            user = '%s\%s' % (self.args.domain, user)
+
+        display_values = {
+            'server': colour_text(self.server, COLOUR_BLUE),
+            'geometry': colour_text(self.geometry),
+            'user': colour_text(user)
+        }
+
+        message = 'Connecting to %(server)s (display: %(geometry)s) as %(user)s' % display_values
+
+        if self.password:
+            message += ' with a password'
+        message += '.'
+
+        print_notice(message)
+
+        if self.is_legacy_security:
+            print_warning('Using legacy security mode.')
+
+        if self.args.ignore_certs:
+            print_warning('Ignoring certificate validation.')
+
+        if self.is_using_ec2 and not self.args.user:
+            # 'administrator' user is assumed, unless overridden a username argument
+            print_warning('"%(user)s" user is assumed for connecting to an EC2 instance.' % display_values)
+
+    def process_args(self, args_list):
+        '''Handle arguments, and report back if everything looks valid.'''
+        good = True
+        if not self.is_installed:
+            self.print_error('Command is not installed: %s' % colour_text('xfreerdp'))
+            good = False
+
+        parser = argparse.ArgumentParser(description='xfreerdp wrapper')
+        parser.add_argument('server', help='Server address')
+        parser.add_argument('-v', dest='verbose', action='store_true', help='Verbose output')
+        # RDP options
+        g_rdp = parser.add_argument_group('rdp options')
+        g_rdp.add_argument('-g', dest='geometry', help='Specify geometry ( WxH )')
+        g_rdp.add_argument('-i', dest='ignore_certs', action='store_true', help='Ignore certificate validation')
+        g_rdp.add_argument('-s', dest='legacy_security', action='store_true', help='Use legacy RDP security mode')
+        g_rdp.add_argument('--height', dest='height', type=int, help='RDP window height (overrides -g')
+        g_rdp.add_argument('--width', dest='width', type=int, help='RDP window width (overrides -g)')
+        # User options
+        g_user = parser.add_argument_group('user options')
+        g_user.add_argument('-d', dest='domain', default=os.environ.get(self.ENV_DOMAIN), help='User domain name')
+        g_user.add_argument('-e', dest='ec2_key_file', help='Path to EC2 key file')
+        g_user.add_argument('-P', dest='password_prompt', action='store_true', help='Prompt for password')
+        g_user.add_argument('-p', dest='password', help='RDP password')
+        g_user.add_argument('-u', dest='user', help='Username')
+
+        self.args = parser.parse_args(args_list)
+
+        self.__prompted_password = None
+        if self.args.password_prompt:
+            self.__prompted_password = self.collect_password('Enter password')
+
+        if self.args.geometry:
+            # Parse geometry
+            if re.match('^\d+x\d+$', self.args.geometry):
+                parts = [int(i) for i in self.args.geometry.split('x')]
+                self.__geo_width = parts[0]
+                self.__geo_height = parts[1]
+            else:
+                self.print_error('Invalid geometry: %s' % self.args.geometry)
+                good = False
+
+        # Confirm that no weird height values were given.
+        if self.height <= 0:
+            self.print_error('Invalid height: %s' % colour_text(self.height))
+            good = False
+
+        # Confirm that no weird width values were given.
+        if self.width <= 0:
+            self.print_error('Invalid width: %s' % colour_text(self.width))
+            good = False
+
+        if self.args.ec2_key_file:
+            good = self.resolve_ec2() and good
+        else:
+            try:
+                socket.gethostbyname(self.server)
+            except socket.gaierror:
+                self.print_error('Unable to resolve server address: %s' % colour_text(self.server, COLOUR_BLUE))
+                good = False
+
+        return good
+
+    def resolve_ec2(self):
+        '''Use the provided server label as a guide for finding a Windows-based EC2 instance.'''
+
+        label = self.server # Record the server as it was before we started resolving.
+        print_notice('Identifying an EC2 instance from label: %s' % colour_text(label))
+
+        good = True
+        try:
+            import boto3
+        except ImportError:
+            self.print_error('%s module is not installed, required for EC2 lookups' % colour_text('boto3'))
+            good = False
+
+        try:
             import Crypto.Cipher
             import Crypto.PublicKey
-        except ImportError as e:
-            print_error("Error loading modules for EC2 password: %s" % str(e))
-            good_args = False
+        except ImportError:
+            self.print_error('%s module is not installed, required for EC2 lookups' % colour_text('pycrypto'))
+            good = False
 
-    good_args = validate_args(args) and good_args
+        if not os.path.isfile(self.args.ec2_key_file):
+            self.print_error('No such file for use as EC2 key: %s' % colour_text(self.args.ec2_key_file, COLOUR_GREEN))
+            good = False
 
-    if not good_args:
-        print_usage("./rdp.py server [-d domain] [-D] [-e ec2-key-file] [-g HxW] [-h height] [-p password] [-P] [-u user] [-U] [-v] [-w width]")
-        exit(1)
+        if not good:
+            return False
 
-    if not good_env:
-        exit(2)
+        client = boto3.client('ec2')
 
-    if TITLE_EC2_FILE in args and not set_ec2_info():
-        # Unable to resolve EC2 name to an active instance.
-        exit(3)
+        raw_instances = []
 
-    command = process_switches(args)
+        # Tried to do this in a one-liner, but it was getting very hard to read.
+        try:
+            response = client.describe_instances()
+        except client.exceptions.ClientError as e:
+            print_exception(e)
+            return False
 
-    print_summary()
+        for sublist in [cluster for cluster in [r['Instances'] for r in [rl for rl in response['Reservations']]]]:
+            raw_instances += [EC2InventoryItem(i) for i in sublist]
 
-    if args.get(TITLE_VERBOSE, DEFAULT_VERBOSE):
-        print_notice("Command: %s" % " ".join(command))
+        instances = [i for i in raw_instances if i.is_running and i.is_windows]
 
-    time_start = int(time.time())
+        if self.args.verbose:
+            print_notice('Potential Windows instances:')
+            for instance in instances:
+                print('\t',instance)
+            print_notice('Non-windows instances (not considered):')
+            for instance in [i for i in raw_instances if i.is_running and not i.is_windows]:
+                print('\t',instance)
+            print_notice('Non-running instances (not considered):')
+            for instance in [i for i in raw_instances if not i.is_running]:
+                print('\t',instance)
 
+        check = lambda ec2: label in (ec2.ip_public, ec2.instance_id, ec2.name)
+        matches = [i for i in instances if check(i)]
+
+        if not matches:
+            print_error('Unable to resolve label to a running EC2 Windows instance: %s' % colour_text(label))
+            return False
+
+        cipher = self.ec2_cipher
+        if not cipher:
+            return False # Immediately return, error messages handled within self.ec2_cipher
+
+        # Need to pull the encrypted password and decrypt it
+        found = False
+        for instance in matches:
+            display_data = {
+                'id': colour_text(instance.instance_id),
+                'name': colour_text(instance.name or 'Unnamed'),
+                'path': colour_text(self.args.ec2_key_file, COLOUR_GREEN)
+            }
+
+            self.__stored_server = instance.ip_public
+            password_data = client.get_password_data(InstanceId = instance.instance_id)
+            raw_password = base64.b64decode(password_data.get('PasswordData', '').strip())
+            if not raw_password:
+                print_error('Unable to get encrypted password data from instance: \'%(id)s\' (%(name)s)' % display_data)
+                continue
+
+            self.__stored_password = cipher.decrypt(raw_password, None)
+            if self.__stored_password:
+                found = True
+                break
+
+            print_error('Unable to decode encrypted password data from instance \'%(id)s\' (%(name)s), decryption key is probably be incorrect. File: %(path)s' % display_data)
+
+        if not found:
+            print_error('Unable to decode encrypted password data from any candidate instance.')
+
+        return found
+
+    def run(self, args_list):
+        '''Central run method.'''
+        if not self.process_args(args_list):
+            return 1
+
+        self.print_summary()
+
+        return self.run_rdp()
+
+    def run_rdp(self):
+        '''Directly run xfreerdp'''
+        time_start = time.time()
+
+        try:
+            if self.args.verbose:
+                print(' '.join(self.get_command(True)))
+            print(self.password)
+            p = subprocess.Popen(self.get_command(), stdout=sys.stdout, stderr=sys.stderr)
+
+            # Run until the process ends.
+            p.communicate()
+            exit_code = p.returncode
+        except KeyboardInterrupt:
+            p.kill()
+            exit_code = 130
+        except OSError as e:
+            print_error('OSError: %s' % e)
+            exit_code = 1
+
+        time_end = time.time()
+        time_diff = time_end - time_start
+
+        if (time_diff) > 60:
+            # Print a summary of time for any session duration over a minute
+            #  (this amount of time implies a connection that didn't just
+            #   die from xfreerdp timing out when trying to connect)
+            print_notice('RDP Session Duration: %s' % colour_text(self.translate_seconds(time_diff)))
+
+        return exit_code
+
+    def translate_seconds(self, duration):
+        '''Translate seconds to something more human-readable.'''
+        modules = [
+            ('seconds', 60),
+            ('minutes',60),
+            ('hours',24),
+            ('days',7),
+            ('weeks',52),
+            ('years',100)
+        ]
+
+        num = max(0, int(duration))
+
+        if not num:
+            # Handle '0' input.
+            return '0 %s' % modules[0][0]
+
+        times = []
+        for i in range(len(modules)):
+
+            noun, value = modules[i]
+            mod_value = num % value
+
+            if mod_value == 1:
+                noun = re.sub('s$', '', noun)
+
+            if mod_value:
+                times.append('%s %s' % (mod_value, noun))
+
+            num = int(num / value)
+            if not num:
+                break # No more modules to process
+
+        if len(times) == 1:
+            return ' '.join(times)
+        elif len(times) == 2:
+            return ', '.join(reversed(times))
+        else:
+            # Oxford comma
+            d = ', and '
+            s = d.join(reversed(times))
+            sl = s.split(d, len(times) - 2)
+            return ', '.join(sl)
+
+    user = property(__get_user)
+
+if __name__ == '__main__':
     try:
-        p = subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr)
-
-
-        # Clean password from memory a bit.
-        # It's not perfect, but it does axe at least a few instances of the password from a memory dump.
-        # If you're really paranoid about password security, you should really be entering it yourself.
-        # The password can't be found at the Python level if it's never entered there in the first place.
-        if TITLE_PASSWORD in args:
-            del args[TITLE_PASSWORD]
-        if ENV_PASSWORD in os.environ:
-            del os.environ[ENV_PASSWORD]
-        del command
-
-        # Run until the process ends.
-        p.communicate()
-        exit_code = p.returncode
+        rdp = RdpWrapper()
+        exit_code = rdp.run(sys.argv[1:])
     except KeyboardInterrupt:
-        p.kill()
         exit_code = 130
-    except OSError as e:
-        print_error("OSError: %s" % e)
-        exit_code = 1
-
-    time_end = int(time.time())
-    time_diff = time_end - time_start
-
-    if (time_diff) > 60:
-        # Print a summary of time for any session duration over a minute
-        #  (this amount of time implies a connection that didn't just
-        #   die with xfreerdp timing out when trying to connect)
-        print_notice("RDP Session Duration: %s" % colour_text(COLOUR_BOLD, translate_seconds(time_diff)))
-
     exit(exit_code)
-
-if __name__ == "__main__":
-    run()
