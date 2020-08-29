@@ -1,0 +1,72 @@
+---
+
+# Basic setup of an Amazon Linux2 server with some preferences.
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  vars:
+
+    # Backend-ish packages
+    # Requirements for CentOS are slightly different than Fedora.
+    system_packages_centos:
+      - epel-release
+      - bash-completion
+      - bash
+
+    # User convenience packages
+    # Many of these will already be present, but I also want to make sure that they are up to date.
+    # Naming is consistent between CentOS and Fedora
+    preferred_packages:
+      - tmux
+      - net-tools
+      - svn
+      - git
+      - wget
+      - python2
+      - python3
+      - vim
+      - curl
+      - nmap-ncat
+      - rsync
+      - tar
+      - gzip
+      - openssh
+      - openssh-clients
+      - openssl
+      - openssl-libs
+      - bind-utils
+      - lsof
+      - python-pip
+
+    pip2_packages:
+      - boto3
+      - httplib2
+
+    pip3_packages:
+      - boto3
+
+  environment:
+    ANSIBLE: 1
+
+  tasks:
+
+  - name: install preferred packages
+    become: yes
+    action: >
+      {{ ansible_pkg_mgr }} name="{{ preferred_packages }}" state=latest
+
+  - name: install/update pip2 items
+    become: yes
+    pip:
+      executable: pip2
+      name: "{{ pip2_packages }}"
+      state: latest
+
+  - name: install/update pip3 items
+    become: yes
+    pip:
+      executable: pip3
+      name: "{{ pip3_packages }}"
+      state: latest
+
