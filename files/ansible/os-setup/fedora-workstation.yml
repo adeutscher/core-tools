@@ -59,6 +59,7 @@
         - curl             # URL Handler
         - python2          # Python v2
         - python3          # Python v3
+        - python3-pip      # Python's pip package manager
 
       fun_cli:
         - mpg123 # Play sounds from the command line
@@ -85,16 +86,28 @@
         - zip
         - fuse-exfat
 
+      pip3:
+        - coverage
+
   environment:
     ANSIBLE: 1
 
   tasks:
 
-  - name: Install Repositories (Fedora)
-    become: yes
-    when: (ansible_distribution == "Fedora")
-    block:
 
+  # Restrict to Fedora systems for the time being.
+  # Support for other RedHat-based distributions can be added pending testing.
+  - name: abort if not raspbian
+    when: not (ansible_distribution == "Fedora")
+    fail: msg="Non-Fedora distribution - {{ ansible_os_family }} ({{ ansible_distribution }})"
+
+  - name: "Confirm DNF System"
+    when: not (ansible_pkg_mgr == "dnf")
+    fail: msg="DNF not our primary package manager."
+
+  - name: Install Repositories
+    become: yes
+    block:
       - name: "rpmfusion gpg keys for fedora {{ ansible_distribution_major_version }}"
         get_url:
           url: "https://rpmfusion.org/keys?action=AttachFile&do=get&target=RPM-GPG-KEY-rpmfusion-{{ item }}-fedora-{{ ansible_distribution_major_version }}"
@@ -158,17 +171,10 @@
           gpgcheck: yes
           gpgkey: "file://{{ skype_repo.gpgkey.dest }}"
 
-  - name: Install Fedora Packages
+  - name: Install Packages
     # Some Fedora checks are a bit redundant in this version.
-    when: (ansible_distribution == "Fedora")
     become: yes
     block:
-      # Restrict to Fedora systems for the time being.
-      # Support for other RedHat-based distributions can be added pending testing.
-      - name: "Confirm DNF System"
-        fail: msg="DNF not our primary package manager."
-        when: not (ansible_pkg_mgr == "dnf")
-
       ## Development Tools and CLI items
 
       - name: install/update development tools and cli items
@@ -191,7 +197,7 @@
         #   F26->F25 (FAIL)
         #   F26->F26 (Success)
         # Possibly related to https://github.com/ansible/ansible/issues/26868.
-        when: (ansible_distribution == "Fedora" and ansible_distribution_version >= "26")
+        when: (ansible_distribution_version >= "26")
 
       ## Network-Based Items
       - name: install/update network utilities
@@ -222,6 +228,15 @@
         # 'version_compare' was renamed to 'version' with Ansible 2.5.
         # However, the old 'version_compare' name is still available with no apparent strings attached.
         when: (dnf_check.stdout and dnf_check.stdout is version_compare('2.0.1', '>='))
+
+  - name: Fedora User adjustments
+    block:
+      - name: install/update pip3 items
+        pip:
+          executable: pip3
+          extra_args: --user
+          name: "{{ packages.pip3 }}"
+          state: latest
 
   - name: openssh service enabled
     become: yes
