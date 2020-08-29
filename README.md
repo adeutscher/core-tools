@@ -144,9 +144,8 @@ You can set the following environment variables to adjust your default RDP param
 
 * `RDP_WIDTH` sets the width of the `rdp` window (default: 1600).
 * `RDP_HEIGHT` sets the height of the `rdp` window (default: 900).
-* `RDP_USER` sets the domain.
+* `RDP_DOMAIN` sets the domain.
 * `RDP_USER` sets the user.
-* `RDP_PASSWORD` sets the password.
 
 Each of these environment variables can be overridden by manually specifying a value in the `rdp.sh` script.
 
