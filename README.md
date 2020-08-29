@@ -120,7 +120,8 @@ If you want to disable all of these bells and whistles, set the `BASIC_PROMPT` v
 
 ### rdp
 
-The `rdp` command is made to make the `xfreerdp` command more convenient to use. `rdp` is an alias referring to `scripts/networking/rdp.py`.
+The `scripts/networking/rdp.py` is made to make the `xfreerdp` command more convenient to use.
+It is available in `bin/` under the name `rdp`.
 
 It boils down basic usage to a basic `rdp target-server`, whether you are using a older version of `xfreerdp` or a modern one.
 
@@ -129,14 +130,13 @@ Arguments:
 | Argument    | Description                                                             | Example                      |
 |-------------|-------------------------------------------------------------------------|------------------------------|
 | -d domain   | Sets the login domain.                                                  | `-d LOCALDOMAIN`             |
-| -D          | Prompt for login domain.                                                | `-D`                         |
+| -e          | Key file, implying an EC2 instance. Requires boto3 and pycrypto         | `-e path-to-keyfile`         |
 | -g          | Single-argument for display geometry (WxH).                             | `-g 800x600`, `-g 800,600`   |
-| -h          | Sets display height.                                                    | `-h 600`                     |
+| --height    | Sets display height.                                                    | `--height 600`               |
 | -p password | Sets the login password.                                                | `-p swordfish`               |
 | -P          | Prompt for a password.                                                  | `-P`                         |
 | -u user     | Sets the login user. Also accepts domain name using backslash.          | `-u user`, `-u DOMAIN\\user` |
-| -U          | Prompt for login user. Also accepts domain name using backslash format. | `-U`                         |
-| -w          | Sets display width.                                                     | `-w 800`                     |
+| -width      | Sets display width.                                                     | `-width 800`             |
 
 #### Variables
 
@@ -196,7 +196,7 @@ Modules are read out of the following directories:
 The original tools were just a single directory stored in SVN in order to avoid having to manually keep my different scripts in sync.
 
 As my needs for my tools expanded, I wanted to start placing them on more systems.
-The problem with this was that the original tools directories had some very sensitive material on them, 
+The problem with this was that the original tools directories had some very sensitive material on them,
     such as network configurations, passwords, and SSH keys.
 
 I originally only had one "*secure*" module, which would be checked out to the `secure/` path within the tools checkout.
