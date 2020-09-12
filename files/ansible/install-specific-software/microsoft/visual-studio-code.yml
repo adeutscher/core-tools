@@ -1,0 +1,37 @@
+---
+
+- hosts: all
+
+  vars:
+    packages:
+      main:
+        - code
+
+  tasks:
+
+  - name: "fail if not using RPM package manager"
+    when: (ansible_pkg_mgr not in ("dnf", "yum"))
+    fail: msg="Not using a supported RPM package manager"
+
+  - name: "install microsoft rpm key"
+    become: yes
+    rpm_key:
+      key: https://packages.microsoft.com/keys/microsoft.asc
+      state: present
+
+  - name: "install microsoft production repo"
+    become: yes
+    yum_repository:
+      name: "code"
+      file: "vscode"
+      description: "Visual Studio Code"
+      baseurl: "https://packages.microsoft.com/yumrepos/vscode"
+      gpgcheck: yes
+      gpgkey: "https://packages.microsoft.com/keys/microsoft.asc"
+      enabled: yes
+
+  - name: "install Visual Studio Code"
+    become: yes
+    action: >
+      {{ ansible_pkg_mgr }} name="{{ packages.main }}"
+
