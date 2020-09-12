@@ -672,35 +672,18 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         self.request_sane = False
 
     def check_authentication(self):
+
         # Check for authorization (by default with the Authorization header),
         #  then pass to check_credentials to confirm them against a password back-end.
 
         if not authentication_stores:
             return True
 
-        # Note: Currently, attempts with lack of any credentials or mangled credentials
-        #       are considered 'freebies', and do not count towards a user's auth limits.
-
-        raw_creds = getattr(self, ATTR_HEADERS, CaselessDict()).get("Authorization").split()
-        if not raw_creds or len(raw_creds) < 2:
-            # Incorrect credential format.
-            return False
-
-        # Decode
-        try:
-            creds_list = convert_str(convert_bytes(base64.b64decode(raw_creds[1])).split(convert_bytes(":")))
-        except TypeError as e:
-            return False
-
-        if len(creds_list) < 2:
-            # Creds message invalid, too few fields within.
-            return False
-
-        # Check username/password from the user.
-        self.user = creds_list[0]
-        password = ":".join(creds_list[1:])
+        user = getattr(self, '_user', None)
+        password = getattr(self, '_password', None)
 
         client = self.client_address[0]
+        # Convenient shorthand
         auth_timeout = args[TITLE_AUTH_TIMEOUT]
         auth_limit = args[TITLE_AUTH_LIMIT]
 
@@ -722,7 +705,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
 
         success = False
         for store in authentication_stores:
-            result = store.authenticate(self.user, password)
+            result = store.authenticate(user, password)
             success = result == AUTH_GOOD_CREDS
             if result >= AUTH_BAD_PASSWORD:
                 break
@@ -740,28 +723,33 @@ class CoreHttpServer(BaseHTTPRequestHandler):
                 self.server.attempts[client] = [time.time()]
         return success
 
-    def copyobj(self, src, dst, close = True):
+    def copyobj(self, src, dst, outgoing = True):
+        if not src:
+            return
+
         while self.alive:
             buf = src.read(16*1024)
             if not (buf and self.alive):
                 break
             dst.write(convert_bytes(buf))
-        if close:
-            self.alive = False
-            src.close()
+
+        if not outgoing:
+            return
+
+        self.alive = False
+        src.close()
 
     def invoke(self, method):
         """Serve a request."""
 
+        f = None
         try:
             f = method()
+            self.copyobj(f, self.wfile)
         except Exception as e:
             print_exception(e, colour_text(self.client_address[0], COLOUR_GREEN))
-            self.send_error(500)
-            f = None
-
-        if f:
-            self.copyobj(f, self.wfile)
+            if not f:
+                self.send_error(500)
 
     extensions_map = mimetypes.types_map.copy()
     extensions_map.update({
@@ -777,12 +765,11 @@ class CoreHttpServer(BaseHTTPRequestHandler):
     def get_header_dict(self, src):
         d = CaselessDict()
 
-        for l in re.split("\r?\n", str(src)):
-            if not l:
-                continue
+        for l in [l for l in re.split("\r?\n", str(src)) if l]:
             items = l.split(":")
             if items[1:]:
                 d[items[0]] = ":".join(items[1:]).strip()
+
         return d
 
     def guess_type(self, path):
@@ -823,8 +810,20 @@ class CoreHttpServer(BaseHTTPRequestHandler):
                 # An error code has been sent, just exit
                 return
 
+            # Implementation-specific header parsing
+            # Check for high-priority information that is necessary before we
+            #   potentially slam the door in the client's face.
+            for m in [getattr(self, m) for m in dir(self) if m.startswith('parse_preauth_header_')]:
+                if not m():
+                    return
+
             if not self.check_authentication():
                 return self.send_error(401, args[TITLE_AUTH_PROMPT])
+
+            # Implementation-specific header parsing
+            for m in [getattr(self, m) for m in dir(self) if m.startswith('parse_header_')]:
+                if not m():
+                    return
 
             command = self.get_command()
 
@@ -835,7 +834,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
                 return
             self.invoke(getattr(self, mname))
 
-            self.wfile.flush() #actually send the response if not already done.
+            self.wfile.flush()
         except socket.timeout:
             # a read or a write timed out.  Discard this connection
             self.close_connection = 1
@@ -881,7 +880,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             response_code = "???"
 
         # Adjust colouring and/or add context in extra_info message.
-        if response_code == 200:
+        if response_code >= 200 and response_code < 300:
             http_code_colour = COLOUR_GREEN
         elif response_code in (301, 307):
             http_code_colour = COLOUR_PURPLE
@@ -891,7 +890,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         elif response_code == 502:
             extra_info = '[%s]' % colour_text("Bad Gateway", COLOUR_RED)
 
-        user = getattr(self, 'user', None)
+        user = getattr(self, '_user', None)
         if user:
             extra_info = "[User: %s]%s" % (colour_text(user), extra_info)
 
@@ -1015,7 +1014,62 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             if not path.endswith('/'):
                 path = '%s/' % path
 
-        return (path, section, file_path, get)
+        self.path = path
+        self.section = section
+        self.file_path = file_path
+        self.get = get
+
+    def parse_preauth_header_agent(self):
+        if not args[TITLE_USER_AGENT]:
+            return True
+        # At least one match is present
+        user_agent = self.headers.get('User-Agent')
+        if not user_agent:
+            return send_error(403)
+
+        for p in args[TITLE_USER_AGENT]:
+            user_agent_match = re.search(p, user_agent)
+            if user_agent_match:
+                return True
+        # Was not able to find a match
+        return send_error(403)
+
+    def parse_preauth_header_connection(self):
+        # Examine the headers and look for a Connection directive
+        conntype = self.headers.get('Connection', '')
+        if conntype.lower() == 'close':
+            self.close_connection = 1
+        elif (conntype.lower() == 'keep-alive' and self.protocol_version >= "HTTP/1.1"):
+            self.close_connection = 0
+        return True
+
+    def parse_preauth_header_user_authorization(self):
+
+        value = getattr(self, ATTR_HEADERS, CaselessDict())["Authorization"]
+        if not value:
+            return True
+
+        # Store bad-header response in a central place
+        response_bad = lambda : self.send_error(400, 'Bad Authorization Header')
+
+        raw_creds = value.split()
+        if not raw_creds or len(raw_creds) < 2:
+            # Incorrect credential format.
+            return response_bad()
+
+        # Decode
+        try:
+            creds_list = convert_str(convert_bytes(base64.b64decode(raw_creds[1])).split(convert_bytes(":")))
+        except TypeError as e:
+            return response_bad()
+
+        if len(creds_list) < 2:
+            # Creds message invalid, too few fields within.
+            return response_bad()
+
+        self._user = creds_list[0]
+        self._password = ":".join(creds_list[1:])
+        return True
 
     def parse_request(self):
         """Parse a request (internal).
@@ -1032,8 +1086,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         if len(words) == 3:
             command, path, version = words
             if version[:5] != 'HTTP/':
-                self.send_error(400, "Bad request version (%r)" % version)
-                return False
+                return self.send_error(400, "Bad request version (%r)" % version)
 
             self.request_sane = True
 
@@ -1053,65 +1106,38 @@ class CoreHttpServer(BaseHTTPRequestHandler):
                 m = "Bad request version"
                 if len(version) < 20:
                     m += " (%r)" % version
-                self.send_error(400, m)
-                return False
+                return self.send_error(400, m)
             if version_number >= (1, 1) and self.protocol_version >= "HTTP/1.1":
                 self.close_connection = 0
             if version_number >= (2, 0):
-                self.send_error(505,
+                return self.send_error(505,
                           "Invalid HTTP Version (%s)" % base_version_number)
-                return False
         elif len(words) == 2:
             command, path = words
             version = "HTTP/0.9" # Assume 0.9
             self.close_connection = 1
             if command != 'GET':
-                self.send_error(400, "Bad HTTP/0.9 request type (%s)" % command)
-                return False
+                return self.send_error(400, "Bad HTTP/0.9 request type (%s)" % command)
         else:
             m = "Bad request syntax"
             if len(getattr(self, ATTR_REQUEST_LINE, "")) < 30:
                 m += " (%s)" % getattr(self, ATTR_REQUEST_LINE, "")
-            self.send_error(400, m)
-            return False
+            return self.send_error(400, m)
 
         self.command, self.request_version = command, version
 
         try:
-            self.path, self.section, self.file_path, self.get = self.parse_path(path)
+            self.parse_path(path)
         except FileNotFoundError:
-            self.send_error(404, 'Not Found')
-            return False
+            return self.send_error(404)
 
-        # Examine the headers and look for a Connection directive
-        # Parsing into a dictionary for simplicity.
-
+        # Parsing into a case-insensitive dictionary for simplicity.
         if sys.version_info[0] == 2:
             self.headers = self.get_header_dict(self.MessageClass(self.rfile, 0))
         else:
             mc = http.client.parse_headers(self.rfile, _class=self.MessageClass).__str__()
             self.headers = self.get_header_dict(mc)
 
-        # Access control checksself.get
-        user_agent_match = not args[TITLE_USER_AGENT]
-        if not user_agent_match:
-            # At least one match is present
-            user_agent = self.headers.get("User-Agent")
-            if user_agent:
-                for p in args[TITLE_USER_AGENT]:
-                    user_agent_match = re.search(p, user_agent)
-                    if user_agent_match:
-                        break # Avoid redundant checks
-
-        if not user_agent_match or not access.is_allowed(self.client_address[0]):
-            self.send_error(403,"Access Denied")
-            return False
-
-        conntype = self.headers.get('Connection', '')
-        if conntype.lower() == 'close':
-            self.close_connection = 1
-        elif (conntype.lower() == 'keep-alive' and self.protocol_version >= "HTTP/1.1"):
-            self.close_connection = 0
         return True
 
     def render_breadcrumbs(self, path):
@@ -1160,6 +1186,11 @@ class CoreHttpServer(BaseHTTPRequestHandler):
         finally:
             self.finish()
 
+    def send_common_headers(self, mimetype, length):
+        encoding = sys.getfilesystemencoding()
+        self.send_header("Content-Type", "%s; charset=%s" % (mimetype, encoding))
+        self.send_header("Content-Length", str(length))
+
     def send_error(self, code, message=None):
         """Send and log an error reply.
         Arguments are the error code, and a detailed message.
@@ -1178,23 +1209,41 @@ class CoreHttpServer(BaseHTTPRequestHandler):
 
         self.log_error("code %d, message %s", code, message)
 
-        # using _quote_html to prevent Cross Site Scripting attacks (see bug #1100201)
-        content = (self.error_message_format % {'code': code, 'message': self.quote_html(message), 'explain': long_msg})
+        f = None
+        length = 0
+
         try:
-            self.send_response(code, getattr(self, ATTR_HEADERS, None))
-            self.send_header("Content-Type", self.error_content_type)
-            self.send_header('Connection', 'close')
-            if code == 401:
-                self.send_header('WWW-Authenticate', 'Basic realm="%s"' % message)
+            # using _quote_html to prevent Cross Site Scripting attacks (see bug #1100201)
+            if(code >= 200 and
+                code not in (
+                    204, # No Content
+                    205, # Reset Content
+                    304  # Not Modified
+                )):
+
+                self.send_response(code, message)
+                self.send_header('Connection', 'close')
+                if code == 401:
+                    self.send_header('WWW-Authenticate', 'Basic realm="%s"' % message)
+
+                self.send_header("Content-Type", self.error_content_type)
+
+                content = self.error_message_format % {'code': code, 'message': self.quote_html(message), 'explain': long_msg}
+                f, length = self.serve_content_prepare(content)
+                self.send_header('Content-Length', str(length))
+
             self.end_headers()
-            if self.command != 'HEAD' and code >= 200 and code not in (204, 304):
-                self.wfile.write(content)
-        except:
+            self.copyobj(f, self.wfile, False)
+
+        except IOError:
             # Don't shed too many tears for an error that fails
             #   to send. The connection is about to be closed anyways.
             pass
+
         if self.log_on_send_error:
             self.log_message('"%s" %s %s', getattr(self, 'requestline', '???'), code, message)
+
+        return False
 
     def send_redirect(self, target):
         # redirect browser - doing basically what apache does
@@ -1205,20 +1254,23 @@ class CoreHttpServer(BaseHTTPRequestHandler):
 
     def serve_content(self, content = None, code = 200, mimetype = "text/html"):
 
-        f = None
-        length = 0
-        if content:
-            f = StringIO()
-            f.write(content)
-            length = f.tell()
-            f.seek(0)
-
+        f, length = self.serve_content_prepare(content)
         self.send_response(code)
-        encoding = sys.getfilesystemencoding()
-        self.send_header("Content-type", "%s; charset=%s" % (mimetype, encoding))
-        self.send_header("Content-Length", str(length))
+        self.send_common_headers(mimetype, length)
         self.end_headers()
         return f
+
+    def serve_content_prepare(self, content):
+
+        if not content:
+            return None, 0
+
+        f = StringIO()
+        f.write(content)
+        length = f.tell()
+        f.seek(0)
+
+        return f, length
 
     def serve_file(self, path):
 
@@ -1232,8 +1284,7 @@ class CoreHttpServer(BaseHTTPRequestHandler):
             # transmitted *less* than the content-length!
             f = open(path, 'rb')
         except IOError:
-            self.send_error(404, 'Not Found')
-            return None
+            return self.send_error(404, 'Not Found')
         self.send_response(200)
         self.send_header("Content-type", ctype)
         fs = os.fstat(f.fileno())
@@ -1435,12 +1486,12 @@ class NetAccess:
 
 class SimpleAuthStore:
     def __init__(self, user, password):
-        self.user = user
-        self.password = password
+        self.__user = user
+        self.__password = password
 
     def authenticate(self, user, password):
-        if user == self.user:
-            if self.password == password:
+        if user == self.__user:
+            if password == self.__password:
                 return AUTH_GOOD_CREDS
             return AUTH_BAD_PASSWORD
         return AUTH_BAD_NOT_FOUND

@@ -60,6 +60,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
 
     def __init__(self, request, client_address, server):
         super().__init__(request, client_address, server)
+        self.ranges_enabled = True
         if args[TITLE_UPLOAD]:
             self.do_POST = self.action_POST
 
@@ -125,8 +126,35 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                 os.remove(path_save)
             return self.serve_content('Failed to save file.', code = 500)
 
-
         return self.serve_content(self.render_file_table(self.file_path), code = 200)
+
+    def copyobj(self, src, dst, outgoing = True):
+        if not src:
+            return
+
+        start, end, remaining = (0, 0, -1)
+        if getattr(self, 'clip', False):
+            start, end = self.ranges[0]
+            remaining = end - start + 1 # Account for zero-indexing
+        if start:
+            src.seek(start)
+
+        while self.alive and remaining:
+            buflen = 16*1024
+            if remaining > 0:
+                buflen = min(remaining, buflen)
+
+            buf = src.read(buflen)
+            if not (buf and self.alive):
+                break
+            remaining -= len(buf)
+            dst.write(common.convert_bytes(buf))
+
+        if not outgoing:
+            return
+
+        self.alive = False
+        src.close()
 
     def do_GET(self):
         """Common code for GET and HEAD commands.
@@ -158,8 +186,8 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         f = None
         if os.path.isdir(path):
 
-            if not getattr(self, common.ATTR_FILE_PATH, "").endswith("/"):
-                return self.send_redirect("%s/" % getattr(self, common.ATTR_FILE_PATH, ""))
+            if not getattr(self, common.ATTR_PATH, "").endswith("/"):
+                return self.send_redirect("%s/" % getattr(self, common.ATTR_PATH, ""))
 
             for index in ["index.html", "index.htm"]:
                 index = os.path.join(path, index)
@@ -480,6 +508,75 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
 
         return content
 
+    def parse_header_range(self):
+
+        self.ranges = []
+
+        header_range = self.headers['Range']
+        if not header_range:
+            # No range provided, no need to parse further
+            return True
+
+        # Store bad-range response in a central place
+        response_bad = lambda : self.send_error(400, 'Bad Request Range Header')
+
+        p1 = r'^bytes=(\d+\-\d*|\d*-\d+)(, (\d+\-\d*|\d*-\d+))?$'
+        p2 = r'^(\d+\-\d*|\d*-\d+)$'
+
+        match = re.match(p1, header_range)
+        if not match:
+            return response_bad()
+
+        groupings = [g for g in match.groups() if re.match(p2, str(g))]
+
+        conv = lambda v, i: int(v.split('-')[i] or 0)
+        ranges = sorted([[conv(g, 0), conv(g, 1)] for g in groupings], key=lambda a: a[0])
+
+        for r in ranges:
+            start = r[0]
+            end = r[1]
+
+            if not end and not start:
+                # Request for '0-0' (that is to say, the entire thing)
+                # Chrome does this for video files, for instance
+                continue
+
+            if end == start or end and end < start:
+                return response_bad()
+
+        ranges_b = [ranges[0]]
+
+        for r in ranges[1:]:
+            start = r[0]
+            end = r[1]
+
+            if not start:
+                # No non-first range may start at 0.
+                return response_bad()
+
+            if not ranges_b[-1][1]:
+                # No non-last ranges may end at 0.
+                return response_bad()
+
+            if start - 1 == ranges_b[-1][1]:
+                # If multiple neighboring ranges are given, then merge them together
+                ranges_b[-1][1] = end
+                continue
+
+            if start <= ranges_b[-1][1]:
+                # Ranges may not overlap
+                return response_bad()
+
+            ranges_b.append([start, end])
+
+        self.ranges = [(r[0], r[1]) for r in ranges_b]
+
+        if len(self.ranges) >= 2:
+            # The script currently does not support handling multiple ranges
+            return self.send_error(501, "Multiple ranges not supported" % self.command)
+
+        return True
+
     def render_header(self, label, target, reverse, current, path):
 
         get = '?%s=%s' % (LABEL_GET_CATEGORY, target)
@@ -491,6 +588,85 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
             get = '%s&%s=%s' % (get, LABEL_GET_ORDER, flip_order)
 
         return '<a href="%s%s">%s</a>' % (quote(self.path), get, label)
+
+    def serve_content(self, content = None, code = 200, mimetype = "text/html"):
+
+        f, length = self.serve_content_prepare(content)
+
+        if self.ranges:
+
+            start, end = self.ranges[0]
+            if end >= length:
+                return self.send_error(416)
+
+            if code == 200:
+                # Clip 200 content, not error content
+                code = 206
+                self.clip = True
+                length_total = length
+                length = end - start + 1 # Account for zero-indexing
+
+        self.send_response(code)
+        self.send_common_headers(mimetype, length)
+        self.send_header('Accept-Ranges', 'bytes')
+        if getattr(self, 'clip', False):
+
+            display_values = {
+                'start': start,
+                'end': length-1,
+                'total': length_total
+            }
+            if end:
+                display_values['end'] = end
+
+            self.send_header('Content-Range', 'bytes %(start)d-%(end)d/%(total)d' % display_values)
+
+        self.end_headers()
+        return f
+
+    def serve_file(self, path):
+
+        if not (os.path.exists(path) and os.path.isfile(path)):
+            return self.send_error(404, 'Not Found')
+
+        ctype = self.guess_type(path)
+        try:
+            # Always read in binary mode. Opening files in text mode may cause
+            # newline translations, making the actual size of the content
+            # transmitted *less* than the content-length!
+            f = open(path, 'rb')
+            fs = os.fstat(f.fileno())
+            length = fs[6]
+            if self.ranges:
+                start, end = self.ranges[0]
+
+                if end >= length:
+                    return self.send_error(416)
+
+                self.clip = True
+                length_total = length
+                length = end - start + 1 # Account for zero-indexing
+        except IOError:
+            return self.send_error(404, 'Not Found')
+
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(length))
+
+        if getattr(self, 'clip', False):
+
+            display_values = {
+                'start': start,
+                'end': length-1,
+                'total': length_total
+            }
+            if end:
+                display_values['end'] = end
+
+            self.send_header('Content-Range', 'bytes %(start)d-%(end)d/%(total)d' % display_values)
+        self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
+        self.end_headers()
+        return f
 
 if __name__ == '__main__':
     args.process(sys.argv)
