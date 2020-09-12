@@ -4,14 +4,21 @@
 
   vars:
     distro: "Fedora"
-    # Microsoft instructions for Fedora 28 specifically say to use the Fedora 27 repository link.
-    #   A dedicated Fedora 28 repository does not exist at this time.
-    version: 27
+    version: "31"
+    packages:
+      main:
+        - dotnet-runtime-2.1
+        - dotnet-sdk-3.1
+
+      other:
+        # libunwind is used to run one of my projects.
+        # Some Googling suggests that this is not an uncommon requirement, so I am including it here.
+        - libunwind
 
   tasks:
 
-  - name: "fail if not fedora {{ version }}"
-    when: ansible_distribution != distro or ansible_distribution < version
+  - name: "fail if not on the right fedora version"
+    when: (ansible_distribution != distro) or (ansible_distribution_version < version)
     fail: msg="Must only run on {{ distro }} (Minimum version{{ ":" }} {{ version }})"
 
   - name: "install microsoft rpm key"
@@ -27,19 +34,15 @@
       dest: /etc/yum.repos.d/microsoft-prod.repo
       mode: 0644
 
-  - name: "install .net core 2.1"
+  - name: "install .net core packages"
     become: yes
     dnf:
-      name: aspnetcore-runtime-2.1
+      name: "{{ packages.main }}"
       state: latest
 
   - name: "install other items"
     become: yes
     dnf:
-      name: "{{ item }}"
+      name: "{{ packages.other }}"
       state: latest
-    with_items:
-      # libunwind is used to run one of my projects.
-      # Some Googling suggests that this is not an uncommon requirement, so I am including it here.
-      - libunwind
 
