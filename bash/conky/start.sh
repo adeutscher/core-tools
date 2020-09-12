@@ -54,8 +54,8 @@ do_dynamic_setup(){
     if [ -n "$configDir" ]; then
         cd "$configDir" || return 1
     fi
-    cp -f "${CONKYRC_PRIMARY}_TEMPLATE" "${CONKYRC_PRIMARY}"
-    (( ${CONKY_ENABLE_TASKS:-0} )) && cp -f "${CONKYRC_SECONDARY}_TEMPLATE" "${CONKYRC_SECONDARY}"
+    cp -f "${CONKYRC_PRIMARY_TEMPLATE}" "${CONKYRC_PRIMARY}"
+    (( ${CONKY_ENABLE_TASKS:-0} )) && cp -f "${CONKYRC_SECONDARY_TEMPLATE}" "${CONKYRC_SECONDARY}"
 
     # * Setting own_window_type to 'desktop' on Fedora 23 (conky 1.9) makes the conky
     #     display vanish when the desktop is clicked on. Fixed by
