@@ -15,7 +15,6 @@ fi
 
 error(){
   printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
-  __error_count=$((${__error_count:-0}+1))
 }
 
 notice(){
@@ -24,12 +23,10 @@ notice(){
 
 success(){
   printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
-  __success_count=$((${__success_count:-0}+1))
 }
 
 warning(){
   printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "${0}")" "$@"
-  __warning_count=$((${__warning_count:-0}+1))
 }
 
 substitute_home(){
@@ -180,8 +177,6 @@ ssh_compile_config(){
     # This marker is used by the header for a section
     marker="${moduleVariable}-marker"
 
-    # Record moduleParent for use with MODULE_PARENT token substitution
-    moduleParent="$(readlink -f "${!moduleVariable}/..")"
     # Recore sshDir as a base for SSH configuration and for use with SSH_DIR token substitution
     sshDir="${!moduleVariable}/ssh"
     # Replace $HOME with ~ for display purposes
@@ -205,7 +200,7 @@ ssh_compile_config(){
     print_module_config_to_file "${sshDir}" "${stagingFile}"
     # Perform substitutions on staging file.
     sed -i "s|TOOLS_DIR|${!moduleVariable}|g" "${stagingFile}"
-    sed -i "s|TOOLS_PARENT|${moduleParent}|g" "${stagingFile}"
+    sed -i "s|TOOLS_PARENT|$(readlink -f "${!moduleVariable}/..")|g" "${stagingFile}"
     sed -i "s|SSH_DIR|${sshDir}|g" "${stagingFile}"
     # Get a checksum from our staging file.
     checksum="$(md5sum "${stagingFile}" | cut -d' ' -f1)"
