@@ -305,6 +305,7 @@ class PingStatistics:
             return r
 
         r['success'] = True
+        r['symbol'] = '^'
         r['result'] = 'reply'
         # Strip out the icmp_seq value because our implementation invokes a new
         #   ping process. icmp_seq will always be '1'.
@@ -351,6 +352,7 @@ class PingStatistics:
             if r['success']:
                 # Successfully established a connection.
                 r['result'] = 'open'
+                r['symbol'] = '^'
 
                 # Possible future improvement - could take a leaf from nmap here and do some basic operation well-known ports for information.
                 # Probably won't implement this in any rush, though. The purpose of this script is on confirming the status of known hosts, not in exploring unknown hosts.
@@ -360,9 +362,18 @@ class PingStatistics:
                 # This response could also happen if iptables REJECTs the connection.
                 #   nmap can't or doesn't distinguish between the two causes, so I'm not too worried distinguishing either
                 r['result'] = 'closed'
+                # Using the same symbol as 'up', because a closed port is considered
+                #   to be just as definitive an answer as an open port.
+                r['symbol'] = '^'
+
             elif conn_result == errno.EHOSTUNREACH:
                 # Socket gave up.
+                # This can come about with a timeout on a resource on the
+                #  same collision domain as the machine running this script.
                 r['result'] = 'unreachable'
+                # Distinguish an unreachable result from an ambiguous timeout
+                r['symbol'] = 'x'
+
             else:
                 # Untracked error, or the script gave up.
                 # This could happen if the ping gets hit by a DROP target in iptables
@@ -399,6 +410,7 @@ class PingStatistics:
 
         # Draw a little "heartbeat" chart of how recent pinging is doing.
         chart = ''
+        colours = []
 
         recent_limit = 10
 
@@ -461,8 +473,9 @@ class PingStatistics:
                     streak_fail = 0
                     streak_success += 1
 
-                    chart += '^'
+                    chart += r.get('symbol', '^')
                     colour = COLOUR_GREEN
+                    colours.append(colour)
 
                     # Only bother announcing the number of successes in a row when testing for reliability.
                     if self.mode == MODE_RELIABLE:
@@ -479,8 +492,9 @@ class PingStatistics:
                     streak_fail += 1
                     streak_success = 0
 
-                    chart += '-'
+                    chart += r.get('symbol', '-')
                     colour = COLOUR_RED
+                    colours.append(colour)
 
                     if self.mode == MODE_RELIABLE:
                         extra = '(%s succeeded)' % colour_text('%d/%d' % (streak_success, self.streak))
@@ -495,19 +509,15 @@ class PingStatistics:
                 if extra:
                     line_output += ' %s' % extra
                 chart = chart[max(0, len(chart)-recent_limit):] # Trim chart
+                if len(colours) > recent_limit:
+                    colours.pop(0)
 
                 display_chart = ''
-                display_new = True
-                for i in range(len(chart)):
-                    if not i or chart[i-1] != chart[i]:
+                for i in range(len(colours)):
+                    if not i or colours[i-1] != colours[i]:
+                        # Initial colours or switch colours
                         display_chart += COLOUR_OFF
-                    if chart[i] == '^':
-                        display_colour = COLOUR_GREEN
-                    elif chart[i] == '-':
-                        display_colour = COLOUR_RED
-
-                    if display_colour:
-                        display_chart += display_colour
+                        display_chart += colours[i]
                     display_chart += chart[i]
 
                 if len(chart):
