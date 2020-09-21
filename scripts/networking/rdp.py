@@ -157,6 +157,9 @@ class RdpWrapper:
         if self.args.ignore_certs:
             switches.append('/cert:ignore')
 
+        if(self.args.audio):
+            switches.extend(['/sound', '/microphone'])
+
         # Display size
         switches.append('/h:%d' % self.height)
         switches.append('/w:%d' % self.width)
@@ -236,7 +239,7 @@ class RdpWrapper:
         '''Return the highest-priority window height'''
         try:
             env_height = int(os.environ.get(self.ENV_HEIGHT))
-        except ValueError:
+        except (TypeError, ValueError):
             env_height = self.DEFAULT_HEIGHT
 
         return self.args.height or self.__geo_height or env_height
@@ -253,7 +256,7 @@ class RdpWrapper:
         '''Return the highest-priority window width'''
         try:
             env_width = int(os.environ.get(self.ENV_WIDTH))
-        except ValueError:
+        except (TypeError, ValueError):
             env_width = self.DEFAULT_WIDTH
 
         return self.args.width or self.__geo_width or env_width
@@ -406,10 +409,11 @@ class RdpWrapper:
         parser.add_argument('-v', dest='verbose', action='store_true', help='Verbose output')
         # RDP options
         g_rdp = parser.add_argument_group('rdp options')
+        g_rdp.add_argument('-a', dest='audio', action='store_true', help='Enable audio I/O for session.')
         g_rdp.add_argument('-g', dest='geometry', help='Specify geometry ( WxH )')
         g_rdp.add_argument('-i', dest='ignore_certs', action='store_true', help='Ignore certificate validation')
         g_rdp.add_argument('-s', dest='legacy_security', action='store_true', help='Use legacy RDP security mode')
-        g_rdp.add_argument('--height', dest='height', type=int, help='RDP window height (overrides -g')
+        g_rdp.add_argument('--height', dest='height', type=int, help='RDP window height (overrides -g)')
         g_rdp.add_argument('--width', dest='width', type=int, help='RDP window width (overrides -g)')
         # User options
         g_user = parser.add_argument_group('user options')
