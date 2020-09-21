@@ -4,7 +4,7 @@
 # This is a more independent version of a Django application that I kludged together for quickly browsing images from another machine.
 
 from __future__ import print_function
-import getopt, os, socket, sys, urllib
+import getopt, os, socket, sys, tempfile, urllib
 import CoreHttpServer as common
 common.local_files.append(os.path.realpath(__file__))
 
@@ -19,12 +19,9 @@ else:
 
 
 # Remove unused arguments
-del common.args.opts[common.OPT_TYPE_FLAG]["-P"]
 common.args.add_validator(common.validate_common_directory) # Validate directory.
 
 # Common fields
-
-INDEX_DIR = "scudder"
 
 image_extensions = ('.png','.jpg', '.jpeg', '.gif')
 
@@ -55,21 +52,37 @@ class BrowseController:
 
 # Viewer
 class ViewController:
-    def __init__(self, baseDirectory, relativeDirectory, forceRefresh = False,testState = False):
 
-        self.directory = "%s/%s" % (baseDirectory, relativeDirectory)
+    def __get_directory(self):
+        return os.path.join(self.baseDirectory, re.sub('^\/+', '', self.relativeDirectory or ''))
+
+    def __get_directoryId(self):
+        # If a directory exists, make the path file-name-friendly by replacing and '/' in the path with a '-'
+        if not os.path.isdir(self.directory):
+            return None
+        return "id-" + re.sub(r'/','-',self.relativeDirectory)
+
+    def __get_indexDir(self):
+        return os.path.join(self.tempDir, 'tallies')
+
+    def __get_indexFile(self):
+        return os.path.join(self.indexDir, self.directoryId)
+
+    def __get_tallyDir(self):
+        return os.path.join(self.tempDir, 'indices')
+
+    def __get_tallyFile(self):
+        return os.path.join(self.tallyDir, self.directoryId)
+
+    def __init__(self, baseDirectory, relativeDirectory, tempDir, forceRefresh = False, testState = False):
+
         self.baseDirectory = baseDirectory
         self.relativeDirectory = relativeDirectory
-        self.directoryId = self.makeDirectoryId(self.directory, self.relativeDirectory)
         self.forceRefresh = forceRefresh
-        self.tallyDir = "/tmp/%s/%s/%d/tallies" % (getpass.getuser(), INDEX_DIR, os.getpid())
-        self.indexDir = "/tmp/%s/%s/%d/indices" % (getpass.getuser(), INDEX_DIR, os.getpid())
+        self.tempDir = tempDir
 
         self.tally = None
         self.makeStructure()
-
-        self.tallyFile = "%s/%s" % tuple([self.tallyDir,self.directoryId])
-        self.indexFile = "%s/%s" % tuple([self.indexDir,self.directoryId])
 
         self.testState = testState
 
@@ -81,6 +94,13 @@ class ViewController:
             self.valid = True
         except Exception as e:
             self.valid = False
+
+    directory = property(__get_directory)
+    directoryId = property(__get_directoryId)
+    indexDir = property(__get_indexDir)
+    indexFile = property(__get_indexFile)
+    tallyDir = property(__get_tallyDir)
+    tallyFile = property(__get_tallyFile)
 
     def getFilePath(self,targetIndex):
         # Get the file path stored at the 'targetIndex'-th line of the file (very first line is '1')
@@ -195,12 +215,6 @@ class ViewController:
             return True
         return False
 
-    def makeDirectoryId(self,fullPath, label):
-        # If a directory exists, make the path file-name-friendly by replacing and '/' in the path with a '-'
-        if not os.path.isdir(fullPath):
-            return None
-        return "id-" + re.sub(r'/','-',label)
-
     def makeIndex(self):
         if not self.directoryId:
             return False
@@ -217,6 +231,7 @@ class ViewController:
 
         tally = 0
         with open(self.indexFile,'w') as fout:
+            print(self.indexFile)
             for image in self.getImages(self.directory):
                 # Strip out double-/, add a newline to the end, and strip away the base directory from the beginning.
                 # Line example: /comics/dc/wallpaper-123.png
@@ -233,10 +248,8 @@ class ViewController:
 
     def makeStructure(self):
         # Make sure that we have the proper directory structure.
-        if not os.path.isdir(self.tallyDir):
-            os.makedirs(self.tallyDir)
-        if not os.path.isdir(self.indexDir):
-            os.makedirs(self.indexDir)
+        for d in [i for i in [self.tallyDir, self.indexDir] if not os.path.isdir(i)]:
+            os.makedirs(d)
 
 class ImageMirrorRequestHandler(common.CoreHttpServer):
 
@@ -285,7 +298,6 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
                     return self.handle_path(relativePath, realPath)
             else:
                 return self.serve_content("Directory not found: %s" % realPath, code = 404)
-
 
     def get_navigation_javascript(self):
         return """
@@ -352,7 +364,7 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         # Time-saver shorthand
         path = self.get["path"][0]
 
-        vc = ViewController(realPath, path, forceRefresh=(next(iter(self.get.get('action', [])), None) == "refresh"))
+        vc = ViewController(realPath, path, self.server.data, forceRefresh=(next(iter(self.get.get('action', [])), None) == "refresh"))
         return self.send_redirect("/view?path=%s&page=%d&source=random" % (path, vc.getRandomIndex()))
 
     def handle_view(self, realPath):
@@ -364,7 +376,7 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
         bc = BrowseController(realPath, path)
 
         # Confirm our index
-        vc = ViewController(realPath, path, forceRefresh=(next(iter(self.get.get('action', [])), None) == "refresh"))
+        vc = ViewController(realPath, path, self.server.data, forceRefresh=(next(iter(self.get.get('action', [])), None) == "refresh"))
         try:
             page = max(int(self.get["page"][0]), 1)
             # If an exception is thrown, then default our page to 1
@@ -532,9 +544,14 @@ class ImageMirrorRequestHandler(common.CoreHttpServer):
             word = "browse"
         return word, path, dir_path
 
-if __name__ == '__main__':
-    common.args.process(sys.argv)
+def run(args):
+    common.args.process(args)
 
     common.announce_common_arguments("Sharing images")
 
-    common.serve(ImageMirrorRequestHandler)
+    with tempfile.TemporaryDirectory(prefix='image-mirror-%d-' % os.getpid()) as tempFilePath:
+        os.chmod(tempFilePath, 0o700)
+        common.serve(ImageMirrorRequestHandler, data=tempFilePath)
+
+if __name__ == '__main__':
+    run(sys.argv)

@@ -59,7 +59,10 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
     suffixes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
 
     def __init__(self, request, client_address, server):
-        super().__init__(request, client_address, server)
+        if sys.version_info.major < 3:
+            super(SimpleHTTPVerboseReqeustHandler, self).__init__(request, client_address, server)
+        else:
+            super().__init__(request, client_address, server)
         self.ranges_enabled = True
         if args[TITLE_UPLOAD]:
             self.do_POST = self.action_POST

@@ -596,12 +596,13 @@ def get_target():
 def get_target_information():
     return (args[TITLE_BIND], args[TITLE_PORT], get_target())
 
-def serve(handler, change_directory = False):
+def serve(handler, change_directory = False, data = None):
     bind_address, bind_port, directory = get_target_information()
     server = None
     try:
 
         server = ThreadedHTTPServer((bind_address, bind_port), handler)
+        server.data = data
 
         if args[TITLE_SSL_CERT]:
             keyfile = os.path.realpath(args[TITLE_SSL_KEY])
@@ -654,7 +655,7 @@ ATTR_FILE_PATH = 'file_path'
 ATTR_HEADERS = 'headers'
 ATTR_COMMAND = 'command'
 
-class CoreHttpServer(BaseHTTPRequestHandler):
+class CoreHttpServer(BaseHTTPRequestHandler, object):
 
     server_version = "CoreHttpServer"
     alive = True
