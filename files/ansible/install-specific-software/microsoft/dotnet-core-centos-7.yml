@@ -6,19 +6,9 @@
     distro: "CentOS"
     version: "7"
 
-    packages:
-      main:
-        - dotnet-runtime-2.1
-        - dotnet-sdk-3.1
-
-      other:
-        # libunwind is used to run one of my projects.
-        # Some Googling suggests that this is not an uncommon requirement, so I am including it here.
-        - libunwind
-
   tasks:
 
-  - name: "fail if not at least {{ distro }} {{ version }}"
+  - name: "fail if not centos {{ version }}"
     when: ansible_distribution != distro or ansible_distribution < version
     fail: msg="Must only run on {{ distro }} (Minimum version{{ ":" }} {{ version }})"
 
@@ -28,14 +18,20 @@
       name: https://packages.microsoft.com/config/rhel/7/packages-microsoft-prod.rpm
       state: latest
 
-  - name: "install .net core packages"
+  - name: "install .net core 2.1"
     become: yes
-    action: >
-      {{ ansible_pkg_mgr }} name="{{ packages.main }}" state=latest
+    yum:
+      name: aspnetcore-runtime-2.1
+      state: latest
 
   - name: "install other items"
     become: yes
-    action: >
-      {{ ansible_pkg_mgr }} name="{{ packages.other }}" state=latest
+    yum:
+      name: "{{ item }}"
+      state: latest
+    with_items:
+      # libunwind is used to run one of my projects.
+      # Some Googling suggests that this is not an uncommon requirement, so I am including it here.
+      - libunwind
 
 
