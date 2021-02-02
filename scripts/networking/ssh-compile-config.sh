@@ -51,7 +51,7 @@ get_files(){
       continue
     fi
 
-    if type file 2> /dev/null >&2 && ! file --mime-type "${_possible_file}" | grep -q "text/plain$"; then
+    if type file 2> /dev/null >&2 && ! file --mime-type "${_possible_file}" | grep -Pq "text/(plain|x-(python|shellscript))$"; then
       # If the `file` command is available (this is not the case in MobaXterm),
       #   then silently skip any non-ASCII files (e.g. vim swap files).
       continue
@@ -106,18 +106,8 @@ print_module_config_to_file(){
     fi
 
     # Print divided configurations
-    while read -r subFile; do
-      [ -z "${subFile}" ] && continue
-      printf "\n###\n# Sub-config \"%s\" for %s\n###\n\n" "${subFile##*/}" "${sshDir}"
-      cat "${subFile}";
-    done <<< "$(get_files "${sshDir}/config.d")"
-
-    # Fluid.d directory
-    while read -r subFile; do
-      [ -z "${subFile}" ] && continue
-      printf "###\n# Non-versioned sub-config \"%s\" for %s\n###\n\n" "${subFile##*/}" "$sshDir"
-      cat "$subFile";
-    done <<< "$(get_files "${sshDir}/fluid.d")"
+    process_divided_files "Sub-config" "${sshDir}/config.d"
+    process_divided_files "Non-versioned sub-config" "${sshDir}/fluid.d"
 
     # Host-specific config
     local hostConfig
@@ -135,6 +125,37 @@ print_module_config_to_file(){
       cat "${hostConfig}";
     fi
   } > "${targetFile}"
+}
+
+process_divided_files(){
+
+  local label
+  label="${1}"
+  local directory
+  directory="${2}"
+
+  while read -r subFile; do
+    [ -z "${subFile}" ] && continue
+
+    if grep -iqP "\.(py|sh)$" <<< "${subFile}" && [ -x "${subFile}" ]; then
+
+      # Executable script. Save to a temporary location.
+      local t
+      t="$(mktemp)"
+      "${subFile}" > "${t}"
+
+      # Output
+      printf "\n###\n# %s script \"%s\" for %s\n###\n\n" "${label}" "${subFile##*/}" "${sshDir}"
+      cat "${t}"
+
+      rm "${t}"
+    else
+      # Directly print contents
+      printf "\n###\n# %s \"%s\" for %s\n###\n\n" "${label}" "${subFile##*/}" "${sshDir}"
+      cat "${subFile}";
+    fi
+
+  done <<< "$(get_files "${directory}")"
 }
 
 ssh_compile_config(){
