@@ -181,7 +181,7 @@ def main(cli_args):
     p.tally = tally
     p.port = port
 
-    p.run()
+    return p.run()
 
 def translate_seconds(duration, add_and = False):
     modules = [("seconds", 60, None), ("minutes",60,None), ("hours",24,None), ("days",7,None), ("weeks",52,None), ("years",100,None), ("centuries",100,"century")]
@@ -312,7 +312,6 @@ class PingStatistics:
         line = re.sub("((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)", "", l.group(0))
         line = line.replace("time=", "t=")
         r["line"] = re.sub("(\.[\d]{2})\d? ms", r"\1 ms", line)
-
         return r
 
     def do_tcp(self):
