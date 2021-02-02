@@ -169,6 +169,11 @@ pid_exists(){
 }
 
 wait_for_pids(){
+
+  if (( ANY )); then
+    notice "Any-mode specified, stopping as soon as any of the matched processes are completed."
+  fi
+
   complete=0
   time_start="$(date +%s)"
   while (( 1 )); do
@@ -183,9 +188,15 @@ wait_for_pids(){
         COMPLETED[${current}]=1
       fi
       current=$((current+1))
+
     done
 
+    if (( ANY )) && (( complete )); then
+      break
+    fi
+
     # Check for wheher or not we are done before we sleep.
+    # This is done outside of the while statement in order to avoid the sleep
     [ "${complete}" -eq "${#PIDS[*]}" ] && break
 
     sleep "${INTERVAL:-0.5}"
@@ -195,14 +206,18 @@ wait_for_pids(){
 # Confirm that valid PIDs were given and that they existed at the start of the script's running.
 
 PGREP_THRESHOLD=16
+ANY=0
 
 while [ -n "${1}" ]; do
-  while getopts ":hs:" OPT "$@"; do
+  while getopts "ahs:" OPT "$@"; do
     # Handle switches up until we encounter a non-switch option.
     case "$OPT" in
       h)
-         notice "Usage: ./wait-for-pid.sh [-s interval] [-h] pattern|pid ..."
+         notice "Usage: ./wait-for-pid.sh [-a] [-s interval] [-h] pattern|pid ..."
          exit 0
+         ;;
+      a)
+         ANY=1
          ;;
       s)
         if grep -Pq "^\d+$" <<< "${OPTARG}"; then
