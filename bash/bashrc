@@ -79,6 +79,10 @@ if [ -d "$toolsDir" ]; then
         fi # end directory check
     done
 
+    while read -r _post_load_function; do
+        $_post_load_function
+    done <<< "$(declare -F | cut -d' ' -f3 | grep "^__post_load")"
+
     # Axe loop variables.
     unset __module_location __module_dir __current_module_dir svnDirs
 
