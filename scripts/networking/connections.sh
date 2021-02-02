@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Summarize active TCP connections by parsing netstat/conntrack output.
+
+# This script is functional, but the newer Python version, connections.py, is highly recommended.
+# Compared with the Python version, this BASH version performs MUCH poorer with how it handles sorting and filtering.
+# This BASH version will not be receiving many updates going forwards.
+
 # Common message functions.
 
 set_colours(){

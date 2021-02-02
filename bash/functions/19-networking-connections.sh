@@ -16,17 +16,15 @@ if __is_unix; then
 
   # Incoming connections.
   alias connections-in=connections
-  alias connections-in-all="connections -a"
-  alias connections-in-local="connections -l"
-  alias connections-in-lan="connections -L"
-  alias connections-in-remote="connections -R"
+  alias connections-in-local="connections -L"
+  alias connections-in-lan="connections -l"
+  alias connections-in-remote="connections -r"
 
   # Incoming connections.
   alias connections-out="connections -o"
-  alias connections-out-all="connections -oa"
-  alias connections-out-local="connections -ol"
-  alias connections-out-lan="connections -oL"
-  alias connections-out-remote="connections -oR"
+  alias connections-out-local="connections -oL"
+  alias connections-out-lan="connections -ol"
+  alias connections-out-remote="connections -or"
 
   # IPv6 Listing
   ##
