@@ -1,15 +1,12 @@
 #/bin/bash
 
-link="https://downloads.raspberrypi.org/raspbian_lite_latest"
-
-#set -x
+link="https://downloads.raspberrypi.org/raspios_lite_armhf_latest"
 
 if [ -t 1 ]; then
   Colour_Bold="\033[1m"
   Colour_BIGreen="\033[1;92m"
   Colour_Off="\033[0m"
 fi
-
 
 get_raspbian(){
   download_dir=$(readlink -f "${1:-$(pwd)}")
@@ -35,7 +32,7 @@ get_raspbian(){
     exit 0
   elif [ -f "${file_name_img}" ]; then
     # Raspbian names the zips the same as it does the image.
-    printf "Image file is already preseent: ${Colour_BIGreen}%s${Colour_Off}\n" "${file_name_img}"
+    printf "Image file is already present: ${Colour_BIGreen}%s${Colour_Off}\n" "${file_name_img}"
     exit 0
   fi
 
