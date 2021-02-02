@@ -114,7 +114,7 @@ class EC2InventoryItem:
         display_values = {
             'id': colour_text(self.instance_id),
             'state': colour_text(self.state, self.__colour_state()),
-            'name': colour_text(self.name, self.__colour_host()),
+            'name': colour_text(self.name or '<Unnamed>', self.__colour_host()),
             'ip-internal': colour_text(self.ip_internal, COLOUR_BLUE),
             'ip-public': colour_text(self.ip_public, COLOUR_BLUE),
             'key': colour_text(self.key)
@@ -123,7 +123,11 @@ class EC2InventoryItem:
         s = '[%(id)s][%(state)s]: %(name)s' % display_values
 
         if self.is_running:
-            s+= ' @ %(ip-public)s (Internal: %(ip-internal)s). Key: %(key)s' % display_values
+            addr_string = 'Internal: %(ip-internal)s' % display_values
+            if self.ip_public:
+                addr_string += ' , Public: %(ip-public)s' % display_values
+            display_values['addr'] = addr_string
+            s+= ' ( %(addr)s ). Key: %(key)s' % display_values
 
         return s
 
@@ -143,6 +147,7 @@ class RdpWrapper:
     ENV_USER = 'RDP_USER'
     ENV_HEIGHT = 'RDP_HEIGHT'
     ENV_WIDTH = 'RDP_WIDTH'
+    ENV_RDP_INTERNAL = 'RDP_EC2_USE_INTERNAL'
 
     def __get_command_new(self, display):
         '''Get command string for new-style xfreerdp switches.'''
@@ -231,6 +236,9 @@ class RdpWrapper:
             # Most likely: Path provided was not to a file with a proper RSA key.
             print_error("Encountered %s loading EC2 key file '%s': %s" % (colour_text(type(e).__name__, COLOUR_RED), colour_text(self.args.ec2_key_file, COLOUR_GREEN), str(e)))
 
+    def __get_ec2_prioritize_internal(self):
+        return self.args.prioritize_internal or os.environ.get(self.ENV_RDP_INTERNAL) == '1'
+
     def __get_geometry(self):
         '''Return window dimensions in WxH format.'''
         return '%dx%d' % (self.width, self.height)
@@ -303,7 +311,7 @@ class RdpWrapper:
             p = subprocess.Popen([self.CMD], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             # Read the first 10 lines for the usage summary.
-            # Not counting on it being on a specific line within this.
+            # Not counting on it being on a specific line within self.
             i = 0
             for line in p.stdout.readlines():
                 i += 1
@@ -328,6 +336,7 @@ class RdpWrapper:
         return temp
 
     ec2_cipher = property(__get_ec2_cipher)
+    ec2_prioritize_internal = property(__get_ec2_prioritize_internal)
 
     def format_bytes(self, content):
         if sys.version_info.major == 2:
@@ -419,6 +428,7 @@ class RdpWrapper:
         g_user = parser.add_argument_group('user options')
         g_user.add_argument('-d', dest='domain', default=os.environ.get(self.ENV_DOMAIN), help='User domain name')
         g_user.add_argument('-e', dest='ec2_key_file', help='Path to EC2 key file')
+        g_user.add_argument('--ec2-internal', dest='prioritize_internal', action='store_true', help='Use internal EC2 IP. Set %s=1 to make this standard.' % self.ENV_RDP_INTERNAL)
         g_user.add_argument('-P', dest='password_prompt', action='store_true', help='Prompt for password')
         g_user.add_argument('-p', dest='password', help='RDP password')
         g_user.add_argument('-u', dest='user', help='Username')
@@ -514,7 +524,7 @@ class RdpWrapper:
             for instance in [i for i in raw_instances if not i.is_running]:
                 print('\t',instance)
 
-        check = lambda ec2: label in (ec2.ip_public, ec2.instance_id, ec2.name)
+        check = lambda ec2: label in (ec2.ip_public, ec2.ip_internal, ec2.instance_id, ec2.name)
         matches = [i for i in instances if check(i)]
 
         if not matches:
@@ -534,7 +544,9 @@ class RdpWrapper:
                 'path': colour_text(self.args.ec2_key_file, COLOUR_GREEN)
             }
 
-            self.__stored_server = instance.ip_public
+            self.__stored_server = instance.ip_internal
+            if not self.ec2_prioritize_internal and instance.ip_public:
+                self.__stored_server = instance.ip_public
             password_data = client.get_password_data(InstanceId = instance.instance_id)
             raw_password = base64.b64decode(password_data.get('PasswordData', '').strip())
             if not raw_password:
@@ -569,7 +581,6 @@ class RdpWrapper:
         try:
             if self.args.verbose:
                 print(' '.join(self.get_command(True)))
-            print(self.password)
             p = subprocess.Popen(self.get_command(), stdout=sys.stdout, stderr=sys.stderr)
 
             # Run until the process ends.
