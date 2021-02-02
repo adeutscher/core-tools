@@ -54,8 +54,15 @@ do_dynamic_setup(){
     if [ -n "$configDir" ]; then
         cd "$configDir" || return 1
     fi
+
     cp -f "${CONKYRC_PRIMARY_TEMPLATE}" "${CONKYRC_PRIMARY}"
-    (( ${CONKY_ENABLE_TASKS:-0} )) && cp -f "${CONKYRC_SECONDARY_TEMPLATE}" "${CONKYRC_SECONDARY}"
+    # Manually call convert.lua because autoconvert seems to be broken.
+    lua /usr/share/doc/conky/convert.lua "${CONKYRC_PRIMARY}" 2> /dev/null
+    if (( ${CONKY_ENABLE_TASKS:-0} )); then
+        # Manually call convert.lua because autoconvert seems to be broken.
+        cp -f "${CONKYRC_SECONDARY_TEMPLATE}" "${CONKYRC_SECONDARY}"
+        lua /usr/share/doc/conky/convert.lua "${CONKYRC_SECONDARY}" 2> /dev/null
+    fi
 
     # * Setting own_window_type to 'desktop' on Fedora 23 (conky 1.9) makes the conky
     #     display vanish when the desktop is clicked on. Fixed by
@@ -501,12 +508,12 @@ if (( "${DEBUG:-0}" )); then
 
     # Print off the conky command being used for good measure.
     # shellcheck disable=SC2059
-    printf "\nconky -c '${CONKYRC_PRIMARY}' -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y\n\n"
+    printf "\nconky -c '$(readlink -f ${CONKYRC_PRIMARY})' -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y\n\n"
 
     # Start conky session(s)
     if (( ${CONKY_ENABLE_TASKS:-0} )); then
       # shellcheck disable=SC2059
-      printf "\nconky -c '${CONKYRC_SECONDARY}' -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y\n\n"
+      printf "\nconky -c '$(readlink -f ${CONKYRC_SECONDARY})' -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y\n\n"
       conky -c "${CONKYRC_SECONDARY}" -a bottom_left -x $POS_SECONDARY_X -y $POS_SECONDARY_Y &
     fi
     conky -c "${CONKYRC_PRIMARY}" -a bottom_right -x $POS_PRIMARY_X -y $POS_PRIMARY_Y

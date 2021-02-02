@@ -33,35 +33,35 @@
 # with standard font before things start to expand.
 maximum_width 390
 
-background no
+background false
 border_width 1
 cpu_avg_samples 2
 default_color white
 default_outline_color white
 default_shade_color white
-draw_borders no
-draw_graph_borders yes
-draw_outline no
-draw_shades no
-use_xft yes
+draw_borders false
+draw_graph_borders true
+draw_outline false
+draw_shades false
+use_xft true
 xftfont DejaVu Sans Mono:size=12
 net_avg_samples 2
-no_buffers no
-double_buffer yes
-out_to_console no
-out_to_stderr no
-extra_newline no
-own_window yes
+no_buffers false
+double_buffer true
+out_to_console false
+out_to_stderr false
+extra_newline false
+own_window true
 own_window_class Conky
 own_window_hints undecorated,below,sticky,skip_taskbar,skip_pager  
 
 stippled_borders 0
 update_interval __CONKY_INTERVAL__
-uppercase no
-short_units yes
+uppercase false
+short_units true
 use_spacer none
-show_graph_scale no
-show_graph_range no
+show_graph_scale false
+show_graph_range false
 text_buffer_size 2048
 
 # Draw rounded backgrounds with lua.
@@ -70,7 +70,7 @@ lua_load lua/draw_bg.lua
 lua_draw_hook_pre draw_bg 
 # If you want to disable the lua backgrounds, set own_window_transparent to no and uncomment own_window_color
 
-own_window_transparent yes
+own_window_transparent true
 #own_window_colour 1A334C
 
 # Dynamic values
