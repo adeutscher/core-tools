@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 '''
 Parse IPv4 TCP connections using /proc/net/tcp, netstat, or conntrack
@@ -17,7 +17,7 @@ def _print_message(header_colour, header_text, message, stderr=False):
     f=sys.stdout
     if stderr:
         f=sys.stderr
-    print('%s[%s]: %s' % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
+    print('%s[%s]: %s' % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=ff)
 
 def colour_text(text, colour = None):
     if not colour:
