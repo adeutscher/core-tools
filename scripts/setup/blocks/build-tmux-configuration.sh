@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Load common functions.
-. "$(dirname "${0}")/functions.sh"
+IGNORE_DOTFILES=1
+. "$(dirname "${0}")/../functions.sh"
 
 build_tmux(){
 
@@ -75,7 +76,7 @@ build_tmux(){
     ;;
     esac
 
-    notice "$(printf "Applying ${BOLD}\"%s\"${NC} style...\n" "$style")"
+    notice "$(printf "Applying ${BOLD}\"%s\"${NC} style...\n" "$style")" >&2
 
   # Note: Stretching command output across multiple lines makes geany colour formatting act strangely, but BASH has no problems with running it.
 
@@ -93,7 +94,7 @@ EOF
 
   # Possible brain fart: shouldn't '-m1' account for the second number value in the version, making head unnecessary?
   if [ "$(tmux -V 2> /dev/null | grep -oPm1 "\d+" | head -n1)" -eq 1 ]; then
-    CONTENT="$(cat << EOF
+    cat << EOF
 ## "${style}" Theming
 
 set-window-option -g status-bg $bg
@@ -112,9 +113,8 @@ set-window-option -g window-status-current-attr bright
 
 ${COMMON_CONTENT}
 EOF
-)"
   else
-    CONTENT="$(cat << EOF
+    cat << EOF
 ## "${style}" Theming
 
 set -g status-style bg=$bg,fg=$fg
@@ -127,20 +127,14 @@ set -g window-status-current-style fg=${status_bg:-$bg},bg=${status_fg:-$fg}
 
 ${COMMON_CONTENT}
 EOF
-)"
   fi
-
-  "${DOTFILE_SCRIPT}" "${HOME}/.tmux.conf" core-tools-tmux - <<< "${CONTENT}"
 }
 
 check_commands(){
   if ! type tmux 2> /dev/null >&2; then
-    error "$(printf "The ${BLUE}%s${NC} command is not yet installed on this machine.\n" "tmux")"
+    warning "$(printf "The ${BLUE}%s${NC} command is not yet installed on this machine.\n" "tmux")"
   fi
-
-  (( ${__error_count:-0} )) && return 1
-  return 0
 }
 
-check_commands || exit 1
+check_commands
 build_tmux

@@ -7,17 +7,15 @@
 # Common message functions.
 
 # Define colours
-if [ -t 1 ]; then
-  BLUE='\033[1;34m'
-  GREEN='\033[1;32m'
-  RED='\033[1;31m'
-  YELLOW='\033[1;93m'
-  # shellcheck disable=SC2034
-  PURPLE='\033[1;95m'
-  # shellcheck disable=SC2034
-  BOLD='\033[1m'
-  NC='\033[0m' # No Color
-fi
+BLUE='\033[1;34m'
+GREEN='\033[1;32m'
+RED='\033[1;31m'
+YELLOW='\033[1;93m'
+# shellcheck disable=SC2034
+PURPLE='\033[1;95m'
+# shellcheck disable=SC2034
+BOLD='\033[1m'
+NC='\033[0m' # No Color
 
 error(){
   printf "${RED}"'Error'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
@@ -42,7 +40,10 @@ warning(){
 if (( ! IGNORE_DOTFILES )); then
 
   # Need to get at an updater script in scripts/system/
-  DOTFILE_SCRIPT="$(readlink -f "$(dirname "$(readlink -f "${0}")")/../system/update-dotfile.sh")"
+  DOTFILE_SCRIPT="$(readlink -f "$(dirname "$(readlink -f "${0}")")/../system/update_dotfile.py")"
+  if [ ! -f "${DOTFILE_SCRIPT}" ]; then
+    DOTFILE_SCRIPT="$(readlink -f "$(dirname "$(readlink -f "${0}")")/../../system/update_dotfile.py")"
+  fi
 
   if [ ! -f "${DOTFILE_SCRIPT}" ] || [ -z "${WINDIR}" ] && [ ! -x "${DOTFILE_SCRIPT}" ]; then
     # shellcheck disable=SC2001

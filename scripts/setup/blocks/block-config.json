@@ -1,0 +1,19 @@
+{
+    "files": [
+        {
+            "id": "#{marker}#-tmux",
+            "script_in": "blocks/build-tmux-configuration.sh",
+            "path_out": "#<home>#/.tmux.conf"
+        },
+        {
+            "id": "#{marker}#-vimrc",
+            "comment": "\"",
+            "path_in": "blocks/vimrc.block",
+            "path_out": "#<home>#/.vimrc"
+        }
+    ],
+    "variables": {
+        "marker": "core-tools"
+    }
+}
+

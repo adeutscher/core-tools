@@ -31,7 +31,7 @@ EOF
 temp_file="$(mktemp)"
 printf "${crontab_contents}" > "${temp_file}"
 temp_file_checksum="$(md5sum "${temp_file}" | cut -d' ' -f1)"
-"${DOTFILE_SCRIPT}" "${temp_file}" "${marker}" - <<< "${new_tasks}"
+"${DOTFILE_SCRIPT}" -f - -o "${temp_file}" -i "${marker}" <<< "${new_tasks}"
 temp_file_checksum_new="$(md5sum "${temp_file}" | cut -d' ' -f1)"
 
 if [[ "${temp_file_checksum}" != "${temp_file_checksum_new}" ]]; then

@@ -76,8 +76,10 @@ if type -ftptP git 2> /dev/null >&2 || type -ftptP svn 2> /dev/null >&2; then
         update-repo "$toolsDir" "tools" || return 1
 
         # Apply updates to various files.
-        for __script in setup-tools crontab-setup tmux-configuration vimrc-setup; do
-            "${toolsDir}/scripts/setup/${__script}.sh"
+        for __script in setup-tools crontab-setup deploy-blocks; do
+            if [ -f "${toolsDir}/scripts/setup/${__script}.sh" ]; then
+                "${toolsDir}/scripts/setup/${__script}.sh"
+            fi
         done
         unset __script
     }
