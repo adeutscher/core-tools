@@ -126,6 +126,8 @@ File Configuration:
 
     args = parser.parse_args(raw_args)
 
+    script_dir = os.path.dirname(os.path.realpath(sys.argv[0]))
+
     if args.dir and args.chdir and os.path.dirname(args.dir) != script_dir:
         # Avoid conflicts, but forgive if the manual directory is the same as the script directory.
         errors.append('Cannot navigate to both the script directory and a manual directory.')
@@ -154,6 +156,18 @@ File Configuration:
 
     updater = DotFileUpdater(**updater_args)
     config_blocks = []
+
+    if args.comment:
+        updater.comment = args.comment
+    updater.verbose = args.verbose
+
+    sysvars = {
+        'dir': script_dir,
+        'home': os.path.expanduser('~'),
+        'uid': os.getuid(),
+        'user': getpass.getuser()
+    }
+    updater.load_system_variables(sysvars)
 
     for c in args.config:
         # Loop through configuration files the first time for all variables.
@@ -195,20 +209,6 @@ File Configuration:
         }
 
         errors += updater.load_file(**file_args)
-
-    script_dir = os.path.dirname(os.path.realpath(sys.argv[0]))
-
-    if args.comment:
-        updater.comment = args.comment
-    updater.verbose = args.verbose
-
-    sysvars = {
-        'dir': script_dir,
-        'home': os.path.expanduser('~'),
-        'uid': os.getuid(),
-        'user': getpass.getuser()
-    }
-    updater.load_system_variables(sysvars)
 
     if updater.blocks_count == 0:
         errors.append('No blocks specified for substitution.')
@@ -261,6 +261,9 @@ def resolve(raw_content, data, pattern):
         if not resolved:
             unresolved.append((token_raw, tokens[token_raw].full, tokens[token_raw].count))
 
+    if unresolved:
+        print(content, unresolved)
+        print(data) 
     return (content, unresolved)
 
 def run_script(script_path, get_content = True):
@@ -271,17 +274,16 @@ def run_script(script_path, get_content = True):
     if get_content:
         args['stdout'] = subprocess.PIPE
 
-    with subprocess.Popen([os.path.realpath(script_path)], **args) as process:
-        process.wait()
-        output = ''
-        if process.stdout:
-            raw_output = process.stdout.read()
-            if sys.version_info.major >= 3:
-                output = str(raw_output, 'utf-8')
-            else:
-                output = str(raw_output)
-
-        return (process.returncode, output)
+    process = subprocess.Popen([os.path.realpath(script_path)], **args)
+    process.wait()
+    output = ''
+    if process.stdout:
+        raw_output = process.stdout.read()
+        if sys.version_info.major >= 3:
+            output = str(raw_output, 'utf-8')
+        else:
+            output = str(raw_output)
+    return (process.returncode, output)
 
 class DotFileUpdater:
 
@@ -299,21 +301,21 @@ class DotFileUpdater:
     def __get_environ(self, value):
         return self.__environ
 
-    def __get_file(self, path, comment):
-        if path in self.__files:
-            return self.__files[path]
+    def __get_file(self, item, fallback_comment):
+        if item.path_out in self.__files:
+            return self.__files[item.path_out]
         args = {
             'parent': self,
-            'path': path,
-            'comment': comment
+            'path': item.path_out,
+            'comment': item.comment or fallback_comment
         }
         f = DotFileUpdaterFile(**args)
-        self.__files[path] = f
+        self.__files[item.path_out] = f
         return f
 
     def __init__(self, **kwargs):
 
-        self.comment = None
+        self.__comment = None
 
         self.debug = False
         self.verbose = False
@@ -392,12 +394,18 @@ class DotFileUpdater:
         if type(data) is not dict:
             return
 
-        for k in data:
-            if type(data[k]) not in [int, str]:
-                # Not a string or number, ignore nesting for the moment
-                continue
+        accepted_types = [int, str]
+        if sys.version_info.major < 3:
+            # JSON data is loaded as unicode-type in Python2
+            accepted_types.append(unicode)
 
-            self.add_variable(k, data[k])
+        for k in data:
+            print(type(data[k]))
+            if type(data[k]) in accepted_types:
+                # Is of an accepted type.
+                self.add_variable(k, data[k])
+            # Ignoring nesting for the moment.
+
 
     def load_system_variables(self, data):
         if type(data) is not dict:
@@ -444,7 +452,7 @@ class DotFileUpdater:
                     print('Block skipped: ', identifier)
 
             # Load up the current file.
-            current_file = self.__get_file(item.path_out, item.comment)
+            current_file = self.__get_file(item, self.comment)
             current_file.add_item(item)
 
         for k in self.__files:
