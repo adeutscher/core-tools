@@ -263,7 +263,7 @@ def resolve(raw_content, data, pattern):
 
     if unresolved:
         print(content, unresolved)
-        print(data) 
+        print(data)
     return (content, unresolved)
 
 def run_script(script_path, get_content = True):
@@ -814,11 +814,20 @@ class DotFileUpdaterItem:
         if not self.id:
             errors.append(label + 'No ID specified')
 
+
         if self.__script_in and self.__path_in:
             errors.append(label + 'Cannot have both an input script and an input file at the same time.')
+        elif self.path_in == '-':
+            pass
         elif self.__script_in:
-            if not os.path.isfile(self.script_in):
-                errors.append(label + 'Input script not found: %s' % colour_text(self.script_check, COLOUR_GREEN))
+            resolved, errors_sub = self.__parent.resolve(self.__script_in or '')
+            for token, raw, count in errors_sub:
+                e = 'Unable to resolve token in script_in:' + colour_text(raw)
+                if count > 1:
+                    e += ' (%s instances)' % colour_text(count)
+                errors.append(label + e)
+            if not errors_sub and not os.path.isfile(resolved):
+                errors.append('Input script does not exist: ' + colour_text(resolved, COLOUR_GREEN))
         elif not self.__path_in:
             errors.append(label + 'No input path specified.')
         else:
@@ -828,7 +837,7 @@ class DotFileUpdaterItem:
                 if count > 1:
                     e += ' (%s instances)' % colour_text(count)
                 errors.append(label + e)
-            if not errors_sub and not os.path.isfile(resolved) and resolved != '-':
+            if not errors_sub and not os.path.isfile(resolved):
                 errors.append('Input file does not exist: ' + colour_text(resolved, COLOUR_GREEN))
 
         if not self.__path_out:
@@ -842,8 +851,15 @@ class DotFileUpdaterItem:
                 errors.append(label + e)
             # Note: It's alright if the output file does not exist yet.
 
-        if self.script_check and not os.path.isfile(self.script_check):
-            errors.append(label + 'Check script not found: %s' % colour_text(self.script_check, COLOUR_GREEN))
+        if self.__script_check:
+            resolved, errors_sub = self.__parent.resolve(self.__script_check or '')
+            for token, raw, count in errors_sub:
+                e = 'Unable to resolve token in script_check:' + colour_text(raw)
+                if count > 1:
+                    e += ' (%s instances)' % colour_text(count)
+                errors.append(label + e)
+            if not errors_sub and not os.path.isfile(resolved):
+                errors.append('Check script does not exist: ' + colour_text(resolved, COLOUR_GREEN))
 
         return errors
 
