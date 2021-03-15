@@ -261,9 +261,6 @@ def resolve(raw_content, data, pattern):
         if not resolved:
             unresolved.append((token_raw, tokens[token_raw].full, tokens[token_raw].count))
 
-    if unresolved:
-        print(content, unresolved)
-        print(data)
     return (content, unresolved)
 
 def run_script(script_path, get_content = True):
