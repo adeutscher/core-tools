@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
-import sys, unittest
+import os, sys, unittest
+
+TOOLS_DIR = os.path.realpath(os.path.dirname(__file__) + '/../..')
 
 def load(name, path):
     # https://stackoverflow.com/questions/67631/how-to-import-a-module-given-the-full-path

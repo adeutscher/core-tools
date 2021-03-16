@@ -2,7 +2,7 @@
 
 import common, unittest
 
-mod = common.load('update_dotfile', '/home/adeutscher/tools/core-tools/scripts/system/update_dotfile.py')
+mod = common.load('update_dotfile', common.TOOLS_DIR + '/scripts/system/update_dotfile.py')
 
 '''
 Tests involving the resolve method of the DotFileUpdater class.
