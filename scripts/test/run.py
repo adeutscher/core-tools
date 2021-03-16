@@ -5,7 +5,6 @@ import os, re, sys, unittest
 DIRNAME = 'tests.d'
 
 DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), DIRNAME))
-sys.path.append(DIR)
 sys.path.append('.')
 if not os.path.isdir(DIR):
     raise Exception("Class dir doesn't exist: %s/" % DIR)
@@ -13,6 +12,9 @@ if not os.path.isdir(DIR):
 modules = []
 # Detect modules
 for (dirname, subdirs, files) in os.walk(DIR):
+
+    sys.path.append(dirname)
+
     for f in files:
         # ToDo: Regex could use some tightening maybe
         #       That said, should be good so long as no dev puts anything
@@ -22,7 +24,6 @@ for (dirname, subdirs, files) in os.walk(DIR):
         if not m:
             continue # Skip, not a .py
         modules.append(m.group(1))
-    break
 
 # Source: https://stackoverflow.com/questions/1732438/how-do-i-run-all-python-unit-tests-in-a-directory
 suite = unittest.TestSuite()
