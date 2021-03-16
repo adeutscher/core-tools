@@ -19,8 +19,17 @@ class TestCase(unittest.TestCase):
     def assertEmpty(self, obj):
         self.assertEqual(0, len(obj))
 
+    def assertNone(self, value):
+        self.assertEqual(None, value)
+
+    def assertNotEmpty(self, obj):
+        self.assertNotEqual(0, len(obj))
+
     def assertSingle(self, obj):
         self.assertEqual(1, len(obj))
         if type(obj) is dict:
             return obj.items()[0]
         return obj[0]
+
+    def assertStartsWith(self, expected, val):
+        self.assertTrue(val.startswith(expected))

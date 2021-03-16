@@ -51,13 +51,14 @@ def displayFlags(value):
 
         power += 1
 
-def getValue(index, label):
+def getValue(args, index, label):
     ret = None
-    if len(sys.argv) <= index:
+    err = None
+    if len(args) <= index:
         print("No %s provided." % label)
         return None
     try:
-        val = sys.argv[index]
+        val = args[index]
         if re.search(r'^0x',val):
             # Hex value
             ret = int(val,16)
@@ -65,25 +66,28 @@ def getValue(index, label):
             # Treat as base-10
             ret = int(val)
     except Exception as e:
-        pass
+        err = str(e)
 
     if ret is None or ret <= 0:
-        print("Invalid %s: %s (%s)" % (val, label, str(e)))
+        msg = 'Invalid %s: %s' % (label, val)
+        if err:
+            msg += ' (%s)' % err
+        print(msg)
         return None
     return ret
 
 def usage():
-    print("Usage: %s number [mask]" % os.path.basename(sys.argv[0]))
+    print("Usage: %s number [mask]" % os.path.basename(__file__))
     exit(1)
 
-def main():
-    value = getValue(1, "value")
+def main(args):
+    value = getValue(args, 1, "value")
     if value is None:
         print("Number value must be greater than zero.")
         usage()
 
-    if len(sys.argv) >= 3:
-        mask = getValue(2, "mask")
+    if len(args) >= 3:
+        mask = getValue(args, 2, "mask")
         if mask is None:
             usage()
         print("Testing a value of %d (%#08x) against a mask of %d (%#08x)." % tuple([value,value,mask,mask]))
@@ -103,4 +107,4 @@ def main():
     else:
         displayFlags(value)
 
-if __name__ == '__main__': main()
+if __name__ == '__main__': main(sys.argv)
