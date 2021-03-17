@@ -9,7 +9,7 @@ def colour_text(text, colour = None):
     if not colour:
         colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
-    return "%s%s%s" % (colour, text, COLOUR_OFF)
+    return '%s%s%s' % (colour, text, COLOUR_OFF)
 
 def enable_colours(force = False):
     global COLOUR_RED
@@ -33,7 +33,7 @@ enable_colours()
 # Script Functions
 
 def displayFlags(value):
-    print("Getting the bitmask flags in value of %d (%#08x)" % (value,value))
+    print('Getting the bitmask flags in value of %d (%#08x)' % (value,value))
     power = 0
     num = 0
     while True:
@@ -42,11 +42,11 @@ def displayFlags(value):
         if num > value:
             break
 
-        s = "2 ^ %s: (%s, %s): " % (colour_text("%03d" %  power), colour_text("%10d" %  num), colour_text("%#010x" %  num))
+        s = '2 ^ %s: (%s, %s): ' % (colour_text('%03d' %  power), colour_text('%10d' %  num), colour_text('%#010x' %  num))
         if value & num:
-            s+= "1 (%s)" % colour_text("True", COLOUR_GREEN)
+            s+= '1 (%s)' % colour_text('True', COLOUR_GREEN)
         else:
-            s += "0 (%s)" % colour_text("False", COLOUR_RED)
+            s += '0 (%s)' % colour_text('False', COLOUR_RED)
         print(s)
 
         power += 1
@@ -55,7 +55,7 @@ def getValue(args, index, label):
     ret = None
     err = None
     if len(args) <= index:
-        print("No %s provided." % label)
+        print('No %s provided.' % label)
         return None
     try:
         val = args[index]
@@ -77,34 +77,34 @@ def getValue(args, index, label):
     return ret
 
 def usage():
-    print("Usage: %s number [mask]" % os.path.basename(__file__))
+    print('Usage: %s number [mask]' % os.path.basename(__file__))
     exit(1)
 
 def main(args):
-    value = getValue(args, 1, "value")
+    value = getValue(args, 0, 'value')
     if value is None:
-        print("Number value must be greater than zero.")
+        print('Number value must be greater than zero.')
         usage()
 
-    if len(args) >= 3:
-        mask = getValue(args, 2, "mask")
+    if len(args) >= 2:
+        mask = getValue(args, 1, 'mask')
         if mask is None:
             usage()
-        print("Testing a value of %d (%#08x) against a mask of %d (%#08x)." % tuple([value,value,mask,mask]))
+        print('Testing a value of %d (%#08x) against a mask of %d (%#08x).' % tuple([value,value,mask,mask]))
 
         result = value & mask
-        s = "Result: %d & %d = %d (" % (value, mask, result)
+        s = 'Result: %d & %d = %d (' % (value, mask, result)
         if result:
             if (value & mask) == value:
-                s += "Yes, Full Match)"
+                s += 'Yes, Full Match)'
             else:
-                s += "Yes, Partial Match)"
+                s += 'Yes, Partial Match)'
         else:
-            s += "No Match)"
+            s += 'No Match)'
         print(s)
         if result:
             displayFlags(result)
     else:
         displayFlags(value)
 
-if __name__ == '__main__': main(sys.argv)
+if __name__ == '__main__': main(sys.argv[1:])
