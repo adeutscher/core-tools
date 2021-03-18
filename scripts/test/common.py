@@ -16,8 +16,15 @@ def load(name, path):
     raise Exception('Loading data not yet implemented in this testing structure for your version of python.')
 
 class TestCase(unittest.TestCase):
+    def assertContains(self, value, enumerable):
+        self.assertTrue(type(enumerable) is list)
+        self.assertTrue(value in enumerable)
+
     def assertEmpty(self, obj):
         self.assertEqual(0, len(obj))
+
+    def assertEndsWith(self, expected, val):
+        self.assertTrue(val.endswith(expected))
 
     def assertNone(self, value):
         self.assertEqual(None, value)
