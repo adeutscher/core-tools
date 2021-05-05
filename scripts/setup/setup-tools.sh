@@ -83,7 +83,7 @@ fi
 #####################################
 EOF
 )"
-    "${DOTFILE_SCRIPT}" "${file}" core-tools-marker - <<< "${CONTENTS}"
+    "${DOTFILE_SCRIPT}" -o "${file}" -i core-tools-marker -f - <<< "${CONTENTS}"
 
 }
 
