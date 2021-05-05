@@ -105,7 +105,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         if not filename:
             # No FileName provided
             return self.serve_content('No file name.', 400)
-        elif not re.match(r"^[\w\-. _\?]+$", filename) or filename in ['.', '..']:
+        elif not re.match(r'^[^/\\]+$', filename) or filename in ['.', '..']:
             # Validate filename
             return self.serve_content('Invalid file name.', 400)
 
