@@ -17,8 +17,22 @@ def load(name, path):
 
 class TestCase(unittest.TestCase):
     def assertContains(self, value, enumerable):
-        self.assertTrue(type(enumerable) is list)
-        self.assertTrue(value in enumerable)
+        self.assertTrue(type(enumerable) in (bytes, list, str))
+        if type(enumerable) is list:
+            # list
+            self.assertTrue(value in enumerable)
+        else:
+            # bytes/str
+            self.assertTrue(value in enumerable)
+
+    def assertDoesNotContain(self, value, enumerable):
+        self.assertTrue(type(enumerable) in (bytes, list, str))
+        if type(enumerable) is list:
+            # list
+            self.assertFalse(value in enumerable)
+        else:
+            # bytes/str
+            self.assertFalse(value in enumerable)
 
     def assertEmpty(self, obj):
         self.assertEqual(0, len(obj))
