@@ -497,7 +497,7 @@ TITLE_PORT = "port"
 TITLE_VERBOSE="verbose"
 
 TITLE_BALANCE_RANDOM = "random-target"
-TITLE_BALANCE_ROUND_ROBIN = "round-robin-target"
+TITLE_BALANCE_ROUND_ROBIN = "round-robin"
 
 TITLE_TARGET_PORT = "target-port"
 TITLE_TARGET_SSL = "target-ssl"
@@ -673,13 +673,14 @@ class TcpRelayServer:
     def run(self):
         self.args.process(sys.argv)
         self.print_summary()
-        if not self.init_server(): return 1
+
+        if not self.init_server():
+            return 1
 
         try:
             while True:
                 events = self.epoll_socket.poll(1)
                 for fd, event in events:
-
                     if fd == self.server_socket.fileno():
                         try:
                             while True:
@@ -692,13 +693,12 @@ class TcpRelayServer:
                                     continue
 
                                 session = TcpRelaySession(self, sock, addr)
-                                session.handle_connection()
 
                         except (BlockingIOError, socket.error) as e: pass
                         continue
-
-                    session = self.sessions.get(fd)
-                    if session: session.handle_data(fd, event)
+                    else:
+                        session = self.sessions.get(fd)
+                        session.handle_data(fd, event)
 
         finally: self.shutdown()
         return 0
@@ -750,7 +750,7 @@ class TcpRelayServer:
 
             # Always append target, even if it's generated a number of errors.
             # On account of the errors, this instance of the script won't survive past argument handling.
-            self.targets.append(TcpRelayTarget(target_ip, target_port, target_addr))
+            self.targets.append(RelayTarget(target_ip, target_port, target_addr))
 
         if not self.targets: errors.append('No relay target specified.')
         else:
@@ -821,7 +821,9 @@ class TcpRelaySession:
         s.dst = srv.new_socket()
         srv.register_session(s)
 
-    get_arrow_string = lambda s: '%s->%s' % (colour_addr(s.addr[0], s.addr[1]), s.target)
+        s.handle_connection()
+
+    __str__ = lambda s: '%s->%s' % (colour_addr(s.addr[0], s.addr[1]), s.target)
 
     def handle_connection(self):
 
@@ -831,7 +833,7 @@ class TcpRelaySession:
                 self.src.do_handshake()
                 self.state_client = STATE_CONNECTED
 
-                if self.verbose: print_notice('Client SSL initialized for %s' % self.get_arrow_string())
+                if self.verbose: print_notice('Client SSL initialized for %s' % str(self))
             except (SSLWantReadError, SSLWantWriteError, BlockingIOError) as e:
                 self.re_arm(self.src, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLONESHOT)
             except (SSLError, OSError) as e:
@@ -841,7 +843,7 @@ class TcpRelaySession:
         if self.running and self.state_server == STATE_UNCONNECTED:
 
             target_addr = (self.target.ip, self.target.port)
-            if self.verbose: log_notice('Attempting: %s' % self.get_arrow_string())
+            if self.verbose: log_notice('Attempting: %s' % str(self))
 
             try:
                 try: self.dst.connect(target_addr)
@@ -853,7 +855,7 @@ class TcpRelaySession:
                     if e.errno != errno.EISCONN: raise
                 rearm_server = True
 
-                if self.verbose: print_notice('Completed TCP connection: %s' % self.get_arrow_string())
+                if self.verbose: print_notice('Completed TCP connection: %s' % str(self))
 
                 if self.server.client_ctx:
                     self.dst = self.server.client_ctx.wrap_socket(
@@ -873,7 +875,7 @@ class TcpRelaySession:
             except (ConnectionError, OSError) as e:
                 # ConnectionError: Likely a reset connection (target not listening?)
                 # OSError: Possibly a timeout, or no route to host.
-                if self.verbose: log_error('Connection %s: %s' % (self.get_arrow_string(), e))
+                if self.verbose: log_error('Connection %s: %s' % (str(self), e))
                 self.shutdown()
 
         if self.running and self.state_server == STATE_UNINITIALIZED:
@@ -887,14 +889,14 @@ class TcpRelaySession:
                 self.state_server = STATE_CONNECTED
                 self.register_socket(self.src, TcpRelaySession.CLIENT_FLAGS)
 
-                if self.verbose: print_notice('Server SSL initialized for %s' % self.get_arrow_string())
+                if self.verbose: print_notice('Server SSL initialized for %s' % str(self))
             except (SSLWantReadError, SSLWantWriteError, BlockingIOError) as e:
                 self.re_arm(self.dst, TcpRelaySession.CLIENT_FLAGS)
             except ssl.SSLCertVerificationError as e:
-                if self.verbose: print_error('Failed to verify SSL certificate for %s in %s: %s' % (colour_blue(self.target.hostname), self.get_arrow_string(), e))
+                if self.verbose: print_error('Failed to verify SSL certificate for %s in %s: %s' % (colour_blue(self.target.hostname), str(self), e))
                 self.shutdown()
             except (SSLError, OSError) as e:
-                if self.verbose: print_error('SSL handshake error error for %s: %s' % (self.get_arrow_string(), e))
+                if self.verbose: print_error('SSL handshake error error for %s: %s' % (str(self), e))
                 self.shutdown()
 
         if rearm_server: self.re_arm(self.dst)
@@ -945,7 +947,7 @@ class TcpRelaySession:
 
     def shutdown(s):
         if not s.running: return
-        if s.verbose: log_notice('Closing: %s' % s.get_arrow_string())
+        if s.verbose: log_notice('Closing: %s' % str(self))
 
         subjects = [(s.state_server, s.dst, True), (s.state_client, s.src, s.state_server == STATE_CONNECTED)]
         for state, sock, do_deregister in subjects:
@@ -961,12 +963,13 @@ class TcpRelaySession:
 
         s.running = False
 
-class TcpRelayTarget(object):
+class RelayTarget(object):
     def __init__(s, t_ip, t_port, t_host):
         s.ip = t_ip
         s.port = t_port
         s.hostname = t_host
     __str__ = lambda s: colour_addr(s.ip, s.port, s.hostname)
+    get_addr = lambda s: (s.ip, s.port)
 
 # Run
 if __name__ == '__main__':

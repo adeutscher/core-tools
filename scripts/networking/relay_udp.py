@@ -473,10 +473,10 @@ TITLE_BIND = "bind"
 TITLE_PORT = "port"
 TITLE_VERBOSE="verbose"
 
+TITLE_BALANCE_ALL = "all"
 TITLE_BALANCE_RANDOM = "random-target"
-TITLE_BALANCE_ROUND_ROBIN = "round-robin-target"
+TITLE_BALANCE_ROUND_ROBIN = "round-robin"
 
-TITLE_MULTIPLY = 'multiply'
 TITLE_NO_RESPONSE = 'no-reply'
 TITLE_TARGET_PORT = 'target-port'
 
@@ -511,10 +511,10 @@ class UdpRelayServer:
         args.add_opt(OPT_TYPE_SHORT, "p", TITLE_PORT, "Specify server bind port.", converter = int, default = self.DEFAULT_PORT, default_announce = True)
         args.add_opt(OPT_TYPE_LONG, TITLE_TARGET_PORT, TITLE_TARGET_PORT, 'Specify default target port.', default = self.DEFAULT_TARGET_PORT, default_announce = True)
 
+        args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_BALANCE_ALL, TITLE_BALANCE_ALL, 'Broadcast message to all targets at once. Only responses from the first responding target will be forwarded to the clinet.')
         args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_BALANCE_RANDOM, TITLE_BALANCE_RANDOM, 'Select between multiple targets at random.')
         args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_BALANCE_ROUND_ROBIN, TITLE_BALANCE_ROUND_ROBIN, 'Rotate between targets (default).')
 
-        args.add_opt(OPT_TYPE_FLAG, 'm', TITLE_MULTIPLY, 'Broadcast message to all targets at once. Only responses from the first responding target will bet forwarded to the clinet.')
         args.add_opt(OPT_TYPE_FLAG, 'n', TITLE_NO_RESPONSE, 'Do not listen for any response from the target servers.')
 
         args.add_opt(OPT_TYPE_SHORT, "a", TITLE_ALLOW, "Add network address or CIDR range to whitelist.", multiple = True)
@@ -533,7 +533,7 @@ class UdpRelayServer:
 
     def get_target_round_robin(s):
         s._round_robin_index = (getattr(s, '_round_robin_index', -1) + 1) % len(s.targets)
-        return s.targets[s._round_robin_index]
+        return [s.targets[s._round_robin_index]]
 
     def init_server(self):
         self.server_socket = self.new_socket()
@@ -582,23 +582,33 @@ class UdpRelayServer:
         # Summarize arguments
         if s.verbose: print_notice('Additional information shall be printed.')
 
-        if s.multiply:
-            print_notice('Relaying to all targets at once.')
-
         if s.no_reply:
             print_notice('Not expecting or relaying any replies from target server(s).')
 
-        if len(s.targets) == 1:
-            s.get_target = lambda: s.targets[0]
+        # Kick off initialization with target-seeking being 'All'-mode.
+        # Will be adjusted later in this method if this is not the case.
+        s.get_targets = lambda: s.targets
 
-            print_notice('Relaying UDP datagrams on %s to %s' % (colour_addr(s.args[TITLE_BIND], s.port), s.get_target()))
+        if len(s.targets) == 1:
+            print_notice('Relaying UDP datagrams on %s to %s' % (colour_addr(s.args[TITLE_BIND], s.port), s.get_targets()[0]))
 
         else:
-            print_notice('Relaying UDP datagrams on %s to the following hosts:' % colour_addr(s.args[TITLE_BIND], s.port))
-            for t in s.targets: print_notice('  * %s' % t)
+            if s.args[TITLE_BALANCE_ALL]:
+                print_notice('Relaying UDP datagrams on %s to all of the following hosts:' % colour_addr(s.args[TITLE_BIND], s.port))
+            else:
+                print_notice('Relaying UDP datagrams on %s to the following hosts:' % colour_addr(s.args[TITLE_BIND], s.port))
 
-            if s.args[TITLE_BALANCE_RANDOM]: s.get_target = lambda: s.targets[random.randint(0, len(s.targets)-1)]
-            else: s.get_target = s.get_target_round_robin
+            for t in s.targets:
+                print_notice('  * %s' % t)
+
+            if s.args[TITLE_BALANCE_ALL]:
+                # Already initialized
+                pass
+            elif s.args[TITLE_BALANCE_RANDOM]:
+                s.get_targets = lambda: [s.targets[random.randint(0, len(s.targets)-1)]]
+            else:
+                # Default to round-robin
+                s.get_targets = s.get_target_round_robin
 
     def resolve_port(s, value, label):
         try:
@@ -656,15 +666,7 @@ class UdpRelayServer:
 
                                     session.time = time.time()
 
-                                    if self.multiply and session.target_addr is None:
-                                        # Multiplier-mode, and have not yet received a response.
-                                        # Send to all targets
-                                        targets = [t.get_addr() for t in self.targets]
-                                    else:
-                                        # Target has been decided.
-                                        targets = [session.target_addr]
-
-                                    for t in targets:
+                                    for t in session.targets_addr:
                                         try:
                                             session.socket.sendto(data, t)
                                         except BlockingIOError:
@@ -694,16 +696,12 @@ class UdpRelayServer:
                                 while True:
                                     data, addr = session.socket.recvfrom(10240)
 
-                                    if self.multiply and session.target_addr is None:
-                                        valid_sources = [t.get_addr() for t in self.targets]
-                                    else:
-                                        # Have received a response
-                                        valid_sources = [session.target_addr]
+                                    valid_sources = session.targets_addr
 
                                     if addr not in valid_sources:
                                         continue
 
-                                    if session.target_addr is None: session.target_addr = addr
+                                    if len(session.targets_addr) > 1: session.target_addr = addr
 
                                     try:
                                         self.server_socket.sendto(data, session.addr)
@@ -750,7 +748,6 @@ class UdpRelayServer:
         return 0
 
     def shutdown(s):
-        #for i in list(s.active_fds): s.(i)
         s.epoll_socket.close()
         s.server_socket.close()
 
@@ -764,8 +761,8 @@ class UdpRelayServer:
 
     def validate_common_arguments(self, args):
         errors = []
+        self.all = args[TITLE_BALANCE_ALL]
         self.verbose = args[TITLE_VERBOSE]
-        self.multiply = args[TITLE_MULTIPLY]
         self.no_reply = args[TITLE_NO_RESPONSE]
 
         self.port, port_error = self.resolve_port(args[TITLE_PORT], 'Bind port')
@@ -796,13 +793,13 @@ class UdpRelayServer:
         if not self.targets: errors.append('No relay target specified.')
         else:
 
-            num_rotation_options = len([i for i in [TITLE_BALANCE_RANDOM, TITLE_BALANCE_ROUND_ROBIN] if args[i]])
+            num_rotation_options = len([i for i in [TITLE_BALANCE_ALL, TITLE_BALANCE_RANDOM, TITLE_BALANCE_ROUND_ROBIN] if args[i]])
             if num_rotation_options > 1:
                 if len(self.targets) > 1: errors.append('Must only select one rotation type when using multiple targets.')
                 # If there was only one target, let the user off with a warning.
                 else: print_warning('%s rotation options selected, but only one target was specified.' % colour_text(num_rotation_options))
 
-            if self.multiply:
+            if self.all:
                 if len(self.targets) == 1:
                     print_warning('Multiply option enabled, but only one target.')
                     self.multiply = False # Treat as a regular one-target relay.
@@ -818,21 +815,21 @@ class UdpRelaySession:
         s.running = True
 
         s.addr = addr
-        if srv.multiply:
-            s.target = s.target_addr = None
-        else:
-            s.target = srv.get_target()
-            s.target_addr = s.target.get_addr()
+
+        s.targets = srv.get_targets()
+        s.targets_addr = [t.get_addr() for t in s.targets]
 
         s.socket = srv.new_socket()
         s.backlog = []
 
     def __str__(s):
 
-        if s.target is None: ts = colour_text('*')
-        else: ts = s.target
+        if len(s.targets) > 1:
+            ts = colour_text('*')
+        else:
+            ts = s.targets[0]
 
-        return '%s->%s' % (colour_addr(s.addr[0], s.addr[1]), ts)
+        return '%s -> %s' % (colour_addr(s.addr[0], s.addr[1]), ts)
 
     def is_closing(s):
         return not s.backlog and (not s.running or time.time() - s.time > 60)
