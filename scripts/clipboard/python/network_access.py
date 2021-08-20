@@ -57,18 +57,15 @@ class NetAccess:
         self.denied_networks = []
 
     def add_access(self, addr_list, net_list, candidate):
-        good = True
         candidate = candidate.strip()
         if re.match(self.REGEX_INET4_CIDR, candidate):
-            g, n = self.ip_validate_cidr(candidate)
-            good = g
-            if g:
+            good, m = self.ip_validate_cidr(candidate)
+            if good:
                 # No error
-                net_list.append((n, candidate))
+                net_list.append((candidate, m))
         else:
-            g, a, astr = self.ip_validate_address(candidate)
-            error = g
-            if g:
+            good, a, astr = self.ip_validate_address(candidate)
+            if good:
                 # No error
                 addr_list.append((a, candidate, astr))
         return good
@@ -93,21 +90,18 @@ class NetAccess:
 
     # Credit for initial IP functions: http://code.activestate.com/recipes/66517/
 
-    def ip_make_mask(self, n):
-        # Return a mask of n bits as a long integer
-        return (2<<n-1)-1
-
     def ip_strton(self, ip):
-        # Convert decimal dotted quad string to long integer
-        return struct.unpack('<L',socket.inet_aton(ip))[0]
+        # Convert decimal dotted quad string integer
+        a,b,c,d = struct.unpack('BBBB', socket.inet_aton(ip))
+        return (a << 24) + (b << 16) + (c << 8) + d
 
-    def ip_network_mask(self, ip, bits):
-        # Convert a network address to a long integer
-        return self.ip_strton(ip) & self.ip_make_mask(int(bits))
+    def ip_network_mask(self, ip, network_bits):
+        # Get network mask
+        return self.ip_strton(ip) | (2<<32-network_bits-1)-1
 
     def ip_addrn_in_network(self, ip, net):
         # Is a numeric address in a network?
-        return ip & net == net
+        return (ip & ~net) == 0
 
     def ip_validate_address(self, candidate):
         try:
@@ -119,9 +113,9 @@ class NetAccess:
 
     def ip_validate_cidr(self, candidate):
         a = candidate.split("/")[0]
-        m = candidate.split("/")[1]
+        m = int(candidate.split("/")[1])
         try:
-            if socket.gethostbyname(a) and int(m) <= 32:
+            if socket.gethostbyname(a) and m <= 32:
                 return (True, self.ip_network_mask(a, m))
         except socket.gaierror:
             pass
@@ -141,7 +135,7 @@ class NetAccess:
             else:
                 # Try checking allowed networks
                 cn = self.ip_strton(address)
-                for n in [n[0] for n in self.allowed_networks]:
+                for n in [n[1] for n in self.allowed_networks]:
                     if self.ip_addrn_in_network(cn, n):
                         allowed = True
                         break
@@ -155,7 +149,7 @@ class NetAccess:
             else:
                 # Try checking denied networks
                 cn = self.ip_strton(address)
-                for n in [n[0] for n in self.denied_networks]:
+                for n in [n[1] for n in self.denied_networks]:
                     if self.ip_addrn_in_network(cn, n):
                         allowed = False
                         break
@@ -177,7 +171,6 @@ class NetAccess:
 
 # Demonstration of access-list
 if __name__ == "__main__":
-    print "Main"
     acc = NetAccess()
 
     acc.add_whitelist("127.0.0.1")
@@ -189,4 +182,4 @@ if __name__ == "__main__":
             word = "Allowed"
         else:
             word = "Denied"
-        print "Test: %s address %s%s%s" % (word, COLOUR_GREEN, i, COLOUR_OFF)
+        print("Test: %s address %s%s%s" % (word, COLOUR_GREEN, i, COLOUR_OFF))
