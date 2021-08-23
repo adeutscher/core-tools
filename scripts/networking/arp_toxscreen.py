@@ -24,6 +24,9 @@ This script makes judgements based on imbalances of ARP replies to ARP requests.
 
 from __future__ import print_function
 import getopt, getpass, os, pwd, re, struct, subprocess, sys, time
+from scapy.all import conf, sniff, ARP, Ether
+import logging
+logging.getLogger("scapy.runtime").setLevel(logging.CRITICAL)
 
 #
 # Common Colours and Message Functions
@@ -400,12 +403,6 @@ class OptArg:
 # Script Functions
 ###
 
-ARP_INSTANCES = {}
-LAST_SCRIPT_RUN = {}
-TIME_START = 0
-TIME_SPAN = 0
-TIME_RECENT = 0
-
 ARP_SPOOF_EVENT_HEAL = "SPOOF"
 ARP_SPOOF_EVENT_SPOOF = "SPOOF"
 
@@ -427,175 +424,7 @@ TITLE_SCRIPT = "processing script"
 TITLE_SCRIPT_USER = "processing script user"
 TITLE_VERBOSE = "verbose"
 
-# Argument Validators
-
-def validate_integers(self):
-    errors = []
-    for key in (TITLE_SCRIPT_COOLDOWN, TITLE_EXPIRY, TITLE_REPORT_THRESHOLD):
-        if self[key] <= 0:
-            errors.append("Value of %s must be a positive integer." % colour_text(key))
-
-    if self[TITLE_REPORT_THRESHOLD] <= 2 and self[TITLE_REPORT_THRESHOLD] > 0:
-        # Also tack on a warning
-        print_warning("A low %s value of %s could generate a lot of false positives." % (colour_text(TITLE_REPORT_THRESHOLD), colour_text(self[TITLE_REPORT_THRESHOLD])))
-
-    if self[TITLE_SCRIPT_COOLDOWN] > self[TITLE_EXPIRY]:
-        print_warning("Value for %s (%s) is less than that of %s (%s). Script may run more often than expected." % (colour_text(TITLE_SCRIPT), colour_text(self[TITLE_SCRIPT_COOLDOWN]), colour_text(TITLE_EXPIRY), colour_text(self[TITLE_EXPIRY])))
-
-    return errors
-
-def validate_input(self):
-
-    errors = []
-
-    # Note: Intentionally checking for both PCAP and interface errors, even if we are about to complain about the user trying to do both.
-
-    # Validate PCAP file
-    if TITLE_PCAP_FILE in self and not os.path.isfile(self[TITLE_PCAP_FILE]):
-        errors.append("PCAP file does not exist: %s" % colour_text(args[TITLE_INTERFACE], COLOUR_GREEN))
-    # Validate interface.
-    if TITLE_INTERFACE in self:
-        if not os.path.isdir("/sys/class/net/%s" % self[TITLE_INTERFACE]):
-            errors.append("Listening interface does not exist: %s" % colour_text(args[TITLE_INTERFACE], COLOUR_GREEN))
-        if os.geteuid():
-            errors.append("Must be %s to capture on a live interface." % colour_text("root", COLOUR_RED))
-
-    if TITLE_PCAP_FILE in self and TITLE_INTERFACE in self:
-        errors.append("Cannot specify both an input file and a capture interface.")
-    elif not TITLE_INTERFACE in self and not TITLE_PCAP_FILE in self:
-        errors.append("No interface or PCAP file defined.")
-
-    return errors
-
-def validate_module(self):
-    try:
-        import pcap
-    except ImportError:
-        return "Unable to import PCAP module, not installed. To install: dnf install -y libpcap-devel python-devel redhat-rpm-config && pip install pypcap"
-
-def validate_script(self):
-
-    errors = []
-    if self[TITLE_SCRIPT]:
-        if os.path.isdir(self[TITLE_SCRIPT]):
-            print_error("Processing script path is a directory: %s" % colour_text(args[TITLE_SCRIPT], COLOUR_GREEN))
-        elif not os.path.isfile(args[TITLE_SCRIPT]):
-            errors.append("Processing script does not exist: %s" % colour_text(args[TITLE_SCRIPT], COLOUR_GREEN))
-        elif not os.access(args[TITLE_SCRIPT], os.X_OK):
-            errors.append("Processing script is not executable: %s" % colour_text(args[TITLE_SCRIPT], COLOUR_GREEN))
-
-        try:
-            global userinfo
-            userinfo = pwd.getpwnam(self.get(TITLE_SCRIPT_USER, getpass.getuser()))
-        except KeyError:
-            print_error("Could not get information for %s: %s" % (colour_text(TITLE_SCRIPT_USER), colour_text(self[TITLE_SCRIPT_USER])))
-    else:
-        # Check for arguments that work off of the processing script.
-        # I am divided on whether or not these should be warnings or errors...
-        for check in [TITLE_SCRIPT_COOLDOWN, TITLE_SCRIPT_USER]:
-            if check in self:
-                print_warning("A value for %s was set, but no %s is defined." % (colour_text(TITLE_SCRIPT), colour_text(check)))
-
 # Classes
-
-class ARP():
-    def __init__(self, ts, pkt):
-
-        self.ts = ts
-
-        initial_offset = 0
-        offset = initial_offset
-
-        if not offset:
-            # Ethernet Header (should technically be separate if this were a larger-scale application...)
-
-            edst = pkt[offset:offset+6] # Ethernet Header Destination
-            self.edst = self._mac_bytes_to_str(edst)
-            offset += 6
-
-            esrc = pkt[offset:offset+6] # Ethernet Header Source
-            self.esrc = self._mac_bytes_to_str(esrc)
-            offset += 6
-
-            self.type = struct.unpack('!H', pkt[offset:offset+2])[0] # Ethernet Header Protocol Type
-            offset += 2
-        else:
-            self.type = -1
-            self.edst = None
-            self.esrc = None
-
-        self.hw_type = struct.unpack('!H', pkt[offset:offset+2])[0] # Hardware Type
-        offset += 2
-
-        self.proto_type = struct.unpack('!H', pkt[offset:offset+2])[0] # Protocol Type
-        offset += 2
-
-        self.hw_size = struct.unpack('BBBBBB', bytes(pkt[offset]))[0] # Hardware Address Size
-        offset += 1
-
-        self.proto_size = struct.unpack('BBBB', bytes(pkt[offset]))[0] # Protocol Size
-        offset += 1
-
-        self.opcode = struct.unpack('!H', pkt[offset:offset+2])[0]
-        offset += 2
-
-        # ARP Header Source
-        asrc = pkt[offset:offset+6]
-        self.asrc = self._mac_bytes_to_str(asrc)
-        offset += 6
-
-        # Network Source IP
-        self.nsrc = self._ipv4_bytes_to_str(pkt, offset)
-        offset += 4
-
-        # ARP Header Destination
-        adst = pkt[offset:offset+6]
-        self.adst = self._mac_bytes_to_str(adst)
-        offset += 6
-
-        # Network Destination IP
-        self.ndst = self._ipv4_bytes_to_str(pkt, offset)
-        offset += 4
-
-        if self.opcode == 1: # Request
-            # Request
-            self.id = "%s%s" % (self.asrc, self.ndst)
-        elif self.opcode == 2: # Reply
-            self.id = "%s%s" % (self.adst, self.nsrc)
-        else:
-            self.id = "0000000000" # Placeholder, fallback. This will be discarded soon anyways.
-
-        # Format the ID into a string for debug purposes.
-        self.id_s = ''
-        for b in self.id:
-            self.id_s += '%02x' % ord(b)
-
-    def _ipv4_bytes_to_str(self, pkt, offset):
-        nsrc = bytes(pkt[offset:offset+4])
-        return "%d.%d.%d.%d" % (nsrc[0], nsrc[1], nsrc[2], nsrc[3])
-
-    def _mac_bytes_to_str(self, raw_bytes):
-        unpacked = struct.unpack('BBBBBB', raw_bytes)
-        result = ''
-        for b in unpacked:
-            result += '%02x:' % b
-        return result[:-1]
-
-def attempt_script(event, ts, arp, args):
-    if event not in LAST_SCRIPT_RUN:
-        LAST_SCRIPT_RUN[event] = {}
-
-    if TITLE_SCRIPT not in args or not (ts - LAST_SCRIPT_RUN[event].get(arp.id, ts)) > args[TITLE_SCRIPT_COOLDOWN]:
-        return # No script defined or cooldown not exceeded.
-
-    # Mark timestamp by starting time.
-    LAST_SCRIPT_RUN[event][arp.id] = ts
-
-    # Run script
-    try:
-        subprocess.Popen([args[TITLE_SCRIPT], event, arp.nsrc, arp.asrc, arp.ndst, arp.adst, arp.esrc, arp.edst], preexec_fn=demote(userinfo.pw_uid, userinfo.pw_gid))
-    except OSError:
-        print_error("Problem executing script hook: %s" % colour_text(args[TITLE_SCRIPT], COLOUR_GREEN))
 
 def demote(user_uid, user_gid):
     def result():
@@ -603,120 +432,185 @@ def demote(user_uid, user_gid):
         os.setuid(user_uid)
     return result
 
-def do_pcap_callback(ts, pkt, obj):
-    # Reject too-short packets that could never be built into ARP messages
-    if len(pkt) < 38:
-        return
+'''
+Translation layer between Scapy and script operations.
+'''
+class ArpInstance:
+    def __init__(self, pkt):
 
-    arp = ARP(ts, pkt)
+        self.ts = pkt.time
 
-    if arp.opcode == 1: # ARP Request OpCode
-        op = "REPLY"
-        if obj.args[TITLE_VERBOSE]:
-            print_notice("%s: Who has %s? Tell %s (%s)" % (colour_text(op), colour_text(arp.ndst, COLOUR_GREEN), colour_text(arp.nsrc, COLOUR_GREEN), colour_text(arp.asrc)))
-    elif arp.opcode == 2: # ARP Reply OpCode
-        op = "REPLY"
-        if obj.args[TITLE_VERBOSE]:
-            print_notice("%s: %s is at %s (To: %s at %s)" % (colour_text(op), colour_text(arp.nsrc, COLOUR_GREEN), colour_text(arp.asrc), colour_text(arp.ndst, COLOUR_GREEN), colour_text(arp.adst)))
-    else:
-        return # Not a request or reply.
+        eth = pkt[Ether]
+        arp = pkt[ARP]
 
-    global TIME_RECENT
-    global TIME_START
-    TIME_RECENT = ts
-    if not TIME_START:
-        TIME_START = ts
+        # Ethernet hardware addresses
+        self.esrc = eth.src
+        self.edst = eth.dst
 
-    if arp.asrc != arp.esrc:
-        obj.print_alert("%s for IP %s claiming to be from MAC %s, but is actually from MAC %s. Likely a forged healing packet!" % (colour_text(COLOUR_BOLD, op), colour_text(COLOUR_GREEN, arp.nsrc), colour_text(COLOUR_BOLD, arp.asrc), colour_text(COLOUR_BOLD, arp.esrc)))
-        list_ipv4_addresses_by_mac(arp.esrc)
-        attempt_script(ARP_SPOOF_EVENT_HEAL, ts, arp, obj.args)
+        # Arp Type
+        self.opcode = arp.op
+        # ARP hardware addresses
+        self.asrc = arp.hwsrc
+        self.adst = arp.hwdst
+        # Network addresses
+        self.ndst = arp.pdst
+        self.nsrc = arp.psrc
 
-        # Immediately return.
-        # The point in tracking events is that we normally cannot track poisoning by a single packet.
-        # However, healing packets from ettercap/arpspoof/etc trying to cover its tracks
-        # are blatant enough that they can be identified right away.
-        # Do not track event to avoid false positives.
-        return
+        if self.opcode == 1: # Request
+            # Request
+            self.id = "%s%s" % (self.asrc, self.ndst)
+        elif self.opcode == 2: # Reply
+            self.id = "%s%s" % (self.adst, self.nsrc)
 
-    # Is an interaction of this ID currently stored in the dictionary?
-    if arp.id not in ARP_INSTANCES:
-        ARP_INSTANCES[arp.id] = [arp] # Create list and add ARP packet
-    else:
-        ARP_INSTANCES[arp.id].append(arp) # Append ARP packet to existing chain.
+class ToxScreenSession:
 
-    # Need to clear out old instances.
-    # If we are reading from a PCAP file, then we can only really
-    #   compare against the current timestamp.
-    # If we are reading from a live capture, then we can use the current
-    #   time as a reference (which should be pretty much be
-    #   the provided timestamp anyways).
-    for k in ARP_INSTANCES.keys():
-        # May as well clear through all instances.
+    def __init__(self, wrapper):
+        self.args = wrapper.args
+        self.wrapper = wrapper
+
+        self.last_script_run = 0
+
+        self.arp_instances = {}
+        self.last_script_run = {}
+        self.time_start = 0
+        self.time_span = 0
+        self.time_recent = 0
+
+    def attempt_script(self, event, arp):
+        if event not in self.last_script_run:
+            self.last_script_run[event] = {}
+
+        if TITLE_SCRIPT not in self.args or not (arp.ts - self.last_script_run[event].get(arp.id, arp.ts)) > self.args[TITLE_SCRIPT_COOLDOWN]:
+            return # No script defined or cooldown not exceeded.
+
+        # Mark timestamp by starting time.
+        self.last_script_run[event][arp.id] = arp.ts
+
+        # Run script
+        try:
+            subprocess.Popen([self.args[TITLE_SCRIPT], event, arp.nsrc, arp.asrc, arp.ndst, arp.adst, arp.esrc, arp.edst], preexec_fn=demote(userinfo.pw_uid, userinfo.pw_gid))
+        except OSError:
+            print_error("Problem executing script hook: %s" % colour_text(self.args[TITLE_SCRIPT], COLOUR_GREEN))
+
+    def do_pcap_callback(self, pkt):
+
+        arp = ArpInstance(pkt)
+
+        if arp.opcode == 1: # ARP Request OpCode
+            op = "REPLY"
+            if self.args[TITLE_VERBOSE]:
+                print_notice("%s: Who has %s? Tell %s (%s)" % (colour_text(op), colour_text(arp.ndst, COLOUR_GREEN), colour_text(arp.nsrc, COLOUR_GREEN), colour_text(arp.asrc)))
+        elif arp.opcode == 2: # ARP Reply OpCode
+            op = "REPLY"
+            if self.args[TITLE_VERBOSE]:
+                print_notice("%s: %s is at %s (To: %s at %s)" % (colour_text(op), colour_text(arp.nsrc, COLOUR_GREEN), colour_text(arp.asrc), colour_text(arp.ndst, COLOUR_GREEN), colour_text(arp.adst)))
+        else:
+            return # Not a request or reply.
+
+        self.time_recent = arp.ts
+        if not self.time_start:
+            self.time_start = arp.ts
+
+        if arp.asrc != arp.esrc:
+            self.wrapper.print_alert("%s for IP %s claiming to be from MAC %s, but is actually from MAC %s. Likely a forged healing packet!" % (colour_text(COLOUR_BOLD, op), colour_text(COLOUR_GREEN, arp.nsrc), colour_text(COLOUR_BOLD, arp.asrc), colour_text(COLOUR_BOLD, arp.esrc)))
+            self.list_ipv4_addresses_by_mac(arp.esrc)
+            self.attempt_script(ARP_SPOOF_EVENT_HEAL, arp)
+
+            # Immediately return.
+            # The point in tracking events is that we normally cannot track poisoning by a single packet.
+            # However, healing packets from ettercap/arpspoof/etc trying to cover its tracks
+            # are blatant enough that they can be identified right away.
+            # Do not track event to avoid false positives.
+            return
+
+        # Is an interaction of this ID currently stored in the dictionary?
+        if arp.id not in self.arp_instances:
+            self.arp_instances[arp.id] = [arp] # Create list and add ARP packet
+        else:
+            self.arp_instances[arp.id].append(arp) # Append ARP packet to existing chain.
+
+        # Need to clear out old instances.
+        # If we are reading from a PCAP file, then we can only really
+        #   compare against the current timestamp.
+        # If we are reading from a live capture, then we can use the current
+        #   time as a reference (which should be pretty much be
+        #   the provided timestamp anyways).
+        for k in self.arp_instances.keys():
+            # May as well clear through all instances.
+            i = 0
+            while i < len(self.arp_instances[k]):
+                if (arp.ts - self.arp_instances[k][i].ts) > self.args[TITLE_EXPIRY]:
+                    del self.arp_instances[k][i]
+                    # Do not increment, since i will now be the old i+1.
+                else:
+                    i += 1
+            if not self.arp_instances[k]:
+                # Delete empty lists, mostly for tidiness.
+                del self.arp_instances[k]
+                for key in self.last_script_run:
+                    for subkey in self.last_script_run[key]:
+                        if arp.id in self.last_script_run[key][subkey]:
+                            del self.last_script_run[key][subkey][arp.id]
+
+        # Sweep through non-expired instances of this ID to look for potential poisoning.
+        score = 0
         i = 0
-        while i < len(ARP_INSTANCES[k]):
-            if (ts - ARP_INSTANCES[k][i].ts) > obj.args[TITLE_EXPIRY]:
-                del ARP_INSTANCES[k][i]
-                # Do not increment, since i will now be the old i+1.
-            else:
-                i += 1
-        if not ARP_INSTANCES[k]:
-            # Delete empty lists, mostly for tidiness.
-            del ARP_INSTANCES[k]
-            for key in LAST_SCRIPT_RUN:
-                for subkey in LAST_SCRIPT_RUN[key]:
-                    if arp.id in LAST_SCRIPT_RUN[key][subkey]:
-                        del LAST_SCRIPT_RUN[key][subkey][arp.id]
+        while i < len(self.arp_instances[arp.id]):
+            target = self.arp_instances[arp.id][i]
+            if target.opcode == 1: # Request
+                # Machine sent out a request, behooving real machine to reply and countering poison attack.
+                # Still under consideration, have a request simply decrement the score instead?
+                score = 0
+            else: # Reply
+                score += 1
 
-    # Sweep through non-expired instances of this ID to look for potential poisoning.
-    score = 0
-    i = 0
-    while i < len(ARP_INSTANCES[arp.id]):
-        if ARP_INSTANCES[arp.id][i].opcode == 1: # Request
-            # Machine sent out a request, behooving real machine to reply and countering poison attack.
-            # Still under consideration, have a request simply decrement the score instead?
-            score = 0
-        else: # Reply
-            score += 1
-        i += 1
+                span_last = int(target.ts)
+                if score == 1:
+                    span_start = int(target.ts)
 
-    if score >= obj.args[TITLE_REPORT_THRESHOLD]:
-         #
-         # TODO: Existing reporting currently has a bit of a flaw:
-         #          - Does not account for one IP "legitimately" being stepped on by two devices, creating an imbalance.
-         #            This still impedes network performance, but it's more "ARP high cholesterol" than "ARP poisoning".
-         #            Still bad for your network, but not necessarily malicious.
+            i += 1
 
-        obj.print_alert("%s (%s) is likely being ARP poisoned by %s (spoofing %s, ARP imbalance of %s over %s seconds)" % (colour_text(arp.ndst, COLOUR_GREEN), colour_text(arp.adst), colour_text(arp.esrc), colour_text(arp.nsrc, COLOUR_GREEN), colour_text(score), colour_text(obj.args[TITLE_REPORT_THRESHOLD])));
+        if score >= self.args[TITLE_REPORT_THRESHOLD]:
+             #
+             # TODO: Existing reporting currently has a bit of a flaw:
+             #          - Does not account for one IP "legitimately" being stepped on by two devices, creating an imbalance.
+             #            This still impedes network performance, but it's more "ARP high cholesterol" than "ARP poisoning".
+             #            Still bad for your network, but not necessarily malicious.
 
-        list_ipv4_addresses_by_mac(arp.esrc, obj.args[TITLE_LIST])
-        attempt_script(ARP_SPOOF_EVENT_SPOOF, ts, arp, obj.args)
+            span_number = span_last - span_start
+            self.wrapper.print_alert("%s (%s) is likely being ARP poisoned by %s (spoofing %s, ARP imbalance of %s over %s seconds)" % (colour_text(arp.ndst, COLOUR_GREEN), colour_text(arp.adst), colour_text(arp.esrc), colour_text(arp.nsrc, COLOUR_GREEN), colour_text(score), colour_text(span_number)));
 
-def list_ipv4_addresses_by_mac(mac, do_list):
+            self.list_ipv4_addresses_by_mac(arp.esrc)
+            self.attempt_script(ARP_SPOOF_EVENT_SPOOF, arp)
 
-    if not do_list:
-        return # Listing is not enabled.
+    def list_ipv4_addresses_by_mac(self, mac):
 
-    try:
-        with open("/proc/net/arp", "r") as f:
-            content = f.readlines()
-            f.close()
-    except OSError as e:
-        # File error.
-        print_error(e)
-        return
+        if not self.args[TITLE_LIST]:
+            return # Listing is not enabled.
 
-    addresses = []
+        try:
+            with open("/proc/net/arp", "r") as f:
+                content = f.readlines()
+                f.close()
+        except OSError as e:
+            # File error.
+            print_error(e)
+            return
 
-    for line in content:
-        cols = re.sub('\s+', ' ', line).split(" ")
-        if cols[3] == mac:
-            addresses.append(colour_text(cols[0], COLOUR_GREEN))
+        addresses = []
 
-    if addresses:
-        print_info("IPv4 entries for %s in current ARP table: %s" % (colour_text(mac), ", ".join(addresses)))
+        for line in content:
+            cols = re.sub('\s+', ' ', line).split(" ")
+            if cols[3] == mac:
+                addresses.append(colour_text(cols[0], COLOUR_GREEN))
 
-class ToxScreen:
+        if addresses:
+            print_info("IPv4 entries for %s in current ARP table: %s" % (colour_text(mac), ", ".join(addresses)))
+
+    def time_span_update(self):
+        self.time_span = int(self.time_recent - self.time_start)
+
+class ToxScreenWrapper:
     def __init__(self):
         self.args = ArgHelper()
 
@@ -730,37 +624,39 @@ class ToxScreen:
         self.args.add_opt(OPT_TYPE_SHORT, "u", TITLE_SCRIPT_USER, "User to run script as. Only effective if script is run as root.")
         self.args.add_opt(OPT_TYPE_FLAG, "v", TITLE_VERBOSE, "Enable verbose output.")
 
-        self.args.add_validator(validate_module)
-        self.args.add_validator(validate_integers)
-        self.args.add_validator(validate_input)
-        self.args.add_validator(validate_script)
+        self.args.add_validator(self.validate_integers)
+        self.args.add_validator(self.validate_input)
+        self.args.add_validator(self.validate_script)
 
         self.alert_count = 0
 
     def do_pcap(self):
 
-        target = self.args.get(TITLE_INTERFACE, self.args[TITLE_PCAP_FILE])
-        import pcap
-        pcap_obj = pcap.pcap(name=target, promisc=True, immediate=True, timeout_ms=50)
-        try:
-            pcap_obj.setfilter(PCAP_FILTER)
-        except:
-            print_error("Illegal PCAP filter: %s" % colour_text(PCAP_FILTER))
-            exit(1)
+        self.session = ToxScreenSession(self)
 
+        lfilter = lambda p: ARP in p
         try:
-            pcap_obj.loop(0, do_pcap_callback, self)
+            if self.args[TITLE_INTERFACE]:
+                conf.iface = self.args[TITLE_INTERFACE]
+                sniff(prn=self.session.do_pcap_callback, store=0, filter = PCAP_FILTER, lfilter = lfilter)
+            elif self.args[TITLE_PCAP_FILE]:
+                try:
+                    sniff(prn=self.session.do_pcap_callback, offline=self.args[TITLE_PCAP_FILE], store=0, filter=PCAP_FILTER, lfilter=lfilter)
+                except AttributeError as e:
+                    if str(e) != '\'PcapNgReader\' object has no attribute \'linktype\'':
+                        raise
+
+                    print(f'Could not parse PCAPNG file. Convert with editcap: editcap -F libpcap "{self.args[TITLE_PCAP_FILE]}" "out.pcap"')
+                    return False
         except KeyboardInterrupt:
             print("\n")
 
-        global TIME_RECENT
-        global TIME_SPAN
-        global TIME_START
-
         if TITLE_INTERFACE in self.args:
-            TIME_RECENT = time.time()
+            self.session.time_recent = time.time()
 
-        TIME_SPAN = int(TIME_RECENT - TIME_START)
+        self.session.time_span_update()
+
+        return True
 
     def print_alert(self, message):
         self.alert_count += 1
@@ -770,17 +666,19 @@ class ToxScreen:
         self.args.process(raw_args)
         self.summarize_arguments()
 
-        self.do_pcap()
+        if not self.do_pcap():
+            return 1
 
         colour = COLOUR_RED
         if not self.alert_count:
             colour = COLOUR_GREEN
 
         if TITLE_PCAP_FILE in self.args:
-            print_notice("Observed instances of ARP poisoning in PCAP file '%s' over %s seconds: %s" % (colour_text(os.path.basename(self.args[TITLE_PCAP_FILE]), COLOUR_GREEN), colour_text(TIME_SPAN), colour_text(self.alert_count, colour)))
+            print_notice("Observed instances of ARP poisoning in PCAP file '%s' over %s seconds: %s" % (colour_text(os.path.basename(self.args[TITLE_PCAP_FILE]), COLOUR_GREEN), colour_text(self.session.time_span), colour_text(self.alert_count, colour)))
         else:
             # Interface printing.
-            print_notice("Observed instances of ARP poisoning on '%s' interface over %s seconds: %s" % (colour_text(COLOUR_GREEN, os.path.basename(self.args[TITLE_INTERFACE])), colour_text(TIME_SPAN), colour_text((self.alert_count, colour))))
+            print_notice("Observed instances of ARP poisoning on '%s' interface over %s seconds: %s" % (colour_text(COLOUR_GREEN, os.path.basename(self.args[TITLE_INTERFACE])), colour_text(self.session.time_span), colour_text(self.alert_count, colour)))
+        return 0
 
     def summarize_arguments(self):
         if TITLE_INTERFACE in self.args:
@@ -798,7 +696,67 @@ class ToxScreen:
         if self.args[TITLE_LIST]:
             print_notice("Suspicious MAC addresses will be checked against our current ARP table for matches.")
 
+    def validate_integers(self, args):
+        errors = []
+        for key in (TITLE_SCRIPT_COOLDOWN, TITLE_EXPIRY, TITLE_REPORT_THRESHOLD):
+            if args[key] <= 0:
+                errors.append("Value of %s must be a positive integer." % colour_text(key))
+
+        if args[TITLE_REPORT_THRESHOLD] <= 2 and args[TITLE_REPORT_THRESHOLD] > 0:
+            # Also tack on a warning
+            print_warning("A low %s value of %s could generate a lot of false positives." % (colour_text(TITLE_REPORT_THRESHOLD), colour_text(args[TITLE_REPORT_THRESHOLD])))
+
+        if args[TITLE_SCRIPT_COOLDOWN] > args[TITLE_EXPIRY]:
+            print_warning("Value for %s (%s) is less than that of %s (%s). Script may run more often than expected." % (colour_text(TITLE_SCRIPT), colour_text(args[TITLE_SCRIPT_COOLDOWN]), colour_text(TITLE_EXPIRY), colour_text(self[TITLE_EXPIRY])))
+
+        return errors
+
+    def validate_input(self, args):
+
+        errors = []
+
+        # Note: Intentionally checking for both PCAP and interface errors, even if we are about to complain about the user trying to do both.
+
+        # Validate PCAP file
+        if TITLE_PCAP_FILE in args and not os.path.isfile(args[TITLE_PCAP_FILE]):
+            errors.append("PCAP file does not exist: %s" % colour_text(args[TITLE_INTERFACE], COLOUR_GREEN))
+        # Validate interface.
+        if TITLE_INTERFACE in args:
+            if not os.path.isdir("/sys/class/net/%s" % args[TITLE_INTERFACE]):
+                errors.append("Listening interface does not exist: %s" % colour_text(args[TITLE_INTERFACE], COLOUR_GREEN))
+            if os.geteuid():
+                errors.append("Must be %s to capture on a live interface." % colour_text("root", COLOUR_RED))
+
+        if TITLE_PCAP_FILE in args and TITLE_INTERFACE in args:
+            errors.append("Cannot specify both an input file and a capture interface.")
+        elif not TITLE_INTERFACE in args and not TITLE_PCAP_FILE in args:
+            errors.append("No interface or PCAP file defined.")
+
+        return errors
+
+    def validate_script(self, args):
+
+        errors = []
+        if args[TITLE_SCRIPT]:
+            if os.path.isdir(args[TITLE_SCRIPT]):
+                print_error("Processing script path is a directory: %s" % colour_text(args[TITLE_SCRIPT], COLOUR_GREEN))
+            elif not os.path.isfile(args[TITLE_SCRIPT]):
+                errors.append("Processing script does not exist: %s" % colour_text(args[TITLE_SCRIPT], COLOUR_GREEN))
+            elif not os.access(args[TITLE_SCRIPT], os.X_OK):
+                errors.append("Processing script is not executable: %s" % colour_text(args[TITLE_SCRIPT], COLOUR_GREEN))
+
+            try:
+                global userinfo
+                userinfo = pwd.getpwnam(self.get(TITLE_SCRIPT_USER, getpass.getuser()))
+            except KeyError:
+                print_error("Could not get information for %s: %s" % (colour_text(TITLE_SCRIPT_USER), colour_text(self[TITLE_SCRIPT_USER])))
+        else:
+            # Check for arguments that work off of the processing script.
+            # I am divided on whether or not these should be warnings or errors...
+            for check in [c for c in [TITLE_SCRIPT_COOLDOWN, TITLE_SCRIPT_USER] if c in args]:
+                print_warning("A value for %s was set, but no %s is defined." % (colour_text(TITLE_SCRIPT), colour_text(check)))
+
 if __name__ == "__main__":
 
-    screen = ToxScreen()
-    screen.run(sys.argv)
+    screen = ToxScreenWrapper()
+    exit(screen.run(sys.argv))
