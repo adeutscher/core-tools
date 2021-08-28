@@ -1369,10 +1369,10 @@ class NetAccess:
     def add_access(self, addr_list, net_list, candidate):
         candidate = candidate.strip()
         if re.match(self.REGEX_INET4_CIDR, candidate):
-            good, m = self.ip_validate_cidr(candidate)
+            good, net, bits = self.ip_validate_cidr(candidate)
             if good:
                 # No error
-                net_list.append((candidate, m))
+                net_list.append((candidate, net, bits))
         else:
             good, a, astr = self.ip_validate_address(candidate)
             if good:
@@ -1405,14 +1405,6 @@ class NetAccess:
         a,b,c,d = struct.unpack('BBBB', socket.inet_aton(ip))
         return (a << 24) + (b << 16) + (c << 8) + d
 
-    def ip_network_mask(self, ip, network_bits):
-        # Get network mask
-        return self.ip_strton(ip) | (2<<32-network_bits-1)-1
-
-    def ip_addrn_in_network(self, ip, net):
-        # Is a numeric address in a network?
-        return (ip & ~net) == 0
-
     def ip_validate_address(self, candidate):
         try:
             ip = socket.gethostbyname(candidate)
@@ -1424,13 +1416,16 @@ class NetAccess:
     def ip_validate_cidr(self, candidate):
         a = candidate.split("/")[0]
         m = int(candidate.split("/")[1])
+
         try:
-            if socket.gethostbyname(a) and m <= 32:
-                return (True, self.ip_network_mask(a, m))
+            # Will either succeed or throw an exception
+            ip = self.ip_strton(socket.gethostbyname(a))
+            if m <= 32:
+                return (True, ip, 32 - m)
         except socket.gaierror:
             pass
         self.errors.append("Invalid CIDR address: %s" % colour_text(candidate, COLOUR_GREEN))
-        return (False, None)
+        return (False, None, None)
 
     def is_allowed(self, address):
         # Blacklist/Whitelist filtering
@@ -1439,14 +1434,14 @@ class NetAccess:
         if len(self.allowed_addresses) or len(self.allowed_networks):
             # Whitelist processing, address is not allowed until it is cleared.
             allowed = False
-
+            # Compare string-form against allowed addresses
             if address in [a[2] for a in self.allowed_addresses]:
                 allowed = True
             else:
                 # Try checking allowed networks
-                cn = self.ip_strton(address)
-                for n in [n[1] for n in self.allowed_networks]:
-                    if self.ip_addrn_in_network(cn, n):
+                ip = self.ip_strton(address)
+                for net, bits in [(n[1], n[2]) for n in self.allowed_networks]:
+                    if (net >> bits) == (ip >> bits):
                         allowed = True
                         break
 
@@ -1458,9 +1453,9 @@ class NetAccess:
                 allowed = False
             else:
                 # Try checking denied networks
-                cn = self.ip_strton(address)
-                for n in [n[1] for n in self.denied_networks]:
-                    if self.ip_addrn_in_network(cn, n):
+                ip = self.ip_strton(address)
+                for net, bits in [(n[1], n[2]) for n in self.denied_networks]:
+                    if (net >> bits) == (ip >> bits):
                         allowed = False
                         break
         return allowed
