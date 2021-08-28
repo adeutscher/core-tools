@@ -1,17 +1,30 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
-import getopt, hashlib, os, shutil, re, sys
+import argparse, hashlib, logging, os, shutil, re, sys
 
-if sys.version_info[0] < 3:
-    input = raw_input
+def build_logger(label, err = None, out = None):
+    obj = logging.getLogger('merge_directories')
+    obj.setLevel(logging.DEBUG)
+    # Err
+    err_handler = logging.StreamHandler(err or sys.stderr)
+    err_filter = logging.Filter()
+    err_filter.filter = lambda record: record.levelno >= logging.WARNING
+    err_handler.addFilter(err_filter)
+    obj.addHandler(err_handler)
+    # Out
+    out_handler = logging.StreamHandler(out or sys.stdout)
+    out_filter = logging.Filter()
+    out_filter.filter = lambda record: record.levelno < logging.WARNING
+    out_handler.addFilter(out_filter)
+    obj.addHandler(out_handler)
+
+    return obj
+logger = build_logger('merge_directories')
 
 #
 # Common Colours and Message Functions
 ###
-
-def _print_message(header_colour, header_text, message):
-    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message))
 
 def colour_path(text):
     home = os.environ.get('HOME')
@@ -47,27 +60,7 @@ def enable_colours(force = False):
         COLOUR_OFF = ''
 enable_colours()
 
-error_count = 0
-def print_error(message):
-    global error_count
-    error_count += 1
-    _print_message(COLOUR_RED, "Error", message)
-
-def print_exception(e, msg=None):
-    # Shorthand wrapper to handle an exception.
-    # msg: Used to provide more context.
-    sub_msg = ""
-    if msg:
-        sub_msg = " (%s)" % msg
-    print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
-
-def print_notice(message):
-    _print_message(COLOUR_BLUE, "Notice", message)
-
 # Script Functions
-
-def hexit(exit_code = 0):
-    print('./%s [-h] [-c] src_a src_b dst' % colour_path(os.path.basename(os.path.realpath(sys.argv[0]))))
 
 def md5(fname):
     hash_md5 = hashlib.md5()
@@ -77,102 +70,122 @@ def md5(fname):
     return hash_md5.hexdigest()
 
 def merge(src, dst):
-    print_notice("Merging from source '%s' to destination '%s'" % (colour_path(src), colour_path(dst)))
+    logger.info("Merging from source '%s' to destination '%s'" % (colour_path(src), colour_path(dst)))
 
     for (folder, core, files) in os.walk(src):
         dstDir = folder.replace(src, dst)
 
         if not os.path.exists(dstDir):
             os.makedirs(dstDir, 0o700)
-
         for f in files:
-            srcPath = '%s/%s' % (folder, f)
-            dstPath = '%s/%s' % (dstDir, f)
+
+            srcPath = os.path.join(folder, f)
+            dstPath = os.path.join(dstDir, f)
+
+            do_copy = True
 
             if(os.path.isfile(dstPath)):
                 if md5(srcPath) != md5(dstPath):
-                    print_notice('%s: "%s" -> "%s"' % (colour_text('Conflict', COLOUR_RED), colour_path(srcPath), colour_path(dstPath)))
+
                     soloName, ext = os.path.splitext(dstPath)
-                    dstPath = '%s.from-%s%s' % (soloName, os.path.basename(src), ext)
+                    i = 0
+                    while os.path.exists(dstPath):
+                        i += 1
+                        dstPath = '%s.%d%s' % (soloName, i, ext)
+
+                    logger.warning('%s: "%s" -> "%s"' % (colour_text('Conflict', COLOUR_RED), colour_path(srcPath), colour_path(dstPath)))
                 else:
                     # Continue on. Identical file.
-                    continue
+                    do_copy = False
 
-            print_notice('"%s" -> "%s"' % (colour_path(srcPath), colour_path(dstPath)))
-            shutil.copy2(srcPath, dstPath)
+            if do_copy:
+                # Note: Using do_copy instead of just saying 'continue' is because of a struggle with test coverage module.
+                logger.info('"%s" -> "%s"' % (colour_path(srcPath), colour_path(dstPath)))
+                shutil.copy2(srcPath, dstPath)
 
 # Script Operations
 
-compile_mode = False
+def process_args(raw_args):
+    parser = argparse.ArgumentParser(description='Encryption/Decryption wrapper')
+    parser.add_argument('-c', dest='compile', action='store_true', help='Compile mode. Compile 2+ source directories into one path that does not yet exist.')
+    parser.add_argument('-i', action='append', default=[], dest='input', help='Input directory')
+    parser.add_argument('-o', dest='output', help='Output directory')
 
-try:
-    opts, operands = getopt.gnu_getopt(sys.argv[1:], 'ch')
-except Exception as e:
-    print_exception(e)
+    args = parser.parse_args(raw_args)
+    good = True
 
-for opt,value in opts:
-    if opt == '-c':
-        compile_mode = True
-    elif opt == '-h':
-        hexit()
-
-min_args = 2
-wording = "merging"
-
-if compile_mode:
-    min_args = 3
-    wording = "compile-mode merging"
-
-if len(operands) < min_args:
-    print_error("Insufficient arguments for %s." % wording)
-    exit(1)
-
-dst = os.path.abspath(operands[-1])
-paths = []
-
-# Verify sources.
-for i in range(len(operands)-1):
-    src = operands[i]
-    if not os.path.isdir(src):
-        print_error('Source "%s" does not exist.' % colour_path(operands[i]))
+    if args.compile:
+        min_inputs = 2
+        wording = "compile-mode merging"
     else:
-        paths.append(os.path.abspath(src))
+        min_inputs = 1
+        wording = "merging"
 
-if compile_mode:
-    # In compile mode, the destination should not already exist.
-    if os.path.isdir(dst):
-        print_error("Destination '%s' already exists." % colour_path(dst))
-elif not os.path.isdir(dst):
-    # In regular mode, the destination must exist.
-    print_error("Destination '%s' does not exist." % colour_path(dst))
+    if len(args.input) < min_inputs:
+        logger.error('Insufficient input directories for %s.' % wording)
+        good = False
+    # Verify sources.
+    for src in [s for s in args.input if not os.path.isdir(s)]:
+        logger.error('Source "%s" does not exist.' % colour_path(src))
+        good = False
 
-if error_count:
-    exit(1)
+    if not args.output:
+        logger.error("No output directory specified.")
+        good = False
+    elif args.compile and os.path.isdir(args.output):
+        # In compile mode, the destination should not already exist.
+        logger.error("Output directory '%s' should not already exist." % colour_path(args.output))
+        good = False
+    elif not args.compile and not os.path.isdir(args.output):
+        # In regular mode, the destination must exist.
+        logger.error("Output directory '%s' does not exist." % colour_path(args.output))
+        good = False
 
-# Summarize:
+    return args, good
 
-noun = 'directory'
-if len(paths) > 1:
-    noun = 'directories'
+def run(raw_args, enable_safety = True):
 
-print_notice('Source %s:' % noun)
+    args, args_good = process_args(raw_args[1:])
 
-for src in paths:
-    print_notice('  * %s' % colour_path(src))
+    if not args_good:
+        return 1
 
-print_notice('Destination directory: %s' % colour_path(dst))
+    # Summarize
+    ##
 
-if sys.stdout.isatty():
-    # With such a massive change pending, could
+    # Announce input
+    noun = 'directory'
+    if len(args.input) > 1:
+        noun = 'directories'
+    logger.info('Source %s:' % noun)
+    for src in args.input:
+        logger.info('  * %s' % colour_path(src))
+    # Announce output
+    logger.info('Destination directory: %s' % colour_path(args.output))
+
+    if enable_safety and sys.stdout.isatty():
+        # With such a massive change pending, wait for user input for safety
+        try:
+            if sys.version_info[0] < 3:
+                input = raw_input
+            input('< Press ENTER to continue, Ctrl-C to cancel >')
+        except KeyboardInterrupt:
+            logger.info('\nCancelled')
+            return 130
+
+    paths = args.input.copy()
+    if args.compile:
+        # Copy the first directory directly to the destination.
+        shutil.copytree(paths.pop(0), args.output)
+
+    for src in paths:
+        merge(src, args.output)
+
+    return 0
+
+if __name__ == '__main__':
     try:
-        input('< Press ENTER to continue, Ctrl-C to cancel >')
+        exit(run(sys.argv))
     except KeyboardInterrupt:
-        print_notice('\nCancelled')
         exit(130)
 
-if compile_mode:
-    # Copy the first directory directly to the destination.
-    shutil.copytree(paths[0], dst)
-
-for src in paths:
-    merge(src, dst)
