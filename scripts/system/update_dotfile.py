@@ -397,7 +397,6 @@ class DotFileUpdater:
             accepted_types.append(unicode)
 
         for k in data:
-            print(type(data[k]))
             if type(data[k]) in accepted_types:
                 # Is of an accepted type.
                 self.add_variable(k, data[k])
