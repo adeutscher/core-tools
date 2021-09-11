@@ -942,7 +942,7 @@ class TcpRelaySession:
 
     def shutdown(s):
         if not s.running: return
-        if s.verbose: log_notice('Closing: %s' % str(self))
+        if s.verbose: log_notice('Closing: %s' % str(s))
 
         subjects = [(s.state_server, s.dst, True), (s.state_client, s.src, s.state_server == STATE_CONNECTED)]
         for state, sock, do_deregister in subjects:
