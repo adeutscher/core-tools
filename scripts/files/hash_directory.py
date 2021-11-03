@@ -15,7 +15,7 @@ import queue as queueModule
 #   but code executed within a thread isn't
 #   picked up by coverage.
 from threading import Lock as lock, Thread
-from time import sleep
+from time import sleep, time
 from typing import Any
 # Script mechanics
 ##
@@ -26,39 +26,74 @@ from sys import argv
 
 class ThreadedRunnerBase:
 
+    def __init__(self):
+        self.__reset()
+
+    def __reset(self):
+        self.__is_monitored = False
+        self.__is_running = False
+
+        self._last_state_change_time = time()
+
+        self.__lock = lock()
+        self.__workers_done = 0
+
     def get_job(self):
-        raise Exception('get_job not implemented')
+        # get_job should be implemented by a class that inherits from ThreadedRunnerBase.
+        raise Exception('get_job not implemented') # pragma: no cover
+
+    is_monitored = property(lambda self: self.__is_monitored)
 
     def report_worker_done(self, worker_id):
         self.__lock.acquire()
         self.__workers_done += 1
         self.__lock.release()
 
-    def run(self, count_workers, callback, prep_callback = None):
+    def report_state_change(self, worker_id, state_old, state_new):
+        self.__lock.acquire()
+        self._last_state_change_time = time()
+        self.__lock.release()
+
+    def run(self, **kwargs):
+
+        if self.__is_running:
+            raise Exception('Already running.')
+        self.__is_running = True
+
+        # count_workers, callback, prep_callback = None
+        worker_count = kwargs.get('worker_count')
+        worker_callback = kwargs.get('worker_callback')
+        callback_prep = kwargs.get('callback_prep')
+        callback_monitor = kwargs.get('callback_monitor')
+        self.__is_monitored = callback_monitor is not None
 
         # Init
-        self.__lock = lock()
-        self.__workers_done = 0
-
-        threads = []
-        if prep_callback is not None:
-            t = ThreadedRunnerPrepWorker(prep_callback, (self,))
+        self._threads = []
+        if callback_prep is not None:
+            t = ThreadedRunnerPrepWorker(callback_prep, (self,))
             t.start()
-            threads.append(t)
+            self._threads.append(t)
 
         i = 0
 
-        while i < count_workers:
+        while i < worker_count:
             i += 1
-            t = ThreadedRunnerWorker(i, self, callback)
+            t = ThreadedRunnerWorker(i, self, worker_callback)
             t.start()
-            threads.append(t)
+            self._threads.append(t)
 
         # Wait for tasks to complete
-        while self.__workers_done < count_workers:
-            sleep(0.2)
-        for t in threads:
+        while self.__workers_done < worker_count:
+            if self.is_monitored:
+                for t in self._threads:
+                    callback_monitor(t)
+            sleep(0.1)
+
+        # Re-join threads for the sake of coverage in testing
+        for t in self._threads:
             t.join()
+
+        self.__reset()
 
 class ThreadedRunnerPrepWorker(Thread):
     def __init__(self, callback, callback_args=None):
@@ -71,6 +106,7 @@ class ThreadedRunnerPrepWorker(Thread):
 
 class ThreadedRunnerQueue(ThreadedRunnerBase):
     def __init__(self):
+        ThreadedRunnerBase.__init__(self)
         self.done = False
         self.queue = queue()
 
@@ -85,29 +121,59 @@ class ThreadedRunnerQueue(ThreadedRunnerBase):
         self.done = True
 
 class ThreadedRunnerWorker(Thread):
+
+    STATE_IDLE = 0
+    STATE_WORKING = 1
+    STATE_DONE = 2
+    STATE_ERROR = 3
+
     def __init__(self, worker_id, instance, callback):
         Thread.__init__(self)
-        self.worker_id = worker_id
-        self.instance = instance
-        self.callback = callback
+
+        self.__state = self.STATE_IDLE
+        self.__lock = lock()
+
+        self.__worker_id = worker_id
+        self.__instance = instance
+        self.__callback = callback
+
     def run(self):
-        print('WSTART')
         while True:
-            job = self.instance.get_job()
+
+            if self.state != self.STATE_IDLE and self.__instance.is_monitored == True:
+                # Waiting for monitor to reset job status
+                sleep(0.1) # Sleep briefly and try again
+                continue
+
+                # If we were not in a monitored instance, then the state of
+                #   the previous loop iteration would be irrelevant.
+
+            job = self.__instance.get_job()
             job_params = job.get('params')
 
             if job_params is None:
                 if job.get('done'):
                     break
-                sleep(0.2)
-                continue
-
+                sleep(0.1) # Sleep briefly
+                continue # Restart loop and try again
             try:
-                self.callback(job_params)
+                self.set_state(self.STATE_WORKING)
+                self.task = job_params
+                self.__callback(job_params)
+                self.set_state(self.STATE_DONE)
             except Exception as e:
-                print('Worker %d error: %s' % (self.worker_id, str(e)))
-        print('WDONE')
-        self.instance.report_worker_done(self.worker_id)
+                self.set_state(self.STATE_ERROR)
+                print('Worker %d error: %s' % (self.__worker_id, str(e)))
+        self.__instance.report_worker_done(self.__worker_id)
+
+    state = property(lambda self: self.__state)
+
+    def set_state(self, state):
+        self.__lock.acquire()
+        state_old = self.__state
+        self.__state = state
+        self.__instance.report_state_change(self.__worker_id, state_old, state)
+        self.__lock.release()
 
 def _read_in_chunks(**kwargs):
     """Read a file in fixed-size chunks (to minimize memory usage for large files).
@@ -245,7 +311,12 @@ def main(args, worker = None):
             worker.instance = runner
             worker.completed = runner.set_done
             load_cb = lambda _: worker.load(worker.action_load_queue, runner)
-            runner.run(args.workers, worker.do_work, load_cb)
+            runner_args = {
+                'worker_count': args.workers,
+                'worker_callback': worker.do_work,
+                'callback_prep': load_cb
+            }
+            runner.run(**runner_args)
         worker.write_data(output)
     return 0
 
