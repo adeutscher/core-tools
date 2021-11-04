@@ -118,7 +118,8 @@ class TestCase(unittest.TestCase):
         if condition is None:
             self.assertEqual(1, len(obj))
             if type(obj) is dict:
-                return obj.items()[0]
+                key = list(obj.keys())[0]
+                return (key, obj[key])
             return obj[0]
 
         # Specific condition
