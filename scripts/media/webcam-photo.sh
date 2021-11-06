@@ -45,9 +45,9 @@ else
 fi
 
 device_file="${2:-/dev/video0}"
-if [ -n "$2" ]; then
+if [ -z "$2" ]; then
   error "No device file given" # Did someone enter in empty quotes?
-elif ! [ -f "${device_file}" ]; then
+elif ! [ -c "${device_file}" ]; then
   error "$(printf "Webcam device file path not found: $GREEN%s$NC" "${device_file}")"
 fi
 
@@ -64,17 +64,17 @@ fi
 notice "$(printf "Using ${GREEN}%s${NC} for video capture." "$device_file")"
 
 # Arguable a space saver, if only by cutting down on the number of printf's that I have to write...
-for command in avconv fswebcam; do
+for command in ffmpeg fswebcam avconv; do
   if type "$command" 2> /dev/null >&2; then
     notice "$(printf "Using ${BLUE}%s${NC} to take a webcam photo. Saving to ${GREEN}%s${NC}." "$command" "$target_path")"
     case "$command" in
       "avconv")
-        avconv -f video4linux2 -s 640x480 -i "${device_file}" -ss 0:0:2 -frames 1 "${target_path}"
-        val=$?
-        if (( "${val}" )); then
-          warning "$(printf "${BLUE}%s${NC} failed (exit code ${BOLD}%d${NC}. This is likely because it does not play nice with PNGs, so this may be why it failed. Consider trying with a different format." "$command" "$val")"
-        else
+      ;& # Fall through, identical approach to ffmpeg
+      "ffmpeg")
+        if "${command}" -f video4linux2 -s 640x480 -i "${device_file}" -ss 0:0:2 -frames 1 "${target_path}"; then
           __done=1
+        else
+          warning "$(printf "${BLUE}%s${NC} failed (exit code ${BOLD}%d${NC}. This is likely because it does not play nice with PNGs, so this may be why it failed. Consider trying with a different format." "$command" "$val")"
         fi
       ;;
       "fswebcam")
