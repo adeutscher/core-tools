@@ -231,16 +231,16 @@ class PriorityQueueTests(BaseQueueTest):
         runner = self.mod.ThreadedRunnerPriorityQueue()
 
         # Set first value. We expect this to not run first.
-        runner.set_job('b', 20)
+        runner.set_task('b', 20)
 
         # Deliberately NOT setting a high number here.
         # Should default to something high that puts it at the end of the list.
-        runner.set_job('e')
+        runner.set_task('e')
 
         # Set other values
-        runner.set_job('a', 10)
-        runner.set_job('c', 30)
-        runner.set_job('d', 40)
+        runner.set_task('a', 10)
+        runner.set_task('c', 30)
+        runner.set_task('d', 40)
 
         runner_args = {
             'worker_callback': callback,
@@ -254,6 +254,37 @@ class PriorityQueueTests(BaseQueueTest):
         self.assertEqual('c', invocations[2])
         self.assertEqual('d', invocations[3])
         self.assertEqual('e', invocations[4])
+
+    '''
+    Test using the wrapper thread.
+    '''
+    def test_priority_queue_parallel(self):
+        # Track invocations
+        invocations = []
+        def callback(task):
+            invocations.append(task)
+
+        thread_args = {
+            'worker_callback': callback
+        }
+
+        thread = self.mod.ThreadedRunnerPriorityQueueThread(**thread_args)
+        thread.start()
+
+        # Set tasks as we're running them
+
+        thread.set_task(2,5)
+        thread.set_task(4,3)
+        thread.set_task(6,6)
+        thread.set_done()
+        thread.join()
+
+        self.assertEqual(3, len(invocations))
+        # With this test, checking order sounds like a race-condition waiting to happen.
+        # Only check for the invocations being somewhere in the log.
+        self.assertContains(2, invocations)
+        self.assertContains(4, invocations)
+        self.assertContains(6, invocations)
 
     '''
     Basic run with a priority queue on one worker thread.
@@ -315,16 +346,16 @@ class PriorityQueueTests(BaseQueueTest):
             self.assertIs(runner, c_runner)
 
             # Set first value. We expect this to not run first.
-            c_runner.set_job('b', 20)
+            c_runner.set_task('b', 20)
 
             # Deliberately NOT setting a high number here.
             # Should default to something high that puts it at the end of the list.
-            c_runner.set_job('e')
+            c_runner.set_task('e')
 
             # Set other values
-            c_runner.set_job('a', 10)
-            c_runner.set_job('c', 30)
-            c_runner.set_job('d', 40)
+            c_runner.set_task('a', 10)
+            c_runner.set_task('c', 30)
+            c_runner.set_task('d', 40)
 
         runner = self.mod.ThreadedRunnerPriorityQueue()
         runner_args = {
@@ -358,11 +389,11 @@ class QueueTests(BaseQueueTest):
 
         # Set first value. We expect this to run first,
         #   as a queue.Queue is first-in-first-out (FIFO)
-        runner.set_job('a')
-        runner.set_job('b')
-        runner.set_job('c')
-        runner.set_job('d')
-        runner.set_job('e')
+        runner.set_task('a')
+        runner.set_task('b')
+        runner.set_task('c')
+        runner.set_task('d')
+        runner.set_task('e')
 
         runner_args = {
             'worker_callback': callback,
@@ -391,7 +422,7 @@ class QueueTests(BaseQueueTest):
             raise Exception('callback exception')
 
         runner = self.mod.ThreadedRunnerQueue()
-        runner.set_job('a')
+        runner.set_task('a')
         runner_args = {
             'worker_callback': callback,
             'worker_count': 1
@@ -399,6 +430,34 @@ class QueueTests(BaseQueueTest):
 
         runner.run(**runner_args)
         self.assertTrue(obj['executed'])
+
+    '''
+    Test using the wrapper thread.
+    '''
+    def test_queue_parallel(self):
+        # Track invocations
+        invocations = []
+        def callback(task):
+            invocations.append(task)
+
+        thread_args = {
+            'worker_callback': callback
+        }
+
+        thread = self.mod.ThreadedRunnerQueueThread(**thread_args)
+        thread.start()
+
+        # Set tasks as we're running them
+        thread.set_task(2)
+        thread.set_task(4)
+        thread.set_task(6)
+        thread.set_done()
+        thread.join()
+
+        self.assertEqual(3, len(invocations))
+        self.assertEqual(2, invocations[0])
+        self.assertEqual(4, invocations[1])
+        self.assertEqual(6, invocations[2])
 
     '''
     Basic run with a queue on one worker thread.
@@ -459,11 +518,11 @@ class QueueTests(BaseQueueTest):
             self.assertIs(runner, c_runner)
 
             # Set first value. We expect this to not run first.
-            c_runner.set_job('a')
-            c_runner.set_job('b')
-            c_runner.set_job('c')
-            c_runner.set_job('d')
-            c_runner.set_job('e')
+            c_runner.set_task('a')
+            c_runner.set_task('b')
+            c_runner.set_task('c')
+            c_runner.set_task('d')
+            c_runner.set_task('e')
 
         runner = self.mod.ThreadedRunnerQueue()
         runner_args = {
@@ -514,14 +573,14 @@ class QueueTests(BaseQueueTest):
 
 '''
 Tests and demonstrations of how to use my workload-running system with
-  a job source that behaves like the boto3 SQS client.
+  a task source that behaves like the boto3 SQS client.
 '''
 class SQSWorkloadTests(BaseQueueTest):
     '''
     Basic test of SQS-based pulling using a single thread.
 
-    The worker should complete the jobs in the queue,
-      then wait for more jobs for between 2-2.5 seconds.
+    The worker should complete the tasks in the queue,
+      then wait for more tasks for between 2-2.5 seconds.
     '''
     def test_sqs_basic(self):
 
@@ -567,7 +626,7 @@ class SQSWorkloadTests(BaseQueueTest):
             'worker_callback': callback,
             # Number of worker threads to run
             # The script will spawn up this many worker threads,
-            #   which shall continue to attempt to get/execute jobs
+            #   which shall continue to attempt to get/execute tasks
             'worker_count': 1
         }
 
@@ -639,7 +698,7 @@ class SQSWorkloadTests(BaseQueueTest):
             # For this example, read from arguments
             'sqs_queue': queue_url,
             # Fallback Queue URL
-            # If set, then submit messages here when a job throws an exception.
+            # If set, then submit messages here when a task throws an exception.
             'sqs_queue_fallback': queue_url_fallback,
             # Message Timeout (default 300)
             # Once 2/3 of this duration has passed, the monitor
@@ -652,7 +711,7 @@ class SQSWorkloadTests(BaseQueueTest):
             'worker_callback': callback,
             # Number of worker threads to run
             # The script will spawn up this many worker threads,
-            #   which shall continue to attempt to get/execute jobs
+            #   which shall continue to attempt to get/execute tasks
             'worker_count': 1
         }
 
@@ -725,7 +784,7 @@ class SQSWorkloadTests(BaseQueueTest):
             # For this example, read from arguments
             'sqs_queue': queue_url,
             # Fallback Queue URL
-            # If set, then submit messages here when a job throws an exception.
+            # If set, then submit messages here when a task throws an exception.
             #'sqs_queue_fallback': queue_url_fallback, # For this test, deliberately NOT setting it.
             # Message Timeout (default 300)
             # Once 2/3 of this duration has passed, the monitor
@@ -738,7 +797,7 @@ class SQSWorkloadTests(BaseQueueTest):
             'worker_callback': callback,
             # Number of worker threads to run
             # The script will spawn up this many worker threads,
-            #   which shall continue to attempt to get/execute jobs
+            #   which shall continue to attempt to get/execute tasks
             'worker_count': 1
         }
 
@@ -824,7 +883,7 @@ class SQSWorkloadTests(BaseQueueTest):
             'worker_callback': callback,
             # Number of worker threads to run
             # The script will spawn up this many worker threads,
-            #   which shall continue to attempt to get/execute jobs
+            #   which shall continue to attempt to get/execute tasks
             'worker_count': 2
         }
 
