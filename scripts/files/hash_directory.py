@@ -9,14 +9,13 @@ This script is also an experiment in using queues to delegate work between multi
 
 # Queue mechanics
 ##
-from queue import Empty as empty, PriorityQueue as queue
-import queue as queueModule
+from queue import Empty as empty
+from queue import PriorityQueue # For ThreadedRunnerPriorityQueue
 # _threading.start_new_thread needs fewer lines,
 #   but code executed within a thread isn't
 #   picked up by coverage.
 from threading import Lock as lock, Thread
 from time import sleep, time
-from typing import Any
 # Script mechanics
 ##
 import argparse, csv
@@ -30,17 +29,18 @@ class ThreadedRunnerBase:
         self.__reset()
 
     def __reset(self):
-        self.__is_monitored = False
-        self.__is_running = False
+        # 'is done loading tasks'
+        # Default to True unless we are using a prep callback.
+        self._is_done = True
 
         self._last_state_change_time = time()
 
         self.__lock = lock()
         self.__workers_done = 0
 
-    def get_job(self):
-        # get_job should be implemented by a class that inherits from ThreadedRunnerBase.
-        raise Exception('get_job not implemented') # pragma: no cover
+    def get_task(self):
+        # get_task should be implemented by a class that inherits from ThreadedRunnerBase.
+        raise Exception('get_task not implemented') # pragma: no cover
 
     is_monitored = property(lambda self: self.__is_monitored)
 
@@ -56,23 +56,12 @@ class ThreadedRunnerBase:
 
     def run(self, **kwargs):
 
-        if self.__is_running:
-            raise Exception('Already running.')
-        self.__is_running = True
-
         # count_workers, callback, prep_callback = None
-        worker_count = kwargs.get('worker_count')
+        worker_count = kwargs.get('worker_count', 1)
         worker_callback = kwargs.get('worker_callback')
-        callback_prep = kwargs.get('callback_prep')
-        callback_monitor = kwargs.get('callback_monitor')
-        self.__is_monitored = callback_monitor is not None
 
         # Init
         self._threads = []
-        if callback_prep is not None:
-            t = ThreadedRunnerPrepWorker(callback_prep, (self,))
-            t.start()
-            self._threads.append(t)
 
         i = 0
 
@@ -84,9 +73,6 @@ class ThreadedRunnerBase:
 
         # Wait for tasks to complete
         while self.__workers_done < worker_count:
-            if self.is_monitored:
-                for t in self._threads:
-                    callback_monitor(t)
             sleep(0.1)
 
         # Re-join threads for the sake of coverage in testing
@@ -95,31 +81,57 @@ class ThreadedRunnerBase:
 
         self.__reset()
 
-class ThreadedRunnerPrepWorker(Thread):
-    def __init__(self, callback, callback_args=None):
-        Thread.__init__(self)
-        self.callback = callback
-        self.callback_args = callback_args
-
-    def run(self):
-        self.callback(self.callback_args)
-
-class ThreadedRunnerQueue(ThreadedRunnerBase):
-    def __init__(self):
+'''
+ThreadedRunnerBase implementation for working with a queue.PriorityQueue.
+'''
+class ThreadedRunnerPriorityQueue(ThreadedRunnerBase):
+    def __init__(self, queue = None):
         ThreadedRunnerBase.__init__(self)
-        self.done = False
-        self.queue = queue()
+        self.__queue = queue or PriorityQueue()
 
-    def get_job(self):
+    def get_task(self):
         try:
-            priority, task = self.queue.get(False)
+            priority, task = self.__queue.get(False)
         except empty:
             task = None
-        return {'params': task, 'done': self.done }
+        return {'params': task, 'done': self._is_done }
+
+    def set_task(self, task, priority=1000):
+        self.__queue.put((priority, task))
+
+'''
+Wrapper around using ThreadedRunnerPriorityQueue so that one can continue
+running the script's main thread while the worker system runs.
+
+Possibly a much friendlier alternative to using prep_callback, but more
+experiments are needed to see which one I'll go with.
+'''
+class ThreadedRunnerPriorityQueueThread(Thread):
+
+    def __init__(self, **kwargs):
+        Thread.__init__(self)
+        self.__queue = kwargs.get('queue', PriorityQueue())
+        self.__kwargs = kwargs.copy()
+        self.__runner = ThreadedRunnerPriorityQueue(self.__queue)
 
     def set_done(self):
-        self.done = True
+        self.__runner._is_done = True
 
+    def set_task(self, task, priority=1000):
+        self.__runner.set_task(task, priority)
+
+    def run(self):
+        # Avoid normal behavior by setting _is_done to False.
+        # The runner is not considered to be pre-loaded,
+        #  and we don't want to weave through the prep_callback.
+        self.__runner._is_done = False
+        self.__runner.run(**self.__kwargs)
+
+'''
+Worker thread wrapper.
+
+Handles pulling tasks from the runner and passing them to the callback.
+'''
 class ThreadedRunnerWorker(Thread):
 
     STATE_IDLE = 0
@@ -140,26 +152,19 @@ class ThreadedRunnerWorker(Thread):
     def run(self):
         while True:
 
-            if self.state != self.STATE_IDLE and self.__instance.is_monitored == True:
-                # Waiting for monitor to reset job status
-                sleep(0.1) # Sleep briefly and try again
-                continue
+            task = self.__instance.get_task()
+            task_params = task.get('params')
 
-                # If we were not in a monitored instance, then the state of
-                #   the previous loop iteration would be irrelevant.
-
-            job = self.__instance.get_job()
-            job_params = job.get('params')
-
-            if job_params is None:
-                if job.get('done'):
+            if task_params is None:
+                if task.get('done'):
                     break
                 sleep(0.1) # Sleep briefly
                 continue # Restart loop and try again
+
             try:
                 self.set_state(self.STATE_WORKING)
-                self.task = job_params
-                self.__callback(job_params)
+                self.task = task_params
+                self.__callback(task_params)
                 self.set_state(self.STATE_DONE)
             except Exception as e:
                 self.set_state(self.STATE_ERROR)
@@ -170,9 +175,11 @@ class ThreadedRunnerWorker(Thread):
 
     def set_state(self, state):
         self.__lock.acquire()
+
         state_old = self.__state
         self.__state = state
         self.__instance.report_state_change(self.__worker_id, state_old, state)
+
         self.__lock.release()
 
 def _read_in_chunks(**kwargs):
@@ -218,12 +225,12 @@ class HashWorker:
         self.__data[path] = data
         self.__write_lock.release()
 
-    def action_load_queue(self, path, instance):
+    def action_load_queue(self, path, thread):
         if os.path.isfile(path):
             length = os.stat(path).st_size
         else:
             length = -1
-        instance.queue.put((-length, path))
+        thread.set_task(path, length)
 
     def action_single_thread(self, path, arg):
         try:
@@ -247,7 +254,7 @@ class HashWorker:
                     h.update(chunk)
         self.__set_data(path, (hashes[0].digest(), hashes[1].digest(), hashes[2].digest(), hashes[3].digest()))
 
-    def load(self, action, action_arg=None):
+    def load(self, action, action_arg = None):
         for directory in self.__directories:
             for (dirname, subdirs, files) in os.walk(directory):
                 for file in files:
@@ -307,16 +314,17 @@ def main(args, worker = None):
         if args.workers == 1:
             worker.run_single_thread()
         else:
-            runner = ThreadedRunnerQueue()
-            worker.instance = runner
-            worker.completed = runner.set_done
-            load_cb = lambda _: worker.load(worker.action_load_queue, runner)
+
             runner_args = {
                 'worker_count': args.workers,
-                'worker_callback': worker.do_work,
-                'callback_prep': load_cb
+                'worker_callback': worker.do_work
             }
-            runner.run(**runner_args)
+
+            thread = ThreadedRunnerPriorityQueueThread(**runner_args)
+            thread.start()
+            worker.load(worker.action_load_queue, thread)
+            thread.set_done()
+            thread.join()
         worker.write_data(output)
     return 0
 
