@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 ############################################################################
 # Download Google Drive spreadsheet sheet                                  #

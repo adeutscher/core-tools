@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 '''rdp.py: Wrapper script for xfreerdp'''
 

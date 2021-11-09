@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 # A likely over-engineered script to relay UDP datagrams from one host to multiple targets.
 # I mostly made this to work with my desktop-notify-relay.py script and its audio-playing cousin.

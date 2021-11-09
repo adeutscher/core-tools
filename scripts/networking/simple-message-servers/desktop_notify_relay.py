@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 # Take messages collected over a network and display them as desktop notifications.
 

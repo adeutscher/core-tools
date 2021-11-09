@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 ####################################################
 # List calendar events in a format that can be     #

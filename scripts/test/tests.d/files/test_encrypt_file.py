@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import common, unittest
 import io, os, tempfile, sys

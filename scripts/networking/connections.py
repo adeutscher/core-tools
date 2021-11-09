@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 '''
 Parse IPv4 TCP connections using /proc/net/tcp, netstat, or conntrack

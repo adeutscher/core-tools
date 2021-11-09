@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import common, unittest
 import csv, os, re, tempfile, sys
 
