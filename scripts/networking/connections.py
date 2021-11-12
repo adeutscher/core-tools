@@ -13,19 +13,19 @@ import fcntl, socket, struct
 # Common Colours and Message Functions
 ###
 
-def _print_message(header_colour, header_text, message, stderr=False):
+def _print_message(header_colour, header_text, message, stderr=False): # pragma: no cover
     f=sys.stdout
     if stderr:
         f=sys.stderr
     print('%s[%s]: %s' % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=ff)
 
-def colour_text(text, colour = None):
+def colour_text(text, colour = None): # pragma: no cover
     if not colour:
         colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return '%s%s%s' % (colour, text, COLOUR_OFF)
 
-def enable_colours(force = False):
+def enable_colours(force = False): # pragma: no cover
     global COLOUR_PURPLE
     global COLOUR_RED
     global COLOUR_GREEN
@@ -59,27 +59,33 @@ TYPE_RAW = 'raw'
 TYPE_STDIN = 'standard input'
 TYPE_PROCFS = 'procfs'
 
-def get_interfaces():
-    ifnames = os.listdir('/sys/class/net')
-    interfaces = []
-    localhost = None
-    for ifname in ifnames:
-        try:
-            args = {'name': ifname}
-            newif = Interface(**args)
+def display(connections):
+    connections_s = sorted(connections, key = lambda c: (c.src.addr_n, c.dst.addr_n, c.dst.port))
+    counts = {}
 
-            if ifname == 'lo':
-                # Store localhost as a special case
-                localhost = newif
-            else:
-                interfaces.append(newif)
-        except OSError as e:
-            # An OSError with an errno value of 99 translates to 'Cannot assign requested address'.
-            # Translated for context, it means that the interface does not have an address to fetch info on,
-            if e.errno != 99:
-                raise
+    for cid in set([c.identifier for c in connections]):
+        counts[cid] = len([1 for c in connections if c.identifier == cid])
 
-    return localhost, interfaces
+    displayed = []
+    for c in connections_s:
+        args = {
+            'src': colour_text(c.src.addr, COLOUR_BLUE),
+            'dst': colour_text(c.dst.addr, COLOUR_BLUE),
+            'port': c.dst.port,
+            'count': ''
+        }
+
+        if c.identifier in displayed:
+            continue
+
+        displayed.append(c.identifier)
+
+        count = counts[c.identifier]
+        if count > 1:
+            args['count'] = ', %d connections' % count
+
+        print('%(src)s -> %(dst)s (tcp/%(port)d%(count)s)' % args)
+
 
 def parse_addr(addr):
     try:
@@ -115,12 +121,10 @@ If no explicit filter direction is given, then the is assumed to be referring to
     parser.add_argument('-l', action='store_true', dest='lan', help='LAN Mode. Restrict source addresses (or destination addresses for outgoing mode) to LAN addresses. By default, a LAN address is any address within 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16. Cancels out -r.')
     parser.add_argument('--lan-interfaces', action='store_true', dest='lan_interfaces', help='When using LAN mode, consider a LAN address to be networks that the machine has an address on.')
     parser.add_argument('-L', action='store_true', dest='allow_localhost', help='Show localhost connections.')
-    parser.add_argument('-n', action='store_true', dest='netstat', help='Conntrack Mode. Use %s as the source for connection information.' % netstat_c)
+    parser.add_argument('-n', action='store_true', dest='netstat', help='Netstat Mode. Use %s as the source for connection information.' % netstat_c)
     parser.add_argument('-o', action='store_true', dest='outgoing', help='Show outgoing connections instead of incoming connections.')
     parser.add_argument('-r', action='store_true', dest='remote', help='Remote Mode. Restrict source addresses (or destination addresses for outgoing mode) to remote addresses. A remote address is considered to be any non-LAN address. Cancels out -l.')
     parser.add_argument('-S', action='store_true', dest='stdin', help='Expect input from stdin.')
-
-
 
     c_options = parser.add_argument_group('Conntrack Options')
     c_options.add_argument('-C', action='store_true', dest='conntrack', help='Conntrack Mode. Use %s as the source for connection information.' % conntrack_c)
@@ -139,7 +143,7 @@ If no explicit filter direction is given, then the is assumed to be referring to
 
         # Cannot have allow-localhost AND no -r/-l AND conntrack AND all AND block-self
         if args.allow_localhost and not (args.lan or args.remote) and args.conntrack_all and args.block_self:
-            errors.append('Cannot show only localhost addresses in %s requires a Linux system.' % conntrack_c)
+            errors.append('Cannot show only localhost addresses in %s mode.' % conntrack_c)
     else:
         # non-conntrack
 
@@ -187,28 +191,27 @@ def parse_filter(s_filter, allow):
         f_errors.append('Invalid filter arg: %s' % s_filter)
         return ((False, None, None, None, None), f_errors)
 
-    if f_addr == '*':
+    if f_addr == '*' or f_addr is None:
         f_addr = '0.0.0.0/0'
 
     # Attempt to parse address as IP address or domain name.
     f_addr_low = f_addr_high = None
 
-    if f_addr:
-        # Attempt to parse as an IPv4 address
-        f_addr_low, f_addr_high = parse_addr(f_addr)
+    # Attempt to parse as an IPv4 address
+    f_addr_low, f_addr_high = parse_addr(f_addr)
+    addresses = [(f_addr_low, f_addr_high)]
+    if f_addr_low is None or f_addr_high is None:
+
+        # Address is not a valid IP address.
+
+        # Attempt to parse as a CIDR range
+        f_addr_low, f_addr_high = parse_cidr(f_addr)
         addresses = [(f_addr_low, f_addr_high)]
+
         if f_addr_low is None or f_addr_high is None:
-
-            # Address is not a valid IP address.
-
-            # Attempt to parse as a CIDR range
-            f_addr_low, f_addr_high = parse_cidr(f_addr)
-            addresses = [(f_addr_low, f_addr_high)]
-
-            if f_addr_low is None or f_addr_high is None:
-                # So far, address was not an IPv4 address or CIDR range.
-                # Try to resolve hostname.
-                addresses = parse_hostname(f_addr)
+            # So far, address was not an IPv4 address or CIDR range.
+            # Try to resolve hostname.
+            addresses = parse_hostname(f_addr)
     if not addresses:
         f_errors.append('Could not resolve address: %s' % f_addr)
 
@@ -296,7 +299,7 @@ def to_str(s):
 
     return str(s)
 
-class ConnectionDisplay:
+class ConnectionContext:
 
     FLAG_FILTER_INPUT = 0x01
     FLAG_FILTER_OUTPUT = 0x02
@@ -307,14 +310,16 @@ class ConnectionDisplay:
     FLAG_LAN_INTERFACES = 0x40
     FLAG_FILTER_AND = 0x80
 
-    def __init__(self):
+    def __init__(self, **kwargs):
 
         self.basic_filters = 0x00
         self.filters = []
 
         # Get interfaces
+        self.__parsers = kwargs.get('parsers', PARSERS)
+        self.__sources = kwargs.get('sources', SOURCES)
 
-        self.localhost, self.interfaces = get_interfaces()
+        self.localhost, self.interfaces = kwargs.get('interface_source').get_interfaces()
         self.reset()
 
     def __is_allowing_localhost(self):
@@ -356,33 +361,6 @@ class ConnectionDisplay:
 
         self.connections.append(connection)
 
-    def display(self):
-        connections_s = sorted(self.connections, key = lambda c: (c.src.addr_n, c.dst.addr_n, c.dst.port))
-        counts = {}
-
-        for cid in set([c.identifier for c in self.connections]):
-            counts[cid] = len([1 for c in self.connections if c.identifier == cid])
-
-        displayed = []
-        for c in connections_s:
-            args = {
-                'src': colour_text(c.src.addr, COLOUR_BLUE),
-                'dst': colour_text(c.dst.addr, COLOUR_BLUE),
-                'port': c.dst.port,
-                'count': ''
-            }
-
-            if c.identifier in displayed:
-                continue
-
-            displayed.append(c.identifier)
-
-            count = counts[c.identifier]
-            if count > 1:
-                args['count'] = ', %d connections' % count
-
-            print('%(src)s -> %(dst)s (tcp/%(port)d%(count)s)' % args)
-
     is_allowing_localhost = property(__is_allowing_localhost)
     is_filter_and = property(__is_filter_and)
     is_filter_input = property(__is_filter_input)
@@ -396,6 +374,7 @@ class ConnectionDisplay:
         self.connections = []
 
     def run(self):
+        self.connections = [] # Reset connections
 
         filter_stack = FilterStackAnd()
 
@@ -595,10 +574,10 @@ class ConnectionDisplay:
 
 
         # Get parser, prepare for loop
-        c_parser = PARSERS[self.type_parser]
+        c_parser = self.__parsers[self.type_parser]
 
         # Spawn reader
-        with SOURCES[self.type_src]() as reader:
+        with self.__sources[self.type_src]() as reader:
             # Spawn parser
             parser = c_parser(self)
 
@@ -617,10 +596,7 @@ class ConnectionDisplay:
                 if filter_stack.check(connection):
                     self.append(connection)
 
-            self.display()
-
-    def set_allow_localhost(self, value):
-        self.__allow_localhost = value
+        return self.connections
 
     def set_filters(self, filters):
         self.filters = filters
@@ -628,15 +604,15 @@ class ConnectionDisplay:
     def set_parser(self, parser):
         self.type_parser = parser
 
-        if parser not in PARSERS:
-            print('Parsers not found: ', parser)
+        if parser not in self.__parsers:
+            print('Parser not found: ', parser)
             return 1
 
     def set_src(self, src):
         self.type_src = src
 
-        if src not in SOURCES:
-            print('Parser not found: ', src)
+        if src not in self.__sources:
+            print('Source not found: ', src)
             return 1
 
 class FilterLocalhost:
@@ -674,10 +650,7 @@ class FilterNotLocalhost:
         if connection.is_localhost:
             return False
 
-        if not self.context.is_allowing_localhost or (self.context.is_mode_lan or self.context.is_mode_remote):
-            return True
-
-        return False
+        return not self.context.is_allowing_localhost or (self.context.is_mode_lan or self.context.is_mode_remote)
 
 class FilterGeneral:
     def __init__(self, **kwargs):
@@ -770,12 +743,6 @@ class Interface:
     def __init__(self, **kwargs):
         self.name = kwargs.get('name')
 
-        if self.name:
-            self.__init_by_name()
-        else:
-            self.__init_by_manual(**kwargs)
-
-    def __init_by_manual(self, **kwargs):
         addr = kwargs.get('addr')
         if addr:
             self.addr_b = self.__str_to_bytes(addr)
@@ -787,29 +754,6 @@ class Interface:
         netmask = kwargs.get('netmask')
         if netmask:
             self.netmask_b = self.__str_to_bytes(netmask)
-
-    def __init_by_name(self, **kwargs):
-
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ifquery = struct.pack('256s', bytes(self.name[:15], 'utf-8'))
-
-        self.addr_b = fcntl.ioctl(
-            s.fileno(),
-            0x8915,  # SIOCGIFADDR
-            ifquery
-        )[20:24]
-
-        self.broadcast_b = fcntl.ioctl(
-            s.fileno(),
-            0x8919,  # SIOCGIFBRDADDR
-            ifquery
-        )[20:24]
-
-        self.netmask_b = fcntl.ioctl(
-            s.fileno(),
-            0x891b,  # SIOCGIFNETMASK
-            ifquery
-        )[20:24]
 
     def __convert_n(self, b):
         return (int(b[0]) * 16777216) + (b[1] * 65536) + (b[2] * 256) + b[3]
@@ -850,7 +794,7 @@ class Interface:
         return mm & ~self.netmask_n - 1
 
     def __str__(self):
-        return '%s (%s/%s)' % (self.ifname, self.addr, self.netmask)
+        return '%s (%s/%s)' % (self.name, self.addr, self.netmask)
 
     def __str_to_bytes(self, addr_string):
         # Parse IPv4 address strings to byte representations
@@ -872,6 +816,56 @@ class Interface:
     network_n = property(__get_network_n)
 
     max_addresses = property(__get_max_addrs)
+
+class InterfaceSource:
+    def get_interfaces(self):
+        interfaces = []
+        localhost = None
+        for ifname in self.get_interface_names():
+            try:
+                newif = self.load_interface(ifname)
+
+                if ifname == 'lo':
+                    # Store localhost as a special case
+                    localhost = newif
+                else:
+                    interfaces.append(newif)
+            except OSError as e:
+                # An OSError with an errno value of 99 translates to 'Cannot assign requested address'.
+                # Translated for context, it means that the interface does not have an address to fetch info on,
+                if e.errno != 99:
+                    raise
+
+        return localhost, interfaces
+
+    def get_interface_names(self): # pragma: no cover
+        return os.listdir('/sys/class/net')
+
+    def load_interface(self, name): # pragma: no cover
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ifquery = struct.pack('256s', bytes(name[:15], 'utf-8'))
+
+        kwargs = {}
+
+        kwargs['addr'] = socket.inet_ntoa(fcntl.ioctl(
+            s.fileno(),
+            0x8915,  # SIOCGIFADDR
+            ifquery
+        )[20:24])
+
+        kwargs['broadcast'] = socket.inet_ntoa(fcntl.ioctl(
+            s.fileno(),
+            0x8919,  # SIOCGIFBRDADDR
+            ifquery
+        )[20:24])
+
+        kwargs['netmask'] = socket.inet_ntoa(fcntl.ioctl(
+            s.fileno(),
+            0x891b,  # SIOCGIFNETMASK
+            ifquery
+        )[20:24])
+
+        return Interface(**kwargs)
 
 class Connection:
     def __init__(self, **kwargs):
@@ -922,9 +916,6 @@ class ConnectionAddress:
         self.addr_b = self.__str_to_bytes(addr)
         self.port = port
 
-    def __convert_n(self, b):
-        return (int(b[0]) * 16777216) + (b[1] * 65536) + (b[2] * 256) + b[3]
-
     def __get_addr_n(self):
         return (int(self.addr_b[0]) * 16777216) + (self.addr_b[1] * 65536) + (self.addr_b[2] * 256) + self.addr_b[3]
 
@@ -950,7 +941,7 @@ class ParserConntrack:
 
         parts = [c for c in line.split(' ') if c]
 
-        if parts[0] != 'tcp':
+        if not parts or parts[0] != 'tcp':
             return None
 
         state = parts[3]
@@ -1031,9 +1022,8 @@ class ParserProcFS:
         }
         return Connection(**conn_args)
 
-
-
-class ParserRaw:
+class ParserRaw: # pragma: no cover
+    # NYI
     def __init__(self, context):
         self.context = context
 
@@ -1047,7 +1037,8 @@ PARSERS = {
     TYPE_PROCFS: ParserProcFS
 }
 
-class SourceCmd:
+class SourceCmd: # pragma: no cover
+    # Not testing
     def __enter__(self):
         self.proc = subprocess.Popen(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return self.proc.stdout
@@ -1062,8 +1053,11 @@ class SourceNetstat(SourceCmd):
     cmd = ['netstat', '-tn']
 
 class SourceProcFS:
+    def __init__(self, path = '/proc/net/tcp'):
+        self.__path = path
+
     def __enter__(self):
-        self.handle = open('/proc/net/tcp', 'r')
+        self.handle = open(self.__path, 'r')
         self.readline = self.handle.readline
         return self
 
@@ -1071,6 +1065,9 @@ class SourceProcFS:
         self.handle.close()
 
 class SourceStandardInput:
+    def __init__(self, stream = None):
+        self.__stream = stream or sys.stdin
+
     def __enter__(self):
         return self
 
@@ -1078,7 +1075,7 @@ class SourceStandardInput:
         pass
 
     def readline(self):
-        return sys.stdin.readline()
+        return self.__stream.readline()
 
 SOURCES = {
     TYPE_CONNTRACK: SourceConntrack,
@@ -1087,18 +1084,24 @@ SOURCES = {
     TYPE_PROCFS: SourceProcFS
 }
 
-def main():
+def main(**kwargs):
+    exit_code, connections = run(**kwargs)
+    if exit_code == 0:
+        display(connections)
+    return exit_code
+
+def run(**kwargs):
 
     parser = src = TYPE_PROCFS
 
-    args, errors = parse_args(sys.argv[1:])
+    args, errors = parse_args(kwargs.get('args', []))
 
     if errors:
         for e in errors:
             print(e)
-        exit(1)
+        return 1, None
 
-    runner = ConnectionDisplay()
+    runner = ConnectionContext(**kwargs)
 
     flags = 0
     if args.allow_localhost:
@@ -1130,10 +1133,11 @@ def main():
     runner.basic_filters = flags
     runner.set_filters(args.opt_filters)
 
-    runner.run()
+    connections = runner.run()
+    return 0, connections
 
-if __name__ == '__main__':
+if __name__ == '__main__': # pragma: no cover
     try:
-        main()
+        exit(main(args=sys.argv[1:], interface_source=InterfaceSource(), parsers=PARSERS, sources=SOURCES))
     except KeyboardInterrupt:
-        exit(127)
+        exit(130)
