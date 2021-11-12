@@ -47,6 +47,7 @@ def build_logger(label, err = None, out = None):
   out_filter.filter = lambda record: record.levelno < logging.WARNING
   out_handler.addFilter(out_filter)
   obj.addHandler(out_handler)
+  return obj
 
 logger = build_logger('wol_manual')
 

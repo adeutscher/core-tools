@@ -35,6 +35,10 @@ class WoLTests(common.TestCase, metaclass=common.LoggableTestCase):
                 self.packets.append((payload, addr, port))
             self.mod.send_packet = send_packet
 
+    def test_build_logger(self):
+        self.assertNotEqual(None, self.mod.build_logger('label'))
+        self.assertNotEqual(None, self.mod.logger)
+
     def test_error_invalid_args(self):
         exit_code = self.mod.run(['--nope'])
         self.assertEqual(1, exit_code)

@@ -24,6 +24,10 @@ class MergeDirectoriesTests(common.TestCase, metaclass=common.LoggableTestCase):
     def setUp(self):
         mod.logger = common.logging.getLogger(common.LABEL_TEST_LOGGER)
 
+    def test_build_logger(self):
+        self.assertNotEqual(None, mod.build_logger('label'))
+        self.assertNotEqual(None, mod.logger)
+
     '''
     Confirm behavior when no arguments are provided.
     '''
