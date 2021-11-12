@@ -17,7 +17,8 @@
 #####################################################
 
 from __future__ import print_function
-import binascii, getopt, os, re, socket, sys
+import binascii, getopt, logging, os, re, socket, sys
+from socket import socket as socket_object
 
 # Static variables
 ####
@@ -31,45 +32,23 @@ REGEX_INET4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 # Basic syntax check for IPv4 address.
 REGEX_INET4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 
-def _print_message(header_colour, header_text, message, stderr=False):
-    f=sys.stdout
-    if stderr:
-        f=sys.stderr
-    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
+def build_logger(label, err = None, out = None):
+  obj = logging.getLogger(label)
+  obj.setLevel(logging.DEBUG)
+  # Err
+  err_handler = logging.StreamHandler(err or sys.stderr)
+  err_filter = logging.Filter()
+  err_filter.filter = lambda record: record.levelno >= logging.WARNING
+  err_handler.addFilter(err_filter)
+  obj.addHandler(err_handler)
+  # Out
+  out_handler = logging.StreamHandler(out or sys.stdout)
+  out_filter = logging.Filter()
+  out_filter.filter = lambda record: record.levelno < logging.WARNING
+  out_handler.addFilter(out_filter)
+  obj.addHandler(out_handler)
 
-def colour_text(text, colour = None):
-    if not colour:
-        colour = COLOUR_BOLD
-    # A useful shorthand for applying a colour to a string.
-    return "%s%s%s" % (colour, text, COLOUR_OFF)
-
-def enable_colours(force = False):
-    global COLOUR_PURPLE
-    global COLOUR_RED
-    global COLOUR_GREEN
-    global COLOUR_YELLOW
-    global COLOUR_BLUE
-    global COLOUR_BOLD
-    global COLOUR_OFF
-    if force or sys.stdout.isatty():
-        # Colours for standard output.
-        COLOUR_PURPLE = '\033[1;35m'
-        COLOUR_RED = '\033[1;91m'
-        COLOUR_GREEN = '\033[1;92m'
-        COLOUR_YELLOW = '\033[1;93m'
-        COLOUR_BLUE = '\033[1;94m'
-        COLOUR_BOLD = '\033[1m'
-        COLOUR_OFF = '\033[0m'
-    else:
-        # Set to blank values if not to standard output.
-        COLOUR_PURPLE = ''
-        COLOUR_RED = ''
-        COLOUR_GREEN = ''
-        COLOUR_YELLOW = ''
-        COLOUR_BLUE = ''
-        COLOUR_BOLD = ''
-        COLOUR_OFF = ''
-enable_colours()
+logger = build_logger('wol_manual')
 
 # Default variables
 ####
@@ -86,27 +65,15 @@ WOL_PORT = DEFAULT_WOL_PORT
 TARGET_ADDRESS = DEFAULT_TARGET_ADDRESS
 
 def hexit(exit_code=0):
-  print("./wol-manual.py [-a target_address] [-h] ... MAC-ADDRESS ...")
-  print("  -a target_address: Send to specific broadcast address")
-  print("                     This is necessary when waking up a device on")
-  print("                     a different collision domain than your default")
-  print("                     gateway interface.")
-  print("                     Example value: 192.168.100.0")
-  print("  -h: Display this help menu and exit.")
-  print("  -p port: Select UDP port")
-  exit(exit_code)
-
-error_count = 0
-def print_error(message):
-    global error_count
-    error_count += 1
-    _print_message(COLOUR_RED, "Error", message)
-
-def print_notice(message):
-    _print_message(COLOUR_BLUE, "Notice", message)
-
-def print_warning(message):
-    _print_message(COLOUR_YELLOW, "Warning", message)
+  logger.info("./wol-manual.py [-a target_address] [-h] ... MAC-ADDRESS ...")
+  logger.info("  -a target_address: Send to specific broadcast address")
+  logger.info("                     This is necessary when waking up a device on")
+  logger.info("                     a different collision domain than your default")
+  logger.info("                     gateway interface.")
+  logger.info("                     Example value: 192.168.100.0")
+  logger.info("  -h: Display this help menu and exit.")
+  logger.info("  -p port: Select UDP port")
+  return exit_code
 
 # Script Functions
 
@@ -116,15 +83,17 @@ def format_bytes(content):
       content_bytes = bytes(content_bytes, 'ascii')
   return binascii.unhexlify(content_bytes)
 
+def send_packet(payload, address):
+  sock = socket_object(socket.AF_INET, socket.SOCK_DGRAM)
+  sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+  sock.sendto(payload, address)
+
 def send_magic_packet(mac):
 
   global WOL_PORT
   global TARGET_ADDRESS
 
-  print_notice("Sending WoL magic packet for %s" % colour_text(mac))
-
-  sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-  sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+  logger.info("Sending WoL magic packet for %s" % mac)
 
   # From Wikipedia
   # The magic packet is a broadcast frame containing anywhere within
@@ -136,9 +105,9 @@ def send_magic_packet(mac):
   mac_plain = re.sub(':','',mac)
   for i in range(16):
     payload+=format_bytes(mac_plain)
-  sock.sendto(payload, (TARGET_ADDRESS, WOL_PORT))
+  send_packet(payload, (TARGET_ADDRESS, WOL_PORT))
 
-def run():
+def run(args_raw):
 
   global WOL_PORT
   global TARGET_ADDRESS
@@ -152,21 +121,21 @@ def run():
   # TODO: Consider improving argument parsing
   try:
     # Note: Python will not throw a fit if you call for an invalid slice (will simply be empty).
-    opts, args = getopt.gnu_getopt(sys.argv[1:],"ha:p:")
+    opts, args = getopt.gnu_getopt(args_raw,"ha:p:")
   except getopt.GetoptError as ge:
     errors.append("Error parsing arguments: %s" % str(ge))
   for opt, arg in opts:
     if opt == '-h':
-      hexit()
+      return hexit()
     elif opt == "-a":
       if re.match(REGEX_INET4_CIDR, arg):
         # Someone put in a CIDR range by accident.
         # Their heart is in the right place, so fix formatting with a small nudge for next time.
-        print_warning("Target address '%s' appears to be in CIDR format." % colour_text(arg, COLOUR_GREEN))
+        logger.warning("Target address '%s' appears to be in CIDR format." % arg)
         arg = re.sub(r"\/.*$", "", arg)
-        print_warning("Trimming target address down to '%s'." % colour_text(arg, COLOUR_GREEN))
+        logger.warning("Trimming target address down to '%s'." % arg)
       elif not re.match(REGEX_INET4, arg):
-        errors.append("Not a valid target address: %s" % colour_text(arg, COLOUR_GREEN))
+        errors.append("Not a valid target address: %s" % arg)
         continue
       TARGET_ADDRESS = arg
     elif opt =="-p":
@@ -176,19 +145,17 @@ def run():
         else:
           raise ValueError("Invalid port")
       except ValueError:
-        errors.append("Invalid port number: %s" % colour_text(arg))
-    else:
-      errors.append("Unhandled option: %s" % colour_text(opt))
+        errors.append("Invalid port number: %s" % arg)
 
   if not len(errors) and len(args) == 0:
     errors.append("No MAC addresses provided.")
 
   if len(errors):
     for error in errors:
-      print_error(error)
-    hexit(1)
+      logger.error(error)
+    return hexit(1)
 
-  print_notice("Sending WoL magic packet(s) to %s on %s" % (colour_text(TARGET_ADDRESS, COLOUR_GREEN), colour_text("UDP/%d" % WOL_PORT, COLOUR_GREEN)))
+  logger.info("Sending WoL magic packet(s) to %s on %s" % (TARGET_ADDRESS, "UDP/%d" % WOL_PORT))
 
   for candidate in args:
     # May as well squash candidate MAC to lowercase immediately
@@ -197,10 +164,15 @@ def run():
     if re.match(MAC_PATTERN, candidate_lower):
       send_magic_packet(candidate_lower)
     else:
-      print_error("Invalid MAC address: %s" % colour_text(candidate))
+      logger.error("Invalid MAC address: %s" % candidate)
       bad_format += 1
     if bad_format:
-      exit(1)
+      return 1
+  return 0
 
-if __name__ == "__main__":
-  run()
+if __name__ == "__main__": # pragma: no cover
+  try:
+    exit(run(sys.argv[1:]))
+  except KeyboardInterrupt:
+    exit(130)
+
