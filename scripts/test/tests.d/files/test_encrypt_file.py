@@ -23,6 +23,18 @@ class MockWrapper(mod.CommandWrapper):
     def log_notice(self, msg):
         self.notices.append(msg)
 
+class MockWrapperTests(common.TestCase):
+    def setUp(self):
+        self.wrapper = MockWrapper()
+
+    def test_log_error(self):
+        self.wrapper.log_error('abc')
+        self.assertEqual('abc', self.assertSingle(self.wrapper.errors))
+
+    def test_log_notice(self):
+        self.wrapper.log_notice('abc')
+        self.assertEqual('abc', self.assertSingle(self.wrapper.notices))
+
 '''
 Tests involving my RSA encryption wrapper
 '''
@@ -66,11 +78,7 @@ class RSAWrapperTests(common.TestCase):
 
 
     def assertSuccess(self, **kwargs):
-        try:
-            self.assertEqual(0, self.wrapper.run(**kwargs))
-        except:
-            print(self.wrapper.errors)
-            raise
+        self.assertEqual(0, self.wrapper.run(**kwargs))
         self.assertEmpty(self.wrapper.errors)
 
     def test_check_required_file_fail_no_exist(self):

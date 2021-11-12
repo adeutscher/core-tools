@@ -165,7 +165,7 @@ class NetAccess:
         return self.load_access_file(self.add_whitelist, path, "whitelist")
 
 # Demonstration of access-list
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
     acc = NetAccess()
 
     acc.add_whitelist("127.0.0.1")

@@ -44,7 +44,7 @@ class BitmaskTests(common.TestCase):
         mod.main(['11', '4'])
         self.assertEqual('Result: 11 & 4 = 0 (No Match)', self.lines[-1])
 
-    def test_main_ok_compare_nomatch_a(self):
+    def test_main_ok_compare_nomatch_b(self):
         mod.main(['0x20', '0x10'])
         self.assertEqual('Result: 32 & 16 = 0 (No Match)', self.lines[-1])
 
