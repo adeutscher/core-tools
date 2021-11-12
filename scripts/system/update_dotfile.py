@@ -30,7 +30,7 @@ def enable_colours(force = False):
         COLOUR_BLUE = '\033[1;94m'
         COLOUR_BOLD = '\033[1m'
         COLOUR_OFF = '\033[0m'
-    else:
+    else: # pragma: no cover
         # Set to blank values if not to standard output.
         COLOUR_PURPLE = ''
         COLOUR_RED = ''
@@ -41,10 +41,9 @@ def enable_colours(force = False):
         COLOUR_OFF = ''
 enable_colours()
 
-def parse_args(raw_args):
+def parse_args(raw_args, **kwargs):
 
     parser = argparse.ArgumentParser(description='Dotfile updater')
-    description_pre = 'pre'
     description_post = '''
 Configuration example:
 
@@ -107,7 +106,7 @@ File Configuration:
     weight       : Weighting of block. The greater the value, the lower down in the file the block will be.
 '''
 
-    parser = argparse.ArgumentParser(description=description_pre, epilog=description_post, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(epilog=description_post, formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument('-c', action='append', default=[], dest='config', help='Configuration JSON')
     parser.add_argument('-d', dest='dir', help='Set directory for the sake of relative paths.')
@@ -151,8 +150,11 @@ File Configuration:
                 tags.append(tt)
 
     updater_args = {
-        'tags': tags
+        'tags': tags,
     }
+    stream_input = kwargs.get('stream_input')
+    if stream_input:
+        updater_args['stream_input'] = stream_input
 
     updater = DotFileUpdater(**updater_args)
     config_blocks = []
@@ -172,7 +174,6 @@ File Configuration:
     for c in args.config:
         # Loop through configuration files the first time for all variables.
         if not os.path.isfile(c):
-            print(os.getcwd(), c)
             errors.append('No such config file: ' + colour_text(c, COLOUR_GREEN))
             continue
 
@@ -207,6 +208,8 @@ File Configuration:
             'comment': updater.comment,
             'weight': args.weight or 0
         }
+        if stream_input:
+            file_args['stream_input'] = stream_input
 
         errors += updater.load_file(**file_args)
 
@@ -313,6 +316,7 @@ class DotFileUpdater:
     def __init__(self, **kwargs):
 
         self.__comment = None
+        self.__stream_input = kwargs.get('stream_input', sys.stdin)
 
         self.debug = False
         self.verbose = False
@@ -373,6 +377,7 @@ class DotFileUpdater:
                 'path_out': f.get('path_out'),
                 'script_check': f.get('script_check'),
                 'script_in': f.get('script_in'),
+                'stream_input': self.__stream_input,
                 'comment': f.get('comment') or self.comment,
                 'weight': f.get('weight') or 0
             }
@@ -453,6 +458,8 @@ class DotFileUpdater:
 
         for k in self.__files:
             self.__files[k].write()
+
+        return 0
 
     def set_comment(self, value):
         # Chainable version of regular comment setter.
@@ -678,7 +685,7 @@ class DotFileUpdaterFile:
 
         content, errors = self.__parent.resolve(item.get_content())
         for token, raw, count in errors:
-            print('%s: Could not resolve token: %s' % (colour_text(self.__path, COLOUR_GREEN, raw)))
+            print('%s: Could not resolve token: %s' % (colour_text(self.__path, COLOUR_GREEN), raw))
         lines = content.split('\n')
 
         display = {
@@ -765,6 +772,7 @@ class DotFileUpdaterItem:
         self.__path_in = kwargs.get('path_in', '')
         self.__path_out = kwargs.get('path_out', '')
         self.tags = kwargs.get('tags', [])
+        self.__stream_input = kwargs.get('stream_input')
 
         self.__script_check = kwargs.get('script_check', '')
         self.__script_in = kwargs.get('script_in', '')
@@ -792,7 +800,7 @@ class DotFileUpdaterItem:
             if exit_code != 0:
                 raise Exception('Input script failed (returncode %d): %s' % (exit_code, colour_text(self.script_in, COLOUR_GREEN)))
         elif self.path_in == '-':
-            self.__content = sys.stdin.read()
+            self.__content = self.__stream_input.read()
         else:
             with open(self.path_in) as f:
                 self.__content = f.read()
@@ -887,16 +895,18 @@ class DotFileUpdaterItem:
 
     weight = property(__get_weight)
 
-def main(raw_args):
-    updater, errors = parse_args(raw_args)
+def main(raw_args, **kwargs):
+    try:
+        updater, errors = parse_args(raw_args, **kwargs)
 
-    if errors:
-        for e in errors:
-            print(e)
-        exit(1)
+        if errors:
+            for e in errors:
+                print(e)
+            return 1
 
-    exit_code = updater.run()
-    exit(exit_code)
+        return updater.run()
+    except KeyboardInterrupt:
+        return 130
 
-if __name__ == '__main__':
-    main(sys.argv[1:])
+if __name__ == '__main__': # pragma: no cover
+    exit(main(sys.argv[1:]))

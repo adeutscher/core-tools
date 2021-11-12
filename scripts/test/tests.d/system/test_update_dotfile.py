@@ -1,15 +1,142 @@
 #!/usr/bin/env python
 
 import common, unittest
+import io, json, os
+from tempfile import TemporaryDirectory as tempdir
 
-mod = common.load('update_dotfile', common.TOOLS_DIR + '/scripts/system/update_dotfile.py')
+class BaseUpdateTestCase(common.TestCase):
+    def setUp(self):
+        self.mod = common.load('update_dotfile', common.TOOLS_DIR + '/scripts/system/update_dotfile.py')
+        self.updater = self.mod.DotFileUpdater(environ={})
+        self.olddir = os.getcwd()
+
+    def tearDown(self):
+        os.chdir(self.olddir)
+
+class DotFileUpdaterCommandTests(BaseUpdateTestCase):
+
+    def test_basic_replace(self):
+        with tempdir() as td:
+
+            dst = os.path.join(td, 'dst-file')
+            src = os.path.join(td, 'src-file')
+            contents = 'abcde'
+            contents_dst = '1234'
+
+            marker = 'demo-marker'
+
+            with open(src, 'w') as f:
+                f.write(contents)
+
+            with open(dst, 'w') as f:
+                f.write(contents_dst)
+
+            cmd = ['-o', dst, '-i', marker, '-f', src]
+            exit_code = self.mod.main(cmd)
+            self.assertEqual(0, exit_code)
+
+            with open(dst, 'r') as f:
+                contents_modified = f.read()
+
+            self.assertStartsWith(contents_dst, contents_modified)
+            self.assertContains(contents, contents_modified)
+            self.assertContains(f'marker:{marker} checksum:', contents_modified)
+            self.assertContains(f'end:{marker}', contents_modified)
+
+    def test_config_variable(self):
+        with tempdir() as td:
+
+            dst = os.path.join(td, 'dst-file')
+            src = os.path.join(td, 'src-file')
+            config = os.path.join(td, 'config.json')
+
+            var_key='my_token'
+            var_content='the_contents'
+            contents = '---#{my_token}#---'
+            contents_expected = f'---{var_content}---'
+            contents_dst = '1234'
+
+            marker = 'demo-marker'
+
+            with open(src, 'w') as f:
+                f.write(contents)
+
+            config_data={'variables': {var_key: var_content}}
+
+            with open(config, 'w') as f:
+                json.dump(config_data, f)
+
+            with open(dst, 'w') as f:
+                f.write(contents_dst)
+
+            cmd = ['-o', dst, '-i', marker, '-f', src, '-c', config]
+            exit_code = self.mod.main(cmd)
+            self.assertEqual(0, exit_code)
+
+            with open(dst, 'r') as f:
+                contents_modified = f.read()
+
+            self.assertStartsWith(contents_dst, contents_modified)
+            self.assertContains(contents_expected, contents_modified)
+            self.assertDoesNotContain(var_key, contents_modified)
+            self.assertContains(f'marker:{marker} checksum:', contents_modified)
+            self.assertContains(f'end:{marker}', contents_modified)
+
+    '''
+    Test with stdin, or at least as close to it as we can get.
+    '''
+    def test_stdin(self):
+        with tempdir() as td:
+
+            dst = os.path.join(td, 'dst-file')
+            contents = 'abcde'
+            contents_dst = '1234'
+
+            marker = 'demo-marker'
+
+            with open(dst, 'w') as f:
+                f.write(contents_dst)
+
+            cmd = ['-o', dst, '-i', marker, '-f', '-']
+            with io.StringIO(contents) as s:
+                kwargs={'stream_input': s}
+                exit_code = self.mod.main(cmd, **kwargs)
+            self.assertEqual(0, exit_code)
+
+            with open(dst, 'r') as f:
+                contents_modified = f.read()
+
+            self.assertStartsWith(contents_dst, contents_modified)
+            self.assertContains(contents, contents_modified)
+            self.assertContains(f'marker:{marker} checksum:', contents_modified)
+            self.assertContains(f'end:{marker}', contents_modified)
+
+class DotFileUpdaterCommandErrorTests(BaseUpdateTestCase):
+
+    def test_config_bad_json(self):
+        with tempdir() as td:
+            path = os.path.join(td, 'a.json')
+            with open(path, 'w') as f:
+                f.write('{')
+            self.assertEqual(1, self.mod.main(['-c', path]))
+
+    def test_config_no_such_file(self):
+        with tempdir() as td:
+            path = os.path.join(td, 'a')
+            self.assertEqual(1, self.mod.main(['-c', path]))
+
+    '''
+    Confirm behavior for running with no arguments.
+
+    The script shouldn't like it, and should return an error.
+    '''
+    def test_no_args(self):
+        self.assertEqual(1, self.mod.main([]))
 
 '''
 Tests involving the resolve method of the DotFileUpdater class.
 '''
-class DotFileUpdaterResolveTests(common.TestCase):
-    def setUp(self):
-        self.updater = mod.DotFileUpdater(environ={})
+class DotFileUpdaterResolveTests(BaseUpdateTestCase):
 
     '''
     Confirm that trying to load a non-dictionary into system variables won't blow things up.
@@ -182,7 +309,7 @@ class DotFileUpdaterResolveTests(common.TestCase):
     '''
     Demonstrate using a fallback variable value, with the first value being a server name that is not set.
     '''
-    def test_success_fallback_os(self):
+    def test_success_fallback_os_1(self):
 
         raw = ' #{one}# #{#[hostname]#,fallback}# #{fallback,two}# '
 
@@ -203,7 +330,7 @@ class DotFileUpdaterResolveTests(common.TestCase):
     '''
     Demonstrate using a fallback variable value, with the first value being a server name that is not set.
     '''
-    def test_success_fallback_os(self):
+    def test_success_fallback_os_2(self):
 
         raw = ' #{one}# #{#[hostname]#,fallback}# #{fallback,two}# '
 
@@ -292,7 +419,7 @@ class DotFileUpdaterResolveTests(common.TestCase):
 '''
 Low-level tests of resolve() function.
 '''
-class ResolveTests(common.TestCase):
+class ResolveTests(BaseUpdateTestCase):
 
     def test_substitute_curly_success_full(self):
         pattern = r'#{([^}]+)}#'
@@ -303,7 +430,7 @@ class ResolveTests(common.TestCase):
             'abc': 'Substituted'
         }
 
-        content, unresolved = mod.resolve(raw, data, pattern)
+        content, unresolved = self.mod.resolve(raw, data, pattern)
 
         # Resolved all items
         self.assertEmpty(unresolved)
@@ -319,7 +446,7 @@ class ResolveTests(common.TestCase):
             'abc': 'Substituted'
         }
 
-        content, unresolved = mod.resolve(raw, data, pattern)
+        content, unresolved = self.mod.resolve(raw, data, pattern)
 
         self.assertEqual(' Substituted #{nope}#', content)
 
@@ -337,7 +464,7 @@ class ResolveTests(common.TestCase):
             'abc': 'Substituted'
         }
 
-        content, unresolved = mod.resolve(raw, data, pattern)
+        content, unresolved = self.mod.resolve(raw, data, pattern)
 
         self.assertEqual(' #{nope}# Substituted ', content)
 
@@ -355,7 +482,7 @@ class ResolveTests(common.TestCase):
             'abc': 'Substituted'
         }
 
-        content, unresolved = mod.resolve(raw, data, pattern)
+        content, unresolved = self.mod.resolve(raw, data, pattern)
 
         # Didn't fail to resolve any items
         self.assertEmpty(unresolved)
@@ -370,7 +497,7 @@ class ResolveTests(common.TestCase):
             'abc': 'Substituted'
         }
 
-        content, unresolved = mod.resolve(raw, data, pattern)
+        content, unresolved = self.mod.resolve(raw, data, pattern)
 
         self.assertEqual(' Substituted #[nope]#', content)
 
@@ -387,7 +514,7 @@ class ResolveTests(common.TestCase):
             'abc': 'Substituted'
         }
 
-        content, unresolved = mod.resolve(raw, data, pattern)
+        content, unresolved = self.mod.resolve(raw, data, pattern)
 
         self.assertEqual(' #[nope]# Substituted ', content)
 
