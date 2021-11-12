@@ -149,12 +149,12 @@ File Configuration:
             if tt and tt not in tags:
                 tags.append(tt)
 
+    stream_input = kwargs.get('stream_input', sys.stdin)
+
     updater_args = {
         'tags': tags,
+        'stream_input': stream_input
     }
-    stream_input = kwargs.get('stream_input')
-    if stream_input:
-        updater_args['stream_input'] = stream_input
 
     updater = DotFileUpdater(**updater_args)
     config_blocks = []
@@ -206,10 +206,9 @@ File Configuration:
             'path_out': args.path_out,
             'script_in': args.script_in,
             'comment': updater.comment,
-            'weight': args.weight or 0
+            'weight': args.weight or 0,
+            'stream_input': stream_input
         }
-        if stream_input:
-            file_args['stream_input'] = stream_input
 
         errors += updater.load_file(**file_args)
 
@@ -307,7 +306,8 @@ class DotFileUpdater:
         args = {
             'parent': self,
             'path': item.path_out,
-            'comment': item.comment or fallback_comment
+            'comment': item.comment or fallback_comment,
+            'stream_input': self.__stream_input
         }
         f = DotFileUpdaterFile(**args)
         self.__files[item.path_out] = f
@@ -503,7 +503,7 @@ class DotFileUpdaterFile:
         self.__comment = kwargs.get('comment')
         self.__parent = kwargs.get('parent')
         self.__path = kwargs.get('path')
-
+        self.__stream_input = kwargs.get('stream_input')
         self.__new = not os.path.isfile(self.__path)
 
         # Get lines
@@ -576,7 +576,8 @@ class DotFileUpdaterFile:
                                 'checksum': checksum,
                                 'weight': weight,
                                 'start': start,
-                                'end': i
+                                'end': i,
+                                'stream_input': self.__stream_input
                             }
 
                             self.__blocks.append(DotFileUpdaterBlock(**block_args))
