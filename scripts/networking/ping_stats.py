@@ -61,6 +61,7 @@ def hexit(exit_code):
     print("           while attempting a streak.")
     print(" -d: Debug mode. Print the raw output of ping command.")
     print(" -t: Tally mode. Always display a tally of successful pings.")
+    print(" -s seconds: Time between pings (Default: 1)")
     print("Set streak count as an optional second argument. Default: %s" % colour_text(DEFAULT_STREAK_COUNT))
 
     exit(exit_code)
@@ -80,12 +81,18 @@ def main(cli_args):
     debug = False
     tally = False
     port = 0
+    rest_time_raw = None
+    rest_time_have = False
+    rest_time = 1
 
     try:
-        opts, operands = getopt.gnu_getopt(cli_args, "c:dhp:rtu")
+        opts, operands = getopt.gnu_getopt(cli_args, "c:dhp:rs:tu")
     except Exception as e:
         print("Error parsing arguments: %s" % str(e))
         exit(1)
+
+    # Error check
+    error = False
 
     for f, v in opts:
         if f == "-h":
@@ -93,6 +100,9 @@ def main(cli_args):
         if f == '-r':
             reliable = True
             mode = MODE_RELIABLE
+        elif f == '-s':
+            rest_time_raw = v
+            rest_time_have = True
         elif f == '-u':
             unreliable = True
             mode = MODE_UNRELIABLE
@@ -106,9 +116,6 @@ def main(cli_args):
         elif f == '-c':
             count_raw = v
             count_have = True
-
-    # Error check
-    error = False
 
     if reliable and unreliable:
         print("Cannot wait for reliable and unreliable pings at the same time.")
@@ -146,6 +153,15 @@ def main(cli_args):
             port = 0
             error = True
 
+    if rest_time_have:
+        try:
+            rest_time = int(rest_time_raw)
+            if rest_time < 1:
+                raise ValueError()
+        except ValueError:
+            print('Invalid rest time:', rest_time_raw)
+            error = True
+
     streak_count = DEFAULT_STREAK_COUNT
     if len(operands) > 1:
         try:
@@ -180,6 +196,7 @@ def main(cli_args):
     p.debug = debug
     p.tally = tally
     p.port = port
+    p.rest_time = rest_time
 
     return p.run()
 
@@ -237,6 +254,9 @@ class PingStatistics:
     def __get_port(self):
         return self.__port
 
+    def __get_rest_time(self):
+        return self.__rest_time
+
     def __get_server(self):
         return self.__server
 
@@ -264,6 +284,9 @@ class PingStatistics:
     def __set_port(self, value):
         self.__port = value
 
+    def __set_rest_time(self, value):
+        self.__rest_time = value
+
     def __set_server(self, value):
         self.__server = value
 
@@ -277,6 +300,7 @@ class PingStatistics:
     ip = property(__get_ip, __set_ip)
     limit = property(__get_limit, __set_limit)
     port = property(__get_port, __set_port)
+    rest_time = property(__get_rest_time, __set_rest_time)
     server = property(__get_server, __set_server)
     streak = property(__get_streak, __set_streak)
     tally = property(__get_tally, __set_tally)
@@ -548,7 +572,7 @@ class PingStatistics:
 
                 if continue_loop:
                     # If there is another loop upcoming, sleep for the remainder of a second that's left.
-                    time.sleep(max(0, 1-r["time"]))
+                    time.sleep(max(0, self.rest_time - r["time"]))
 
         except KeyboardInterrupt:
             exit_code = 130
