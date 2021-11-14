@@ -1,32 +1,55 @@
 #!/usr/bin/env python
 
-# Ping wrapper script.
-# As opposed to using flat ping, this will give the user more live
-#   statistics without having to Ctrl-C out and reset their counters
-#   at the same time.
-# In particular, I want to know my percentage of dropped pings on a per-ping basis.
-# This script has the capability to use TCP connections instead with the '-p' switch
+# General
+from getopt import gnu_getopt
+import logging
+import sys # Argument Parsing
+from time import sleep, time
 
-from __future__ import print_function
-import errno, getopt, re, platform, socket, string, subprocess, sys, time
+# ICMP support
+from platform import system as platform
+from subprocess import Popen as cmd, PIPE as pipe
+from re import search, sub
 
-def colour_text(text, colour = None):
+# TCP Support
+import errno, socket
+
+def _build_logger(label, err = None, out = None):
+  obj = logging.getLogger(label)
+  obj.setLevel(logging.DEBUG)
+  # Err
+  err_handler = logging.StreamHandler(err or sys.stderr)
+  err_filter = logging.Filter()
+  err_filter.filter = lambda record: record.levelno >= logging.WARNING
+  err_handler.addFilter(err_filter)
+  obj.addHandler(err_handler)
+  # Out
+  out_handler = logging.StreamHandler(out or sys.stdout)
+  out_filter = logging.Filter()
+  out_filter.filter = lambda record: record.levelno < logging.WARNING
+  out_handler.addFilter(out_filter)
+  obj.addHandler(out_handler)
+  return obj
+
+logger = _build_logger('ping_stats')
+
+def _colour_green(text):
+    # Lazy shorthand for the common habit of using green to highlight paths.
+    return _colour_text(text, COLOUR_GREEN)
+
+def _colour_text(text, colour = None):
     colour = colour or COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
-    return "%s%s%s" % (colour, text, COLOUR_OFF)
+    return '%s%s%s' % (colour, text, COLOUR_OFF)
 
-def colour_green(text):
-    # Lazy shorthand for the common habit of using green to highlight paths.
-    return colour_text(text, COLOUR_GREEN)
-
-def enable_colours(force = False):
+def _enable_colours(force = None):
     global COLOUR_BOLD
     global COLOUR_BLUE
     global COLOUR_RED
     global COLOUR_GREEN
     global COLOUR_YELLOW
     global COLOUR_OFF
-    if force or sys.stdout.isatty():
+    if force == True or (force is None and sys.stdout.isatty()):
         # Colours for standard output.
         COLOUR_BOLD = '\033[1m'
         COLOUR_BLUE = '\033[1;94m'
@@ -42,565 +65,574 @@ def enable_colours(force = False):
         COLOUR_GREEN = ''
         COLOUR_YELLOW = ''
         COLOUR_OFF = ''
-enable_colours()
+_enable_colours()
 
-MODE_NORMAL = 1
-MODE_RELIABLE = 2
-MODE_UNRELIABLE = 3
+def _translate_result(result):
+    if result == RESULT_SUCCESS:
+        return 'success'
+    if result == RESULT_TIMEOUT:
+        return 'timeout'
+    if result == RESULT_CLOSED:
+        return 'closed'
+    if result == RESULT_UNREACHABLE:
+        return 'unreachable'
 
-DEFAULT_STREAK_COUNT = 15
+'''
+Translate seconds to something more human-readable
+'''
+def _translate_seconds(duration):
 
-def hexit(exit_code):
+    modules = [
+        ('seconds', 60),
+        ('minutes',60),
+        ('hours',24),
+        ('days',7),
+        ('weeks',52),
+        ('years',100)
+    ]
 
-    print("Usage: %s address [-c count] [-r] [-u] [streak_count]" % colour_green("./ping-stats.py"))
-    print(" -r: Exit when a streak of successful pings reaches the streak count.")
-    print(" -u: Exit when a streak of failed pings reaches the streak count.")
-    print(" -p port : Instead of using ICMP pings, scan on the specified TCP port.")
-    print(" -c count: Limit the total number of packets sent.")
-    print("           Will exit with a non-zero exit code if limit is reached")
-    print("           while attempting a streak.")
-    print(" -d: Debug mode. Print the raw output of ping command.")
-    print(" -t: Tally mode. Always display a tally of successful pings.")
-    print(" -s seconds: Time between pings (Default: 1)")
-    print("Set streak count as an optional second argument. Default: %s" % colour_text(DEFAULT_STREAK_COUNT))
+    num = max(0, int(duration))
 
-    exit(exit_code)
-
-def main(cli_args):
-
-    if cli_args == sys.argv:
-        cli_args = cli_args[1:]
-
-    mode = MODE_NORMAL
-    reliable = unreliable = False
-    count = 0
-    count_raw = None
-    count_have = False
-    port_raw = None
-    port_have = False
-    debug = False
-    tally = False
-    port = 0
-    rest_time_raw = None
-    rest_time_have = False
-    rest_time = 1
-
-    try:
-        opts, operands = getopt.gnu_getopt(cli_args, "c:dhp:rs:tu")
-    except Exception as e:
-        print("Error parsing arguments: %s" % str(e))
-        exit(1)
-
-    # Error check
-    error = False
-
-    for f, v in opts:
-        if f == "-h":
-            hexit(0)
-        if f == '-r':
-            reliable = True
-            mode = MODE_RELIABLE
-        elif f == '-s':
-            rest_time_raw = v
-            rest_time_have = True
-        elif f == '-u':
-            unreliable = True
-            mode = MODE_UNRELIABLE
-        elif f == '-t':
-            tally = True
-        elif f == '-p':
-            port_raw = v
-            port_have = True
-        elif f == '-d':
-            debug = True
-        elif f == '-c':
-            count_raw = v
-            count_have = True
-
-    if reliable and unreliable:
-        print("Cannot wait for reliable and unreliable pings at the same time.")
-        error = True
-
-    if not operands:
-        print("No server specified.")
-        error = True
-    else:
-        addr = operands[0]
-
-        try:
-            ip = socket.gethostbyname(addr)
-        except socket.gaierror:
-            print("Unable to resolve address: %s" % colour_text(addr, COLOUR_BLUE))
-            error = True
-
-    if count_have:
-        try:
-            count = int(count_raw)
-            if count < 0:
-                raise Exception()
-        except:
-            print("Bad number of attempts to transmit. Must be a positive number (0 for unlimited)")
-            count = 0
-            error = True
-
-    if port_have:
-        try:
-            port = int(port_raw)
-            if port < 1 or port > 65535:
-                raise Exception()
-        except:
-            print("Bad TCP port number. Must be an integer in the range of 1-65535")
-            port = 0
-            error = True
-
-    if rest_time_have:
-        try:
-            rest_time = int(rest_time_raw)
-            if rest_time < 1:
-                raise ValueError()
-        except ValueError:
-            print('Invalid rest time:', rest_time_raw)
-            error = True
-
-    streak_count = DEFAULT_STREAK_COUNT
-    if len(operands) > 1:
-        try:
-            streak_count = int(operands[1])
-            if streak_count <= 0:
-                # Without mods to getopts a negative operand actually can't even be used, but anyhow...
-                print("Attempt number must be greater than zero. Provided: %s" % colour_text(streak_count))
-                error = True
-        except ValueError:
-            print("Invalid attempt number: %s" % colour_text(operands[1]))
-            error = True
-
-    if (reliable or unreliable) and count and streak_count > count:
-
-        if reliable:
-            wording = "successful"
-        else:
-            wording = "unsuccessful"
-
-        print("Ping limit of %s is less than desired streak of %s %s pings." % (colour_text(count), colour_text(streak_count), wording))
-        error = True
-
-    if error:
-        hexit(1)
-
-    p = PingStatistics()
-    p.server = addr
-    p.ip = ip
-    p.mode = mode
-    p.streak = streak_count
-    p.limit = count
-    p.debug = debug
-    p.tally = tally
-    p.port = port
-    p.rest_time = rest_time
-
-    return p.run()
-
-def translate_seconds(duration, add_and = False):
-    modules = [("seconds", 60, None), ("minutes",60,None), ("hours",24,None), ("days",7,None), ("weeks",52,None), ("years",100,None), ("centuries",100,"century")]
-    num = int(duration)
-    i = -1
-    c = -1
+    if not num:
+        # Handle empty
+        return '0 %s' % modules[0][0]
 
     times = []
     for i in range(len(modules)):
 
-        noun = modules[i][0]
-        value = modules[i][1]
+        noun, value = modules[i]
         mod_value = num % value
 
         if mod_value == 1:
-            if modules[i][2]:
-                noun = modules[i][2]
-            else:
-                noun = re.sub("s$", "", noun)
+            noun = sub('s$', '', noun)
 
         if mod_value:
-            times.append("%s %s" % (mod_value, noun))
+            times.append('%s %s' % (mod_value, noun))
 
-        num = int(num / modules[i][1])
+        num = int(num / value)
         if not num:
             break # No more modules to process
 
     if len(times) == 1:
-        return " ".join(times)
+        return ' '.join(times)
     elif len(times) == 2:
-        return ", ".join(reversed(times))
+        return ', '.join(reversed(times))
     else:
         # Oxford comma
-        d = ", and "
+        d = ', and '
         s = d.join(reversed(times))
         sl = s.split(d, len(times) - 2)
-        return ", ".join(sl)
+        return ', '.join(sl)
+MODE_RELIABLE = 0x01
+MODE_UNRELIABLE = 0x02
 
-class PingStatistics:
+RESULT_SUCCESS = 1
+RESULT_TIMEOUT = 2
+RESULT_CLOSED = 3
+RESULT_UNREACHABLE = 4
 
-    def __get_debug(self):
-        return self.__debug
+DEFAULT_STREAK_COUNT = 10
 
-    def __get_ip(self):
-        return self.__ip
-
-    def __get_mode(self):
-        return self.__mode
-
-    def __get_limit(self):
-        return self.__limit
-
-    def __get_port(self):
-        return self.__port
-
-    def __get_rest_time(self):
-        return self.__rest_time
-
-    def __get_server(self):
-        return self.__server
-
-    def __get_streak(self):
-        return self.__streak
-
-    def __get_tally(self):
-        return self.__tally
-
+class PingContext:
     def __init__(self):
-        pass
-
-    def __set_debug(self, value):
-        self.__debug = value
-
-    def __set_ip(self, value):
-        self.__ip = value
-
-    def __set_limit(self, value):
-        self.__limit = value
-
-    def __set_mode(self, value):
-        self.__mode = value
-
-    def __set_port(self, value):
-        self.__port = value
-
-    def __set_rest_time(self, value):
-        self.__rest_time = value
-
-    def __set_server(self, value):
-        self.__server = value
-
-    def __set_streak(self, value):
-        self.__streak = value
-
-    def __set_tally(self, value):
-        self.__tally = value
-
-    debug = property(__get_debug, __set_debug)
-    ip = property(__get_ip, __set_ip)
-    limit = property(__get_limit, __set_limit)
-    port = property(__get_port, __set_port)
-    rest_time = property(__get_rest_time, __set_rest_time)
-    server = property(__get_server, __set_server)
-    streak = property(__get_streak, __set_streak)
-    tally = property(__get_tally, __set_tally)
-
-    def do_icmp(self):
-        r = {}
-        if platform.system() in ["Linux", "Darwin"]:
-            # Unix platform
-            # ToDo: Improve this check
-            cmd=["ping", "-W1", "-c1", self.server]
-        else:
-            # Windows Environment (assumed)
-            cmd=["ping", "-w", "1", "-n", "1", self.server]
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = p.communicate()
-        out = str(out).replace("\\n", "\n")
-
-        if self.debug:
-            print(out)
-
-        pattern=r"(Reply from [^:]+: bytes|\d+ bytes from)[^\n]+"
-        l = re.search(pattern, str(out))
-
-        if not l or p.returncode:
-            r['result'] = 'timeout'
-            return r
-
-        r['success'] = True
-        r['symbol'] = '^'
-        r['result'] = 'reply'
-        # Strip out the icmp_seq value because our implementation invokes a new
-        #   ping process. icmp_seq will always be '1'.
-        line = re.sub("((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)", "", l.group(0))
-        line = line.replace("time=", "t=")
-        r["line"] = re.sub("(\.[\d]{2})\d? ms", r"\1 ms", line)
-        return r
-
-    def do_tcp(self):
-
-        r = {
-            'line': 'TCP/%s' % self.port
-        }
-
-        time_start = time.time()
-        while True:
-
-            # Note: Python2 socket objects do not have an __exit__ method,
-            #         so with/__exit__ cannot be used.
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(1)
-            # https://www.tutorialspoint.com/python_penetration_testing/python_penetration_testing_network_scanner.htm
-            conn_result = s.connect_ex((self.server, self.port))
-            time_duration = time.time() - time_start
-
-            if self.debug:
-                print('Connection response (%.02f seconds): %s' % (time_duration, conn_result))
-
-            # If connect_ex() returned 11 (EAGAIN), then continue the loop.
-            # Give up after 10s. If the traffic is being dropped, then
-            #   the loop will go on for too long (possibly endless?)
-            # A value of 10s was chosen to distinguish between a connection that's
-            #   taking a while to time out and something that's being intentionally dropped.
-            # This was determined by comparing two addresses:
-            #   * Unused IP on local and remote networks (3-6ss to get a 113/EHOSTUNREACH)
-            #     * The 6s timeouts are less common than the 3s ones.
-            #   * Local address with a DROP rule in effect against the pinging host would take much too long.
-            if conn_result == errno.EAGAIN and time_duration < 10:
-                continue
-
-            r['success'] = conn_result == 0
-
-            if r['success']:
-                # Successfully established a connection.
-                r['result'] = 'open'
-                r['symbol'] = '^'
-
-                # Possible future improvement - could take a leaf from nmap here and do some basic operation well-known ports for information.
-                # Probably won't implement this in any rush, though. The purpose of this script is on confirming the status of known hosts, not in exploring unknown hosts.
-            elif conn_result == errno.ECONNREFUSED:
-                # Server was not listening on the target port.
-
-                # This response could also happen if iptables REJECTs the connection.
-                #   nmap can't or doesn't distinguish between the two causes, so I'm not too worried distinguishing either
-                r['result'] = 'closed'
-                # Using the same symbol as 'up', because a closed port is considered
-                #   to be just as definitive an answer as an open port.
-                r['symbol'] = '^'
-
-            elif conn_result == errno.EHOSTUNREACH:
-                # Socket gave up.
-                # This can come about with a timeout on a resource on the
-                #  same collision domain as the machine running this script.
-                r['result'] = 'unreachable'
-                # Distinguish an unreachable result from an ambiguous timeout
-                r['symbol'] = 'x'
-
-            else:
-                # Untracked error, or the script gave up.
-                # This could happen if the ping gets hit by a DROP target in iptables
-                r['result'] = 'timeout'
-
-            s.close()
-            break
-        return r
-
-    def ping(self):
-        t = time.time()
-
-        if self.port:
-            method = self.do_tcp
-        else:
-            method = self.do_icmp
-
-        r = method()
-        # Calculate time lazily using python time rather than the time from ping.
-        # This might result in some inaccurate numbers, but I think it's minor enough to let slide
-        r["time"] = time.time() - t
-        return r
-
-    def run(self):
-
-        start_time = time.time()
-
-        total_pings = 0
-        total_success = 0
-
-        time_max = 0
-        time_min = 0
-        time_avg = 0
-
-        # Draw a little "heartbeat" chart of how recent pinging is doing.
-        chart = ''
-        colours = []
-
-        recent_limit = 10
-
-        # Current time for final statistics
-        t = time.time()
-
+        # Count success tallies
+        self.total = self.total_success = 0
         # Track our streak of failed/succeeded pings
-        streak_fail = 0
-        streak_success = 0
+        self.streak_fail = self.streak_success = 0
+        # Track time stats
+        self.time_max = self.time_min = self.time_avg = 0
+        self.time_end = self.time_start = 0
 
-        # Store desired exit code.
-        exit_code = 0
+def do_icmp(**kwargs):
 
-        if self.server != self.ip:
-            display_server = '%s (%s)' % (colour_text(self.server, COLOUR_BLUE), colour_text(self.ip, COLOUR_BLUE))
+    target = kwargs.get('ip')
+    debug = kwargs.get('debug', False)
+
+    if platform() in ['Linux', 'Darwin']:
+        # Unix platform
+        # ToDo: Improve this check
+        cmd_args=['ping', '-W1', '-c1', target]
+    else:
+        # Windows Environment (assumed)
+        cmd_args=['ping', '-w', '1', '-n', '1', target]
+    p = cmd(cmd_args, stdout=pipe, stderr=pipe)
+    out, err = p.communicate()
+    out = str(out).replace('\\n', '\n')
+
+    if debug:
+        logger.debug(out)
+
+    result = {}
+
+    pattern=r'(Reply from [^:]+: bytes|\d+ bytes from)[^\n]+'
+    l = search(pattern, str(out))
+
+    if not l or p.returncode:
+        # Not successful, immediately return
+        result = RESULT_TIMEOUT
+        return result, None, None
+
+    # If we got past without an error, then the ping was successful.
+    result = RESULT_SUCCESS
+    display = 'reply'
+
+    # Strip out the icmp_seq value because our implementation invokes a new
+    #   ping process. icmp_seq will always be '1'.
+    line = sub('((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)', '', l.group(0))
+    line = line.replace('time=', 't=')
+    line = sub('(\.[\d]{2})\d? ms', r'\1 ms', line)
+    return result, display, line
+
+def do_tcp(**kwargs):
+
+    target = kwargs.get('ip')
+    port = kwargs.get('port')
+    debug = kwargs.get('debug', False)
+
+    line = 'TCP/%s' % port
+    display = None
+
+    time_start = time()
+
+    while True:
+        # Note: Python2's socket objects do not have an __exit__ method,
+        #         so with/__exit__ cannot be used if this script is to be
+        #         usable on the older version.
+        s = get_tcp_socket()
+        # https://www.tutorialspoint.com/python_penetration_testing/python_penetration_testing_network_scanner.htm
+        result_conn = s.connect_ex((target, port))
+        time_duration = time() - time_start
+
+        if debug:
+            logger.debug('Connection result (%.02f seconds): %s' % (time_duration, result_conn))
+
+        # If connect_ex() returned 11 (EAGAIN), then continue the loop.
+        # Give up after 10s. If the traffic is being dropped, then
+        #   the loop will go on for too long (possibly endless?)
+        # A value of 10s was chosen to distinguish between a connection that's
+        #   taking a while to time out and something that's being intentionally dropped.
+        # This was determined by comparing two addresses:
+        #   * Unused IP on local and remote networks (3-6ss to get a 113/EHOSTUNREACH)
+        #     * The 6s timeouts are less common than the 3s ones.
+        #   * Local address with a DROP rule in effect against the pinging host would take much too long.
+        if result_conn == errno.EAGAIN and time_duration < 10:
+            continue
+
+        if result_conn == 0:
+            # Successfully established a connection.
+            result = RESULT_SUCCESS
+            display = 'open'
+
+            # Possible future improvement - could take a leaf from nmap here
+            #   and do some basic operation well-known ports for information.
+            # Probably won't implement this in any rush, though.
+            # The purpose of this script is to confirm the basic status of known hosts.
+            # It is not made for exploring unknown hosts.
+        elif result_conn == errno.ECONNREFUSED:
+            # Server was not listening on the target port.
+
+            # This result could also happen if iptables REJECTs the connection.
+            #   nmap can't or doesn't distinguish between the two causes, so I'm not too worried distinguishing either
+            result = RESULT_CLOSED
+
+        elif result_conn == errno.EHOSTUNREACH:
+            # Socket gave up.
+            # This can come about with a timeout on a resource on the
+            #  same collision domain as the machine running this script.
+
+            # Unreachable should be distinguished from
+            #  an unreachable result from an ambiguous timeout
+            result = RESULT_UNREACHABLE
+
         else:
-            display_server = colour_text(self.server, COLOUR_BLUE)
+            # Untracked error, or the script gave up.
+            # This could happen if the ping gets hit by a DROP target in iptables
+            result = RESULT_TIMEOUT
 
-        # Announce
+        s.close()
+        break
+    return result, display, line
 
-        if self.port:
-            wording_method = 'reached over the TCP/%d port' % self.port
-            wording_noun = 'TCP attempt'
-        else:
-            wording_noun = 'Ping'
-            wording_method = 'pinged'
+'''
+Get display phrasing for target
+'''
+def get_target(**kwargs):
 
-        reliability_check = self.mode in (MODE_RELIABLE, MODE_UNRELIABLE)
-        if reliability_check:
-            if self.mode == MODE_RELIABLE:
-                word = colour_green("can")
-            else:
-                word = colour_text("cannot", COLOUR_RED)
+    # Shorthand
+    addr = kwargs.get('addr')
+    ip = kwargs.get('ip')
 
-            print("Waiting until %s %s be %s %s times in a row." % (display_server, word, wording_method, colour_text(self.streak)))
-            if self.limit:
-                print("Will terminate unsuccessfully if we cannot do so after %s %s attempts." % (colour_text(self.limit), wording_noun))
-        elif self.limit:
-            print("%s attempt count: %s" % (wording_noun, colour_text(self.limit)))
+    if addr != ip:
+        return '%s (%s)' % (_colour_text(addr, COLOUR_BLUE), _colour_text(ip, COLOUR_BLUE))
+    else:
+        return _colour_text(addr, COLOUR_BLUE)
+
+def get_tcp_socket():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(1)
+    return s
+
+def main(args_raw):
+    valid, args = parse_args(args_raw)
+
+    if not valid:
+        return 1
+
+    if 'port' in args:
+        args['callback'] = do_tcp
+    else:
+        args['callback'] = do_icmp
+    # If another developer wants to make their own callback, then they will have
+    #  to edit main or provide their own callback to a direct call of run().
+
+    # Track statistics in an object that will be passed
+    ctx = PingContext()
+
+    print_args(**args)
+
+    exit_code = 0
+    try:
+        result = run(ctx, **args)
+    except KeyboardInterrupt:
+        # Unlike ping, always return exit code 130
+        # Inner catch here in order to display results after cancelling
+        exit_code = 130
+    ctx.time_end = time()
+
+    if not print_results(args, ctx, exit_code):
+        return 1
+
+    return exit_code
+
+def parse_args(args_raw):
+
+    def hexit(hexit_code):
+
+        logger.info('Usage: %s address [-c count] [-r] [-u] [streak_count]' % _colour_green('./ping-stats.py'))
+        logger.info(' -r: Exit when a streak of successful pings reaches the streak count.')
+        logger.info(' -u: Exit when a streak of failed pings reaches the streak count.')
+        logger.info(' -p port : Instead of using ICMP pings, scan on the specified TCP port.')
+        logger.info(' -c count: Limit the total number of packets sent.')
+        logger.info('           Will exit with a non-zero exit code if limit is reached')
+        logger.info('           while attempting a streak.')
+        logger.info(' -d: Debug mode. Print the raw output of ping command.')
+        logger.info(' -t: Tally mode. Always display a tally of successful pings.')
+        logger.info(' -s seconds: Time between pings (Default: 1)')
+        logger.info('Set streak count as an optional second argument. Default: %s' % _colour_text(DEFAULT_STREAK_COUNT))
+
+        exit(hexit_code)
+
+    def validate_int(value_raw, label, expr = lambda i: i > 0, msg = None):
+        try:
+            value_parsed = int(value_raw)
+            if not expr(value_parsed):
+                raise ValueError()
+            return True, value_parsed
+        except ValueError:
+            logger.error(msg or 'Invalid %s: %s' % (label, value_raw))
+            return False, None
+
+    # Value-tracking
+
+    args = { 'mode': 0 }
+
+    try:
+        opts, operands = gnu_getopt(args_raw, 'c:dhi:p:rtu')
+    except Exception as e:
+        logger.error('Error parsing arguments: %s' % str(e))
+        hexit(1)
+
+    # Error check
+    error = False
+
+    for arg, value in opts:
+        if arg == '-h':
+            hexit(0)
+
+        if arg == '-c':
+            # Count
+            valid, value = validate_int(value, 'count')
+            error = error or not valid
+            if valid:
+                args['count'] = value
+        elif arg == '-d':
+            # Debug
+            args['debug'] = True
+        elif arg == '-i':
+            # Interval
+            valid, value = validate_int(value, 'interval')
+            error = error or not valid
+            if valid:
+                args['interval'] = value
+        elif arg == '-p':
+            # Port
+            valid, value = validate_int(value, 'port', lambda i: i > 0 and i <= 65535, 'Bad TCP port number. Must be an integer in the range of 1-65535')
+            error = error or not valid
+            if valid:
+                args['port'] = value
+        elif arg == '-r':
+            # Reliable-mode
+            args['mode'] |= MODE_RELIABLE
+        elif arg == '-t':
+            # Tally
+            args['tally'] = True
+        elif arg == '-u':
+            # Unreliable-mode
+            args['mode'] |= MODE_UNRELIABLE
+
+    if args['mode'] == MODE_RELIABLE | MODE_UNRELIABLE:
+        # Reliable-mode and unreliable-mode are mutually exclusive
+        logger.error('Cannot wait for reliable and unreliable pings at the same time.')
+        error = True
+
+    if not operands:
+        logger.error('No target server specified.')
+        error = True
+    else:
+        args['addr'] = operands[0]
 
         try:
-            continue_loop = True
-            while continue_loop:
-                r = self.ping()
+            args['ip'] = socket.gethostbyname(args['addr'])
+        except socket.gaierror:
+            logger.error('Unable to resolve address: %s' % _colour_text(args['addr'], COLOUR_BLUE))
+            error = True
 
-                total_pings += 1
-                if r.get("success", False):
-                    total_success += 1
+    if args['mode'] & (MODE_RELIABLE | MODE_UNRELIABLE):
+        if len(operands) > 1:
+            valid, streak = validate_int(operands[-1], 'attempt count', lambda i: i > 0)
+            error = error or not valid
+            if valid:
+                args['streak'] = streak
+        else:
+            streak = DEFAULT_STREAK_COUNT
 
-                time_max = max(time_max, r['time'])
-                time_min = min(time_min, r['time'])
-                time_avg += ((r['time'] - time_avg) / total_pings)
+        count = args.get('count')
 
-                verb = r.get('result', 'unknown')
-                line = r.get('line', '').strip()
-                extra = ''
+        if count and count < streak:
+            logger.error('Can never reach streak goal of %s with a count limit of %s.' % (_colour_text(streak), _colour_text(count)))
+            error = True
 
-                # Modify heartbeat chart
-                if r.get('success'):
-                    streak_fail = 0
-                    streak_success += 1
+    return not error, args
 
-                    chart += r.get('symbol', '^')
-                    colour = COLOUR_GREEN
-                    colours.append(colour)
+'''
+Print a summary of arguments.
+'''
+def print_args(**kwargs):
+    port = kwargs.get('port')
+    if port:
+        wording_noun = 'TCP attempt'
+        wording_method = 'reached over the TCP/%d port' % port
+    else:
+        wording_noun = 'Ping'
+        wording_method = 'pinged'
 
-                    # Only bother announcing the number of successes in a row when testing for reliability.
-                    if self.mode == MODE_RELIABLE:
-                        extra = ' (%s succeeded)' % colour_text("%d/%d" % (streak_success, self.streak))
-                    elif self.mode == MODE_UNRELIABLE:
-                        if self.tally:
-                            extra = '(%s failed, %s succeeded in a row)' % (colour_text('%d/%d' % (streak_fail, self.streak)), colour_text(streak_success))
-                        else:
-                            extra = '(%s failed)' % colour_text('%d/%d' % (streak_fail, self.streak))
-                    elif self.tally:
-                        extra = '(%s succeeded in a row)' % colour_text(streak_success)
+    target = get_target(**kwargs)
 
+    mode = kwargs['mode']
+    count = kwargs.get('count')
+
+    if mode & (MODE_RELIABLE | MODE_UNRELIABLE):
+        # Using one of the specialty modes.
+        if mode & MODE_RELIABLE > 0:
+            word = _colour_green('can')
+        else:
+            # If not in reliable mode, must be in unreliable mode
+            word = _colour_text('cannot', COLOUR_RED)
+
+        streak = kwargs.get('streak', DEFAULT_STREAK_COUNT)
+
+        logger.info('Waiting until %s %s be %s %s times in a row.' % (target, word, wording_method, _colour_text(streak)))
+
+        if count:
+            logger.info('Will terminate unsuccessfully if we cannot do so after %s %s attempts.' % (_colour_text(count), wording_noun))
+
+    elif count:
+        logger.info('%s attempt count: %s' % (wording_noun, _colour_text(count)))
+
+    interval = kwargs.get('interval')
+    if interval:
+        logger.info('Time between attempts (seconds): %s' % _colour_text(interval))
+
+def print_results(args, ctx, exit_code):
+
+    if not ctx.total:
+        # No pings, skip report
+        return True
+
+    error = False
+
+    # Shorthand
+    mode = args['mode']
+    streak = args.get('streak', DEFAULT_STREAK_COUNT)
+    streak_check = mode & (MODE_RELIABLE | MODE_UNRELIABLE)
+
+    if streak_check:
+        logger.info('\nDuration: %s', _translate_seconds(ctx.time_end - ctx.time_start))
+
+    if not exit_code and streak_check and ctx.total == args.get('count') and (
+        (mode & MODE_RELIABLE and ctx.streak_success < streak)
+        or (mode & MODE_UNRELIABLE and ctx.streak_fail < streak)
+    ):
+        # Set an exit code if we weren't able to get the required number of successful/failed pings within the limit.
+        # (Do not override the exit code of a keyboard interrupt)
+        error = True
+
+    logger.info('\n--- %s ping statistics ---' % get_target(**args))
+    # ping numbers in ping-like format
+    logger.info('%s packets transmitted, %d received, %.02f%% packet loss' % (ctx.total, ctx.total_success, 100 - float(ctx.total_success) / ctx.total * 100))
+    # rtt stats. I don't worry about this as much as success percentage.
+    logger.info('rtt min/avg/max %.03f/%.03f/%.03f' % (ctx.time_min, ctx.time_avg, ctx.time_max))
+
+    return not error
+
+
+def run(ctx, **kwargs):
+
+    def get_symbol(result, is_success):
+        if is_success:
+            c = COLOUR_GREEN
+        else:
+            c = COLOUR_RED
+
+        if result == RESULT_SUCCESS:
+            s = '^'
+        elif result == RESULT_CLOSED:
+            # Same symbol as 'up' for closed.
+            # A closed port is just as definitive as an open port.
+            s = '^'
+        elif result == RESULT_UNREACHABLE:
+            # Distinguish unreachable result from an ambiguous timeout
+            s = 'x'
+        else:
+            # Default result (timeout)
+            s = '-'
+
+        return s, c
+
+    callback = kwargs.get('callback')
+    count = kwargs.get('count')
+    interval = kwargs.get('interval', 1)
+    mode = kwargs.get('mode')
+    streak = kwargs.get('streak', DEFAULT_STREAK_COUNT)
+    tally = kwargs.get('tally', False)
+    target = kwargs.get('ip')
+
+    ctx.time_start = time()
+
+    # 'heartbeat' chart of ping health.
+    chart = ''
+    colours = []
+    chart_length = 10
+
+    while True:
+        start = time()
+        result, display, line = callback(**kwargs)
+
+        # Calculate time lazily using python time rather than
+        #   parsing from callbacks.
+        # This might result in some inaccurate numbers,
+        #   but I think it's minor enough to let slide for now.
+        diff = time() - start
+
+        success = result == RESULT_SUCCESS
+
+        ctx.total += 1
+        if success:
+            ctx.total_success += 1
+
+        if ctx.total == 1:
+            # First iteration
+            ctx.time_min = ctx.time_max = diff
+        else:
+            # Second iteration
+            ctx.time_max = max(ctx.time_max, diff)
+            ctx.time_min = min(ctx.time_min, diff)
+        ctx.time_avg += ((diff - ctx.time_avg) / ctx.total)
+
+        line = (line or '').strip()
+        extra = ''
+
+        symbol, colour = get_symbol(result, success)
+        chart += symbol
+        colours.append(colour)
+
+        # Modify heartbeat chart
+        if success:
+            ctx.streak_fail = 0
+            ctx.streak_success += 1
+
+            # Only bother announcing the number of successes in a row when testing for reliability.
+            if mode & MODE_RELIABLE:
+                extra = ' (%s succeeded)' % _colour_text('%d/%d' % (ctx.streak_success, streak))
+            elif mode & MODE_UNRELIABLE:
+                if tally:
+                    extra = '(%s failed, %s succeeded in a row)' % (_colour_text('%d/%d' % (ctx.streak_fail, streak)), _colour_text(ctx.streak_success))
                 else:
-                    streak_fail += 1
-                    streak_success = 0
+                    extra = '(%s failed)' % _colour_text('%d/%d' % (ctx.streak_fail, streak))
+            elif tally:
+                extra = '(%s succeeded in a row)' % _colour_text(ctx.streak_success)
 
-                    chart += r.get('symbol', '-')
-                    colour = COLOUR_RED
-                    colours.append(colour)
+        else:
+            ctx.streak_fail += 1
+            ctx.streak_success = 0
 
-                    if self.mode == MODE_RELIABLE:
-                        extra = '(%s succeeded)' % colour_text('%d/%d' % (streak_success, self.streak))
-                    elif self.mode == MODE_UNRELIABLE:
-                        extra = '(%s failed)' % colour_text('%d/%d' % (streak_fail, self.streak))
-                    else:
-                        extra = '(%s failed in a row)' % colour_text(streak_fail)
+            if mode & MODE_RELIABLE:
+                extra = '(%s succeeded)' % _colour_text('%d/%d' % (ctx.streak_success, streak))
+            elif mode & MODE_UNRELIABLE:
+                extra = '(%s failed)' % _colour_text('%d/%d' % (ctx.streak_fail, streak))
+            else:
+                extra = '(%s failed in a row)' % _colour_text(ctx.streak_fail)
 
-                line_output = '%s  %s ' % (colour_text(self.ip, COLOUR_BLUE), colour_text(verb, colour))
-                if line:
-                    line_output += ' %s' % line
-                if extra:
-                    line_output += ' %s' % extra
-                chart = chart[max(0, len(chart)-recent_limit):] # Trim chart
-                if len(colours) > recent_limit:
-                    colours.pop(0)
+        line_output = '%s  %s ' % (_colour_text(target, COLOUR_BLUE), _colour_text(display or _translate_result(result), colour))
+        if line:
+            line_output += ' %s' % line
+        if extra:
+            line_output += ' %s' % extra
+        chart = chart[max(0, len(chart)-chart_length):] # Trim chart
+        if len(colours) > chart_length:
+            colours.pop(0)
 
-                display_chart = ''
-                for i in range(len(colours)):
-                    if not i or colours[i-1] != colours[i]:
-                        # Initial colours or switch colours
-                        display_chart += COLOUR_OFF
-                        display_chart += colours[i]
-                    display_chart += chart[i]
+        display_chart = ''
+        for i in range(len(colours)):
+            if not i or colours[i-1] != colours[i]:
+                # Initial colours or switch colours
+                display_chart += COLOUR_OFF
+                display_chart += colours[i]
+            display_chart += chart[i]
 
-                if len(chart):
-                    display_chart += COLOUR_OFF
+        if len(chart):
+            display_chart += COLOUR_OFF
 
-                # Pad out the display
-                for i in range(recent_limit - len(chart)):
-                    display_chart += '_'
+        # Pad out the display
+        display_chart += ''.ljust(chart_length - len(chart), '_')
 
-                # Calculate percentage and colouring
-                percentage = float(total_success) / total_pings * 100
+        # Calculate percentage and colouring
+        percentage = float(ctx.total_success) / ctx.total * 100
 
-                percentage_colour = COLOUR_GREEN
-                if percentage <= 30:
-                    percentage_colour = COLOUR_RED
-                elif percentage <= 60:
-                    percentage_colour = COLOUR_YELLOW
-                percentage_text = "%6.02f%%" % percentage
+        percentage_colour = COLOUR_GREEN
+        if percentage <= 30:
+            percentage_colour = COLOUR_RED
+        elif percentage <= 60:
+            percentage_colour = COLOUR_YELLOW
+        percentage_text = '%6.02f%%' % percentage
 
-                # Padding the count digits to avoid a bunch of relatively rapid format jumps.
-                print("%03d/%03d %s  [%s]  %s" % (total_success, total_pings, colour_text(percentage_text, percentage_colour), display_chart, line_output))
+        # Print update display.
+        # Padding the count digits to avoid a bunch of relatively rapid format jumps.
+        logger.info('%03d/%03d %s  [%s]  %s' % (ctx.total_success, ctx.total, _colour_text(percentage_text, percentage_colour), display_chart, line_output))
 
-                # This was originally one big assignment statement, but it was a pain to read.
-                continue_loop = (not self.limit or total_pings < self.limit)
-                if self.mode == MODE_RELIABLE and streak_success >= self.streak:
-                    continue_loop = False
-                elif self.mode == MODE_UNRELIABLE and streak_fail >= self.streak:
-                    continue_loop = False
+        # Perform checks to see if the loop should continue
+        if count and ctx.total >= count:
+            break
+        if mode & MODE_RELIABLE and ctx.streak_success >= streak:
+            break
+        elif mode & MODE_UNRELIABLE and ctx.streak_fail >= streak:
+            break
 
-                if continue_loop:
-                    # If there is another loop upcoming, sleep for the remainder of a second that's left.
-                    time.sleep(max(0, self.rest_time - r["time"]))
+        # If there is another loop upcoming, sleep for the remainder of a second that's left.
+        sleep(max(0, interval - diff))
 
-        except KeyboardInterrupt:
-            exit_code = 130
-
-        if not total_pings:
-            return exit_code
-
-        end_time = time.time()
-
-        if reliability_check:
-            print("\nDuration:", translate_seconds(end_time - start_time))
-
-        if not exit_code and reliability_check and total_pings == self.limit and (
-            (self.mode == MODE_RELIABLE and streak_success < self.streak)
-            or (self.mode == MODE_UNRELIABLE and streak_fail < self.streak)
-        ):
-            # Set an exit code if we weren't able to get the required number of successful/failed pings within the limit.
-            # (Do not override the exit code of a keyboard interrupt)
-            exit_code = 1
-
-        print("\n--- %s ping statistics ---" % display_server)
-        # ping numbers in ping-like format
-        print("%s packets transmitted, %d received, %.02f%% packet loss" % (total_pings, total_success, 100 - float(total_success) / total_pings * 100))
-        # rtt stats. I don't worry about this as much as success percentage.
-        print("rtt min/avg/max %.03f/%.03f/%.03f" % (time_min, time_avg, time_max))
-
-        return exit_code
-
-if __name__ == "__main__":
-    exit_code = main(sys.argv)
-    exit(exit_code)
+if __name__ == '__main__': # pragma: no cover
+    try:
+        exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        exit(130)
