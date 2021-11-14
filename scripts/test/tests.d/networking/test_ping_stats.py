@@ -208,7 +208,7 @@ class CommandPingTests(common.TestCase, metaclass=common.LoggableTestCase):
     '''
     Perform a single successful ping with tally mode.
     '''
-    def test_ping_one(self):
+    def test_ping_one_tally(self):
         addr = '127.0.0.1'
         exit_code = self.mod.main([addr, '-c', '1', '-t'])
         self.assertEqual(0, exit_code)
