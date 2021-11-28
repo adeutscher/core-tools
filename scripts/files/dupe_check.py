@@ -25,10 +25,11 @@ On multi-threading:
 
     That being said:
         * I'm curious about how well the author's statement holds up against my own habit
-            of using tmpfs for nonessential files. Is a memory-based file system faster,
-            or will the single-threaded applications be able to take just as much
-            advantage of the extra resources? Due to the practice of using lenths and
-            partial hashes (in my case, taking the hash of the first 2MB of a file),
+            of using tmpfs for nonessential files. Is multithreading in a memory-based
+            file system faster, or will the single-threaded applications be able to
+            take just as much advantage of the extra resources?
+            Due to the practice of using lenths and partial hashes
+            (in my case, taking the hash of the first 2MB of a file),
             I wouldn't be surprised if any performance gain is negligible.
         * Even if it doesn't yield a performance improvement, it will be a fun exercise
             with doing some sort of distributed workload in Python. I can then eventually
@@ -215,10 +216,9 @@ def main(args, report_function = None):
 
 def print_report(report):
     print('Found %d instances of files with duplicates amongst %d files.' % (len(report['dupes']), report['count_files_total']))
-    c = 0
-    for collection in report['dupes']:
-        c += 1
-        print('Duplicated file #%02d (Hash: %s) instances:' % (c, _translate_digest(collection.storage[0].hash_long)))
+
+    for c, collection in enumerate(report['dupes']):
+        print('Duplicated file #%02d (Hash: %s) instances:' % (c+1, _translate_digest(collection.storage[0].hash_long)))
         for instance in collection.storage:
             print('\t* %s' % instance.path)
 

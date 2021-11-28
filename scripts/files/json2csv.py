@@ -79,9 +79,7 @@ def convert_list_to_csv(l):
 
     a = []
 
-    list_count = 0
-    for item in l:
-        list_count += 1
+    for list_count, item in enumerate(l):
         if not isinstance(item, dict):
             print_error("Row %s is not a %s object." % (colour_text("#%d" % list_count), format_name))
             continue
@@ -98,11 +96,8 @@ def convert_list_to_csv(l):
 
     csv_w = csv.writer( sys.stdout )
     csv_w.writerow( columns )
-    output_count = 0
 
-    for i_r in a:
-        output_count += 1
-
+    for output_count, i_r in enumerate(a):
         try:
             csv_w.writerow( map( lambda x: i_r.get( x, "" ), columns ) )
         except Exception as e:
