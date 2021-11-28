@@ -1,119 +1,140 @@
 #!/usr/bin/env python
 
 import common, unittest
+from json import dump
+from os.path import join
+from tempfile import TemporaryDirectory as tempdir
 
-mod = common.load('bitmask', common.TOOLS_DIR + '/scripts/programming/bitmask.py')
-mod.orig_usage = mod.usage
-mod.orig_colour_text = mod.colour_text
-
-class BitmaskTests(common.TestCase):
-
-    def setUp(self):
-        self.lines = []
-        mod.colour_text = lambda l,c=None: l
-        mod.print = lambda l: self.lines.append(l)
-
-    def assertUsage(self, line):
-        self.assertEqual('Usage: bitmask.py number [mask]', self.lines[-1])
-
-    def assertFails(self, args):
-        with self.assertRaises(SystemExit) as ex:
-            mod.main(args)
-        self.assertEqual(ex.exception.code, 1)
-        self.assertUsage(self.lines[-1])
-
-    def test_main_error_bad_first(self):
-        self.assertFails(['0'])
-        self.assertEqual(3, len(self.lines))
-        self.assertEqual('Number value must be greater than zero.', self.lines[-2])
-
-    def test_main_error_bad_second(self):
-        self.assertFails(['1', '0'])
-
-    def test_main_ok_compare_fullmatch_a(self):
-        mod.main(['0x0f', '15'])
-        self.assertEqual('Testing a value of 15 (0x00000f) against a mask of 15 (0x00000f).', self.lines[0])
-        self.assertEqual('Result: 15 & 15 = 15 (Yes, Full Match)', self.lines[1])
-
-    def test_main_ok_compare_partmatch_a(self):
-        mod.main(['0x0f', '7'])
-        self.assertEqual('Testing a value of 15 (0x00000f) against a mask of 7 (0x000007).', self.lines[0])
-        self.assertEqual('Result: 15 & 7 = 7 (Yes, Partial Match)', self.lines[1])
-
-    def test_main_ok_compare_nomatch_a(self):
-        mod.main(['11', '4'])
-        self.assertEqual('Result: 11 & 4 = 0 (No Match)', self.lines[-1])
-
-    def test_main_ok_compare_nomatch_b(self):
-        mod.main(['0x20', '0x10'])
-        self.assertEqual('Result: 32 & 16 = 0 (No Match)', self.lines[-1])
-
-    def test_main_ok_flags_a(self):
-        mod.main(['11'])
-        self.assertEqual('Getting the bitmask flags in value of 11 (0x00000b)', self.lines[0])
-        self.assertEqual('2 ^ 000: (         1, 0x00000001): 1 (True)', self.lines[1])
-        self.assertEqual('2 ^ 001: (         2, 0x00000002): 1 (True)', self.lines[2])
-        self.assertEqual('2 ^ 002: (         4, 0x00000004): 0 (False)', self.lines[3])
-        self.assertEqual('2 ^ 003: (         8, 0x00000008): 1 (True)', self.lines[4])
-
-    def test_usage(self):
-        with self.assertRaises(SystemExit) as ex:
-            mod.usage()
-        self.assertEqual(ex.exception.code, 1)
-        line = self.assertSingle(self.lines)
-        self.assertUsage(line)
-
-class BitmaskValueTests(common.TestCase):
+class BitmaskTests(common.TestCase, metaclass=common.LoggableTestCase):
 
     def setUp(self):
-        self.lines = []
-        mod.colour_text = lambda l: l
-        mod.print = lambda l: self.lines.append(l)
+        self.mod = common.load('bitmask', common.TOOLS_DIR + '/scripts/programming/bitmask.py')
+        self.mod._enable_colours(False)
+        self.mod.logger = common.logging.getLogger(common.LABEL_TEST_LOGGER)
 
-    def test_getValue_error_negative_a(self):
+    '''
+    Confirm that the help menu was displayed.
+    '''
+    def assertUsage(self):
+        errors = self.getLogs('error')
+        self.assertStartsWith('Usage: bitmask.py', errors[-1])
 
-        value = mod.getValue(['-1'], 0, 'foo')
-        line = self.assertSingle(self.lines)
+    def run_cmd(self, args, should_exit=False, exit_code=None):
 
-        self.assertNone(value)
-        self.assertEqual('Invalid foo: -1', line)
+        if exit_code is None:
+            if should_exit:
+                exit_code = 1
+            else:
+                exit_code = 0
 
-    def test_getValue_error_negative_b(self):
+        if should_exit:
+            with self.assertRaises(SystemExit) as ex:
+                self.mod.main(args)
+            self.assertEqual(exit_code, ex.exception.code)
+            self.assertUsage()
+        else:
+            observed_exit_code = self.mod.main(args)
+            self.assertEqual(exit_code, observed_exit_code)
+        return self.getLogs('info')
 
-        value = mod.getValue(['0'], 0, 'foo')
-        line = self.assertSingle(self.lines)
+    def test_main_error_bad_args(self):
+        self.run_cmd(['--bad-args'], should_exit = True)
+        errors = self.getLogs('error')
+        self.assertStartsWith('Error parsing arguments:', errors[0])
 
-        self.assertNone(value)
-        self.assertEqual('Invalid foo: 0', line)
+    def test_main_error_bad_mask(self):
+        self.run_cmd(['5', '-m', 'nope'], should_exit = True)
+        errors = self.getLogs('error')
+        self.assertEqual('Invalid mask: nope', errors[0])
 
-    def test_getValue_error_parse(self):
+    def test_main_error_guide_no_file(self):
+        self.run_cmd(['5', '-g', 'nope'], should_exit = True)
+        errors = self.getLogs('error')
+        self.assertEqual('No such file: nope', errors[0])
 
-        value = mod.getValue(['bar'], 0, 'foo')
-        line = self.assertSingle(self.lines)
+    def test_main_error_guide_bad_json(self):
+        with tempdir() as td:
+            path = join(td, 'bad.json')
+            with open(path, 'w') as f:
+                f.write('{')
+            self.run_cmd(['5', '-g', path], should_exit = True)
+            errors = self.getLogs('error')
+            self.assertStartsWith('Bad JSON content in %s:' % path, errors[0])
 
-        self.assertNone(value)
-        self.assertStartsWith('Invalid foo: bar (', line)
+    def test_main_error_guide_bad_permissions(self):
 
-    def test_getValue_error_out_of_bounds(self):
+        from os import chmod
 
-        value = mod.getValue([], 1, 'foo')
-        line = self.assertSingle(self.lines)
+        with tempdir() as td:
+            path = join(td, 'bad.json')
+            with open(path, 'w') as f:
+                f.write('{')
+            chmod(path, 0)
+            self.run_cmd(['5', '-g', path], should_exit = True)
+            errors = self.getLogs('error')
+            self.assertStartsWith('Bad file permissions on %s:' % path, errors[0])
 
-        self.assertNone(value)
-        self.assertEqual('No foo provided.', line)
+    def test_main_error_no_args(self):
+        self.run_cmd([], should_exit = True)
+        errors = self.getLogs('error')
+        self.assertEqual('No values provided.', errors[0])
 
-    def test_getValue_ok_dec_a(self):
-        value = mod.getValue(['foo', '16'], 1, 'label')
-        self.assertEqual(16, value)
+    def test_main_help(self):
+        self.run_cmd(['-h'], should_exit = True, exit_code = 0)
 
-    def test_getValue_ok_dec_b(self):
-        value = mod.getValue(['bar', 'foo', '52'], 2, 'label')
-        self.assertEqual(52, value)
+    def test_main_KeyboardInterrupt(self):
+        def explode(value, **kwargs):
+            raise KeyboardInterrupt()
 
-    def test_getValue_ok_hex_a(self):
-        value = mod.getValue(['foo', '0x16'], 1, 'label')
-        self.assertEqual(22, value)
+        self.mod.display = explode
+        self.run_cmd(['5'], should_exit = False, exit_code = 130)
 
-    def test_getValue_ok_hex_b(self):
-        value = mod.getValue(['bar', 'foo', '0x52'], 2, 'label')
-        self.assertEqual(82, value)
+    def test_main_ok_basic(self):
+        info = self.run_cmd(['12'])
+        self.assertEqual(5, len(info))
+        self.assertEqual('Getting the bitmask flags in value of 12 (0x00000c)', info[0])
+        self.assertEqual('2 ^ 003: (         8, 0x00000008): 1 (True)', info[4])
+
+    def test_main_ok_basic_hex(self):
+        info = self.run_cmd(['0x05'])
+        self.assertEqual(4, len(info))
+        self.assertEqual('Getting the bitmask flags in value of 5 (0x000005)', info[0])
+        self.assertEqual('2 ^ 002: (         4, 0x00000004): 1 (True)', info[3])
+
+    def test_main_ok_guide(self):
+        with tempdir() as td:
+            guide = {2: 'Two', '0x04': 'Four'}
+            path = join(td, 'g.json')
+            with open(path, 'w') as f:
+                dump(guide, f)
+            info = self.run_cmd(['4', '-g', path])
+            self.assertEqual(4, len(info))
+            self.assertEndsWith(' Two', info[-2])
+            self.assertEndsWith(' Four', info[-1])
+
+    def test_main_ok_mask_full_match(self):
+        info = self.run_cmd(['13', '-m', '12'])
+        self.assertEqual(7, len(info))
+        self.assertEqual('Filtering value of 13 (0x00000d) through a mask of 12 (0x00000c)', info[0])
+        self.assertEqual('Result: 0x00000d & 0x00000c = 0x00000c (12) Full Match', info[1])
+        self.assertEqual('Getting the bitmask flags in value of 12 (0x00000c)', info[2])
+        self.assertEqual('2 ^ 003: (         8, 0x00000008): 1 (True)', info[6])
+
+    def test_main_ok_mask_partial_match(self):
+        info = self.run_cmd(['12', '-m', '5'])
+        self.assertEqual(6, len(info))
+        self.assertEqual('Filtering value of 12 (0x00000c) through a mask of 5 (0x000005)', info[0])
+        self.assertEqual('Result: 0x00000c & 0x000005 = 0x000004 (4) Partial Match', info[1])
+        self.assertEqual('Getting the bitmask flags in value of 4 (0x000004)', info[2])
+
+    def test_main_ok_mask_no_match(self):
+        info = self.run_cmd(['12', '-m', '3'])
+        self.assertEqual(2, len(info))
+        self.assertEqual('Filtering value of 12 (0x00000c) through a mask of 3 (0x000003)', info[0])
+        self.assertEqual('Result: 0x00000c & 0x000003 = 0x000000 (0) No Match', info[1])
+
+    def test_main_ok_only_true(self):
+        info = self.run_cmd(['12', '-t'])
+        self.assertEqual(3, len(info))
+        self.assertEqual('Getting the bitmask flags in value of 12 (0x00000c)', info[0])
+        self.assertEqual('2 ^ 003: (         8, 0x00000008): 1 (True)', info[2])
