@@ -4,6 +4,7 @@
 from getopt import gnu_getopt
 import logging
 import sys # Argument Parsing
+# Note: Intentionally not using time.perf_counter to allow for Python2.
 from time import sleep, time
 
 # ICMP support
@@ -15,21 +16,21 @@ from re import search, sub
 import errno, socket
 
 def _build_logger(label, err = None, out = None):
-  obj = logging.getLogger(label)
-  obj.setLevel(logging.DEBUG)
-  # Err
-  err_handler = logging.StreamHandler(err or sys.stderr)
-  err_filter = logging.Filter()
-  err_filter.filter = lambda record: record.levelno >= logging.WARNING
-  err_handler.addFilter(err_filter)
-  obj.addHandler(err_handler)
-  # Out
-  out_handler = logging.StreamHandler(out or sys.stdout)
-  out_filter = logging.Filter()
-  out_filter.filter = lambda record: record.levelno < logging.WARNING
-  out_handler.addFilter(out_filter)
-  obj.addHandler(out_handler)
-  return obj
+    obj = logging.getLogger(label)
+    obj.setLevel(logging.DEBUG)
+    # Err
+    err_handler = logging.StreamHandler(err or sys.stderr)
+    err_filter = logging.Filter()
+    err_filter.filter = lambda record: record.levelno >= logging.WARNING
+    err_handler.addFilter(err_filter)
+    obj.addHandler(err_handler)
+    # Out
+    out_handler = logging.StreamHandler(out or sys.stdout)
+    out_filter = logging.Filter()
+    out_filter.filter = lambda record: record.levelno < logging.WARNING
+    out_handler.addFilter(out_filter)
+    obj.addHandler(out_handler)
+    return obj
 
 logger = _build_logger('ping_stats')
 
@@ -199,57 +200,58 @@ def do_tcp(**kwargs):
         #         so with/__exit__ cannot be used if this script is to be
         #         usable on the older version.
         s = get_tcp_socket()
-        # https://www.tutorialspoint.com/python_penetration_testing/python_penetration_testing_network_scanner.htm
-        result_conn = s.connect_ex((target, port))
-        time_duration = time() - time_start
+        try:
+            # https://www.tutorialspoint.com/python_penetration_testing/python_penetration_testing_network_scanner.htm
+            result_conn = s.connect_ex((target, port))
+            time_duration = time() - time_start
 
-        if debug:
-            logger.debug('Connection result (%.02f seconds): %s' % (time_duration, result_conn))
+            if debug:
+                logger.debug('Connection result (%.02f seconds): %s' % (time_duration, result_conn))
 
-        # If connect_ex() returned 11 (EAGAIN), then continue the loop.
-        # Give up after 10s. If the traffic is being dropped, then
-        #   the loop will go on for too long (possibly endless?)
-        # A value of 10s was chosen to distinguish between a connection that's
-        #   taking a while to time out and something that's being intentionally dropped.
-        # This was determined by comparing two addresses:
-        #   * Unused IP on local and remote networks (3-6ss to get a 113/EHOSTUNREACH)
-        #     * The 6s timeouts are less common than the 3s ones.
-        #   * Local address with a DROP rule in effect against the pinging host would take much too long.
-        if result_conn == errno.EAGAIN and time_duration < 10:
-            continue
+            # If connect_ex() returned 11 (EAGAIN), then continue the loop.
+            # Give up after 10s. If the traffic is being dropped, then
+            #   the loop will go on for too long (possibly endless?)
+            # A value of 10s was chosen to distinguish between a connection that's
+            #   taking a while to time out and something that's being intentionally dropped.
+            # This was determined by comparing two addresses:
+            #   * Unused IP on local and remote networks (3-6ss to get a 113/EHOSTUNREACH)
+            #     * The 6s timeouts are less common than the 3s ones.
+            #   * Local address with a DROP rule in effect against the pinging host would take much too long.
+            if result_conn == errno.EAGAIN and time_duration < 10:
+                continue
 
-        if result_conn == 0:
-            # Successfully established a connection.
-            result = RESULT_SUCCESS
-            display = 'open'
+            if result_conn == 0:
+                # Successfully established a connection.
+                result = RESULT_SUCCESS
+                display = 'open'
 
-            # Possible future improvement - could take a leaf from nmap here
-            #   and do some basic operation well-known ports for information.
-            # Probably won't implement this in any rush, though.
-            # The purpose of this script is to confirm the basic status of known hosts.
-            # It is not made for exploring unknown hosts.
-        elif result_conn == errno.ECONNREFUSED:
-            # Server was not listening on the target port.
+                # Possible future improvement - could take a leaf from nmap here
+                #   and do some basic operation well-known ports for information.
+                # Probably won't implement this in any rush, though.
+                # The purpose of this script is to confirm the basic status of known hosts.
+                # It is not made for exploring unknown hosts.
+            elif result_conn == errno.ECONNREFUSED:
+                # Server was not listening on the target port.
 
-            # This result could also happen if iptables REJECTs the connection.
-            #   nmap can't or doesn't distinguish between the two causes, so I'm not too worried distinguishing either
-            result = RESULT_CLOSED
+                # This result could also happen if iptables REJECTs the connection.
+                #   nmap can't or doesn't distinguish between the two causes, so I'm not too worried distinguishing either
+                result = RESULT_CLOSED
 
-        elif result_conn == errno.EHOSTUNREACH:
-            # Socket gave up.
-            # This can come about with a timeout on a resource on the
-            #  same collision domain as the machine running this script.
+            elif result_conn == errno.EHOSTUNREACH:
+                # Socket gave up.
+                # This can come about with a timeout on a resource on the
+                #  same collision domain as the machine running this script.
 
-            # Unreachable should be distinguished from
-            #  an unreachable result from an ambiguous timeout
-            result = RESULT_UNREACHABLE
+                # Unreachable should be distinguished from
+                #  an unreachable result from an ambiguous timeout
+                result = RESULT_UNREACHABLE
 
-        else:
-            # Untracked error, or the script gave up.
-            # This could happen if the ping gets hit by a DROP target in iptables
-            result = RESULT_TIMEOUT
-
-        s.close()
+            else:
+                # Untracked error, or the script gave up.
+                # This could happen if the ping gets hit by a DROP target in iptables
+                result = RESULT_TIMEOUT
+        finally:
+            s.close()
         break
     return result, display, line
 
