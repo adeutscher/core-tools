@@ -19,6 +19,8 @@ from queue import Queue         # For ThreadedRunnerQueue
 #   picked up by coverage.
 from threading import Lock as lock, Thread
 from time import sleep, time
+from traceback import extract_tb
+from sys import exc_info
 
 class ThreadedRunnerBase:
 
@@ -354,6 +356,19 @@ class ThreadedRunnerWorker(Thread):
             except Exception as e:
                 self.set_state(self.STATE_ERROR)
                 print('Worker %d error: %s' % (self.__worker_id, str(e)))
+
+                # Build our own stack trace display
+                # Preparation for conversion to use logging module
+                #   in a future session.
+                s = ''
+                for i, frame in enumerate(extract_tb(exc_info()[2])):
+                    line = ''
+                    err_path, err_lineno, err_func, err_line = tuple(frame)
+                    if i:
+                        line += '\n' + ''.rjust((i-1)*2, ' ') + '|\n' + ''.rjust((i-1)*2, ' ') + '> '.rjust((i)+2, '-')
+                    line += f'{err_path} (Line {err_lineno}, Function {err_func}): {err_line}'
+                    s += line
+                print(s)
         self.__instance.report_worker_done(self.__worker_id)
 
     state = property(lambda self: self.__state)
