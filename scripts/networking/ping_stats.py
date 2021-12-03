@@ -319,7 +319,7 @@ def parse_args(args_raw):
         logger.info('           while attempting a streak.')
         logger.info(' -d: Debug mode. Print the raw output of ping command.')
         logger.info(' -t: Tally mode. Always display a tally of successful pings.')
-        logger.info(' -s seconds: Time between pings (Default: 1)')
+        logger.info(' -i seconds: Interval time between pings (Default: 1)')
         logger.info('Set streak count as an optional second argument. Default: %s' % _colour_text(DEFAULT_STREAK_COUNT))
 
         exit(hexit_code)
