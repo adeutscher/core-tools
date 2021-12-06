@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 
 from __future__ import print_function
+
 # General
 import getopt, os, random, re, sys
+
 # Networking
 import errno, fcntl, select, socket, ssl, struct, time
 from ssl import SSLError, SSLWantReadError, SSLWantWriteError
-from select import EPOLLIN, EPOLLET, EPOLLERR, EPOLLHUP, EPOLLONESHOT, EPOLLOUT, EPOLLPRI
+from select import (
+    EPOLLIN,
+    EPOLLET,
+    EPOLLERR,
+    EPOLLHUP,
+    EPOLLONESHOT,
+    EPOLLOUT,
+    EPOLLPRI,
+)
 
 # This script uses a number of features of the 'select' module that were present in
 #   Fedora 31's installation of Python3 but not in Python2 on the same system.
@@ -23,34 +33,47 @@ else:
 # Common Colours and Message Functions
 ###
 
-def _print_message(header_colour, header_text, message, log_message = False, stderr=False):
-    f=sys.stdout
+
+def _print_message(
+    header_colour, header_text, message, log_message=False, stderr=False
+):
+    f = sys.stdout
     if stderr:
-        f=sys.stderr
+        f = sys.stderr
 
     header_template = "%s[%%s]:" % colour_text(header_text, header_colour)
     if log_message:
         header = header_template % colour_text(time.strftime("%Y-%m-%d %k:%M:%S"))
     else:
-        header = header_template % colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN)
+        header = header_template % colour_text(
+            os.path.basename(sys.argv[0]), COLOUR_GREEN
+        )
 
     print(header, message, file=f)
 
+
 def colour_addr(ip, port, host=None):
-    if host and host != ip: return '[%s:%s (%s)]' % (colour_blue(ip), colour_text(port), colour_blue(host))
+    if host and host != ip:
+        return '[%s:%s (%s)]' % (colour_blue(ip), colour_text(port), colour_blue(host))
     return '%s:%s' % (colour_blue(ip), colour_text(port))
 
-def colour_blue(text): return colour_text(text, COLOUR_BLUE)
 
-def colour_green(text): return colour_text(text, COLOUR_GREEN)
+def colour_blue(text):
+    return colour_text(text, COLOUR_BLUE)
 
-def colour_text(text, colour = None):
+
+def colour_green(text):
+    return colour_text(text, COLOUR_GREEN)
+
+
+def colour_text(text, colour=None):
     if not colour:
         colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
-def enable_colours(force = False):
+
+def enable_colours(force=False):
     global COLOUR_PURPLE
     global COLOUR_RED
     global COLOUR_GREEN
@@ -76,28 +99,47 @@ def enable_colours(force = False):
         COLOUR_BLUE = ''
         COLOUR_BOLD = ''
         COLOUR_OFF = ''
+
+
 enable_colours()
 
-def log_error(msg): print_error(msg, log_message = True)
 
-def log_notice(msg): print_notice(msg, log_message = True)
+def log_error(msg):
+    print_error(msg, log_message=True)
+
+
+def log_notice(msg):
+    print_notice(msg, log_message=True)
+
 
 error_count = 0
-def print_error(message, log_message = False):
+
+
+def print_error(message, log_message=False):
     global error_count
     error_count += 1
-    _print_message(COLOUR_RED, "Error", message, log_message = log_message)
+    _print_message(COLOUR_RED, "Error", message, log_message=log_message)
+
 
 def print_exception(e, msg=None):
     # Shorthand wrapper to handle an exception.
     # msg: Used to provide more context.
     sub_msg = ""
-    if msg: sub_msg = " (%s)" % msg
-    print_error("Unexpected %s%s: %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e)))
+    if msg:
+        sub_msg = " (%s)" % msg
+    print_error(
+        "Unexpected %s%s: %s"
+        % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, str(e))
+    )
 
-def print_notice(message, log_message = False): _print_message(COLOUR_BLUE, "Notice", message, log_message = log_message)
 
-def print_warning(message): _print_message(COLOUR_YELLOW, "Warning", message)
+def print_notice(message, log_message=False):
+    _print_message(COLOUR_BLUE, "Notice", message, log_message=log_message)
+
+
+def print_warning(message):
+    _print_message(COLOUR_YELLOW, "Warning", message)
+
 
 ###########################################
 
@@ -116,6 +158,7 @@ OPT_TYPE_LONG = MASK_OPT_TYPE_LONG | MASK_OPT_TYPE_ARG
 
 TITLE_HELP = "help"
 
+
 class ArgHelper:
 
     args = {}
@@ -128,15 +171,26 @@ class ArgHelper:
     errors = []
     validators = []
 
-    opts = {OPT_TYPE_FLAG: {}, OPT_TYPE_SHORT: {}, OPT_TYPE_LONG: {}, OPT_TYPE_LONG_FLAG: {}}
+    opts = {
+        OPT_TYPE_FLAG: {},
+        OPT_TYPE_SHORT: {},
+        OPT_TYPE_LONG: {},
+        OPT_TYPE_LONG_FLAG: {},
+    }
     opts_by_label = {}
 
     def __init__(self):
-        self.add_opt(OPT_TYPE_FLAG, "h", TITLE_HELP, description="Display a help menu and then exit.")
+        self.add_opt(
+            OPT_TYPE_FLAG,
+            "h",
+            TITLE_HELP,
+            description="Display a help menu and then exit.",
+        )
 
-    def __contains__(self, arg): return arg in self.args
+    def __contains__(self, arg):
+        return arg in self.args
 
-    def __getitem__(self, arg, default = None):
+    def __getitem__(self, arg, default=None):
         opt = self.opts_by_label.get(arg)
 
         if not opt:
@@ -144,22 +198,40 @@ class ArgHelper:
             #   Giving give the args dictionary an attempt in case
             #   something like a validator went and added to it.
             return self.args.get(arg)
-        if opt.multiple: default = []
+        if opt.multiple:
+            default = []
 
         # Silly note: Doing a get() out of a dictionary when the stored
         #   value of the key is None will not fall back to default
         value = self.args.get(arg)
         if value is None:
-            if opt.environment: value = os.environ.get(opt.environment, self.defaults.get(arg))
-            else: value = self.defaults.get(arg)
+            if opt.environment:
+                value = os.environ.get(opt.environment, self.defaults.get(arg))
+            else:
+                value = self.defaults.get(arg)
 
-        if value is None: return default
+        if value is None:
+            return default
         return value
 
     def __setitem__(self, key, value):
         self.args[key] = value
 
-    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, default_colour = None, default_announce = False, environment = None, converter=str, multiple = False, strict_single = False):
+    def add_opt(
+        self,
+        opt_type,
+        flag,
+        label,
+        description=None,
+        required=False,
+        default=None,
+        default_colour=None,
+        default_announce=False,
+        environment=None,
+        converter=str,
+        multiple=False,
+        strict_single=False,
+    ):
 
         if opt_type not in self.opts:
             raise Exception("Bad option type: %s" % opt_type)
@@ -170,7 +242,7 @@ class ArgHelper:
         match_pattern = "^[a-z0-9]$"
         if opt_type & MASK_OPT_TYPE_LONG:
             prefix = "--"
-            match_pattern = "^[a-z0-9\-]+$" # ToDo: Improve on this regex?
+            match_pattern = "^[a-z0-9\-]+$"  # ToDo: Improve on this regex?
 
         arg = prefix + flag
 
@@ -180,16 +252,23 @@ class ArgHelper:
         if not flag:
             raise Exception("No flag defined for label: %s" % label)
         if not opt_type & MASK_OPT_TYPE_LONG and len(flag) - 1:
-            raise Exception("Short options must be 1-character long.") # A bit redundant, but more informative
+            raise Exception(
+                "Short options must be 1-character long."
+            )  # A bit redundant, but more informative
         if not re.match(match_pattern, flag, re.IGNORECASE):
-            raise Exception("Invalid flag value: %s" % flag) # General format check
+            raise Exception("Invalid flag value: %s" % flag)  # General format check
         for g in self.opts:
-            if opt_type & MASK_OPT_TYPE_LONG == g & MASK_OPT_TYPE_LONG and arg in self.opts[g]:
+            if (
+                opt_type & MASK_OPT_TYPE_LONG == g & MASK_OPT_TYPE_LONG
+                and arg in self.opts[g]
+            ):
                 raise Exception("Flag already defined: %s" % label)
         if label in self.opts_by_label:
             raise Exception("Duplicate label (new: %s): %s" % (arg, label))
         if multiple and strict_single:
-            raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
+            raise Exception(
+                "Cannot have an argument with both 'multiple' and 'strict_single' set to True."
+            )
         # These do not cover harmless checks on arg modifiers with flag values.
 
         obj = OptArg(self)
@@ -207,8 +286,10 @@ class ArgHelper:
         obj.strict_single = strict_single
 
         self.opts_by_label[label] = self.opts[opt_type][arg] = obj
-        if not has_arg: default = False
-        elif multiple: default = []
+        if not has_arg:
+            default = False
+        elif multiple:
+            default = []
         self.defaults[label] = default
 
     def add_validator(self, fn):
@@ -220,62 +301,90 @@ class ArgHelper:
         return s.replace('-', '')
 
     def _get_opts_long(self):
-        l = ["%s=" % key for key in sorted(self.opts[OPT_TYPE_LONG].keys())] + sorted(self.opts[OPT_TYPE_LONG_FLAG].keys())
+        l = ["%s=" % key for key in sorted(self.opts[OPT_TYPE_LONG].keys())] + sorted(
+            self.opts[OPT_TYPE_LONG_FLAG].keys()
+        )
         return [re.sub("^-+", "", i) for i in l]
 
     def convert_value(self, raw_value, opt):
         value = None
 
-        try: value = opt.converter(raw_value)
-        except: pass
+        try:
+            value = opt.converter(raw_value)
+        except:
+            pass
 
         if value is None:
-            self.errors.append("Unable to convert %s to %s: %s" % (colour_text(opt.label), opt.converter.__name__, colour_text(raw_value)))
+            self.errors.append(
+                "Unable to convert %s to %s: %s"
+                % (
+                    colour_text(opt.label),
+                    opt.converter.__name__,
+                    colour_text(raw_value),
+                )
+            )
 
         return value
 
     get = __getitem__
 
-    def hexit(self, exit_code = 0):
+    def hexit(self, exit_code=0):
 
         s = "./%s" % os.path.basename(sys.argv[0])
         lines = []
-        for label, section in [("Flags", OPT_TYPE_FLAG), ("Options", OPT_TYPE_SHORT), ("Long Flags", OPT_TYPE_LONG_FLAG), ("Long Options", OPT_TYPE_LONG)]:
+        for label, section in [
+            ("Flags", OPT_TYPE_FLAG),
+            ("Options", OPT_TYPE_SHORT),
+            ("Long Flags", OPT_TYPE_LONG_FLAG),
+            ("Long Options", OPT_TYPE_LONG),
+        ]:
             if not self.opts[section]:
                 continue
 
             lines.append("%s:" % label)
             for f in sorted(self.opts[section].keys()):
                 obj = self.opts[section][f]
-                s+= obj.get_printout_usage(f)
+                s += obj.get_printout_usage(f)
                 lines.append(obj.get_printout_help(f))
 
-        if self.operand_text: s += " %s" % self.operand_text
+        if self.operand_text:
+            s += " %s" % self.operand_text
 
         _print_message(COLOUR_PURPLE, "Usage", s)
-        for l in lines: print(l)
+        for l in lines:
+            print(l)
 
-        if exit_code >= 0: exit(exit_code)
+        if exit_code >= 0:
+            exit(exit_code)
 
-    def last_operand(self, default = None):
-        if not len(self.operands): return default
+    def last_operand(self, default=None):
+        if not len(self.operands):
+            return default
         return self.operands[-1]
 
-    def load_args(self, cli_args = []):
-        if cli_args == sys.argv: cli_args = cli_args[1:]
+    def load_args(self, cli_args=[]):
+        if cli_args == sys.argv:
+            cli_args = cli_args[1:]
 
-        if not cli_args: return True
+        if not cli_args:
+            return True
 
         try:
-            output_options, self.operands = getopt.gnu_getopt(cli_args, self._get_opts(), self._get_opts_long())
+            output_options, self.operands = getopt.gnu_getopt(
+                cli_args, self._get_opts(), self._get_opts_long()
+            )
         except Exception as e:
             self.errors.append("Error parsing arguments: %s" % str(e))
             return False
 
         for opt, optarg in output_options:
             found = False
-            for has_arg, opt_type_tuple in [(True, (OPT_TYPE_SHORT, OPT_TYPE_LONG)), (False, (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG))]:
-                if found: break
+            for has_arg, opt_type_tuple in [
+                (True, (OPT_TYPE_SHORT, OPT_TYPE_LONG)),
+                (False, (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)),
+            ]:
+                if found:
+                    break
                 for opt_key in opt_type_tuple:
                     if opt in self.opts[opt_key]:
                         found = True
@@ -289,86 +398,115 @@ class ArgHelper:
                             self.args[obj.label] = True
         return True
 
-    def process(self, args = [], exit_on_error = True, print_errors = True):
+    def process(self, args=[], exit_on_error=True, print_errors=True):
 
         # If basic argument loading failed, then don't bother to validate
         validate = self.load_args(args)
 
-        if self[TITLE_HELP]: self.hexit(0)
+        if self[TITLE_HELP]:
+            self.hexit(0)
 
-        if validate: self.validate()
+        if validate:
+            self.validate()
 
         if self.errors:
             if print_errors:
-                for e in self.errors: print_error(e)
+                for e in self.errors:
+                    print_error(e)
 
-            if exit_on_error: exit(1)
+            if exit_on_error:
+                exit(1)
         return not self.errors
 
-    def set_operand_help_text(s, text): s.operand_text = text
+    def set_operand_help_text(s, text):
+        s.operand_text = text
 
     def validate(self):
         for key in self.raw_args:
             obj = self.opts_by_label[key]
-            if not obj.has_arg: self.args[obj.label] = True
+            if not obj.has_arg:
+                self.args[obj.label] = True
             if not obj.multiple:
                 if obj.strict_single and len(self.raw_args[obj.label]) > 1:
-                    self.errors.append("Cannot have multiple %s values." % colour_text(obj.label))
+                    self.errors.append(
+                        "Cannot have multiple %s values." % colour_text(obj.label)
+                    )
                 else:
                     value = self.convert_value(self.raw_args[obj.label][-1], obj)
-                    if value is not None: self.args[obj.label] = value
+                    if value is not None:
+                        self.args[obj.label] = value
             elif obj.multiple:
                 self.args[obj.label] = []
                 for i in self.raw_args[obj.label]:
                     value = self.convert_value(i, obj)
-                    if value is not None: self.args[obj.label].append(value)
+                    if value is not None:
+                        self.args[obj.label].append(value)
             elif self.raw_args[obj.label]:
                 value = self.convert_value(self.raw_args[obj.label][-1], obj)
-                if value is not None: self.args[obj.label] = value
-        for m in [self.opts_by_label[o].label for o in self.opts_by_label if self.opts_by_label[o].required and o not in self.raw_args]:
+                if value is not None:
+                    self.args[obj.label] = value
+        for m in [
+            self.opts_by_label[o].label
+            for o in self.opts_by_label
+            if self.opts_by_label[o].required and o not in self.raw_args
+        ]:
             self.errors.append("Missing %s value." % colour_text(m))
         for v in self.validators:
             r = v(self)
             if r:
-                if isinstance(r, list): self.errors.extend(r) # Append all list items
-                else: self.errors.append(r) # Assume that this is a string.
+                if isinstance(r, list):
+                    self.errors.extend(r)  # Append all list items
+                else:
+                    self.errors.append(r)  # Assume that this is a string.
+
 
 class OptArg:
     def __init__(s, a):
         s.opt_type = 0
         s.args = a
 
-    def is_flag(s): return s.opt_type in (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)
+    def is_flag(s):
+        return s.opt_type in (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)
 
     def get_printout_help(self, opt):
 
         desc = self.description or "No description defined"
 
-        if self.is_flag(): s = "  %s: %s" % (opt, desc)
-        else: s = "  %s <%s>: %s" % (opt, self.label, desc)
+        if self.is_flag():
+            s = "  %s: %s" % (opt, desc)
+        else:
+            s = "  %s <%s>: %s" % (opt, self.label, desc)
 
-        if self.environment: s += " (Environment Variable: %s)" % colour_text(self.environment)
+        if self.environment:
+            s += " (Environment Variable: %s)" % colour_text(self.environment)
 
         if self.default_announce:
             # Manually going to defaults table allows this core module
             # to have its help display reflect retroactive changes to defaults.
-            s += " (Default: %s)" % colour_text(self.args.defaults.get(self.label), self.default_colour)
+            s += " (Default: %s)" % colour_text(
+                self.args.defaults.get(self.label), self.default_colour
+            )
         return s
 
     def get_printout_usage(self, opt):
 
-        if self.is_flag(): s = opt
-        else: s = "%s <%s>" % (opt, self.label)
+        if self.is_flag():
+            s = opt
+        else:
+            s = "%s <%s>" % (opt, self.label)
 
-        if self.required: return " %s" % s
+        if self.required:
+            return " %s" % s
         return " [%s]" % s
+
 
 # Network Access Class
 ###
 
+
 class NetAccess:
     # Basic IPv4 CIDR syntax check
-    REGEX_INET4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
+    REGEX_INET4_CIDR = '^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 
     def __init__(self):
         self.errors = []
@@ -398,22 +536,36 @@ class NetAccess:
         return self.add_access(self.allowed_addresses, self.allowed_networks, candidate)
 
     def announce_filter_actions(self):
-        for action, address_list, network_list in [("Allowing", self.allowed_addresses, self.allowed_networks), ("Denying", self.denied_addresses, self.denied_networks)]:
+        for action, address_list, network_list in [
+            ("Allowing", self.allowed_addresses, self.allowed_networks),
+            ("Denying", self.denied_addresses, self.denied_networks),
+        ]:
             l = []
             l.extend([("address", s, i) for n, s, i in address_list])
             l.extend([("network", s, s) for n, s in network_list])
 
             for title, ip, address in l:
                 if ip == address:
-                    print_notice("%s %s: %s" % (action, title, colour_text(address, COLOUR_GREEN)))
+                    print_notice(
+                        "%s %s: %s"
+                        % (action, title, colour_text(address, COLOUR_GREEN))
+                    )
                 else:
-                    print_notice("%s %s: %s (%s)" % (action, title, colour_text(address, COLOUR_GREEN), colour_text(ip, COLOUR_GREEN)))
+                    print_notice(
+                        "%s %s: %s (%s)"
+                        % (
+                            action,
+                            title,
+                            colour_text(address, COLOUR_GREEN),
+                            colour_text(ip, COLOUR_GREEN),
+                        )
+                    )
 
     # Credit for initial IP functions: http://code.activestate.com/recipes/66517/
 
     def ip_strton(self, ip):
         # Convert decimal dotted quad string integer
-        a,b,c,d = struct.unpack('BBBB', socket.inet_aton(ip))
+        a, b, c, d = struct.unpack('BBBB', socket.inet_aton(ip))
         return (a << 24) + (b << 16) + (c << 8) + d
 
     def ip_validate_address(self, candidate):
@@ -421,7 +573,9 @@ class NetAccess:
             ip = socket.gethostbyname(candidate)
             return (True, self.ip_strton(ip), ip)
         except socket.gaierror:
-            self.errors.append("Unable to resolve: %s" % colour_text(candidate, COLOUR_GREEN))
+            self.errors.append(
+                "Unable to resolve: %s" % colour_text(candidate, COLOUR_GREEN)
+            )
             return (False, None, None)
 
     def ip_validate_cidr(self, candidate):
@@ -435,7 +589,9 @@ class NetAccess:
                 return (True, ip, 32 - m)
         except socket.gaierror:
             pass
-        self.errors.append("Invalid CIDR address: %s" % colour_text(candidate, COLOUR_GREEN))
+        self.errors.append(
+            "Invalid CIDR address: %s" % colour_text(candidate, COLOUR_GREEN)
+        )
         return (False, None, None)
 
     def is_allowed(self, address):
@@ -473,7 +629,10 @@ class NetAccess:
 
     def load_access_file(self, fn, path, header):
         if not os.path.isfile(path):
-            self.errors.append("Path to %s file does not exist: %s" % (header, colour_text(path, COLOUR_GREEN)))
+            self.errors.append(
+                "Path to %s file does not exist: %s"
+                % (header, colour_text(path, COLOUR_GREEN))
+            )
             return False
         with open(path) as f:
             for l in f.readlines():
@@ -485,11 +644,12 @@ class NetAccess:
     def load_whitelist_file(self, path):
         return self.load_access_file(self.add_whitelist, path, "whitelist")
 
+
 # Script Classes
 
 TITLE_BIND = "bind"
 TITLE_PORT = "port"
-TITLE_VERBOSE="verbose"
+TITLE_VERBOSE = "verbose"
 
 TITLE_BALANCE_RANDOM = "random-target"
 TITLE_BALANCE_ROUND_ROBIN = "round-robin"
@@ -505,6 +665,7 @@ TITLE_ALLOW = "allow address/range"
 TITLE_ALLOW_FILE = "allow address/range file"
 TITLE_DENY = "deny address/range"
 TITLE_DENY_FILE = "deny address/range file"
+
 
 class TcpRelayServer:
 
@@ -526,22 +687,96 @@ class TcpRelayServer:
 
         # Short opts
 
-        args.add_opt(OPT_TYPE_SHORT, "b", TITLE_BIND, "Address to bind to.", default = self.DEFAULT_BIND, default_announce = True, default_colour = COLOUR_GREEN)
-        args.add_opt(OPT_TYPE_SHORT, "p", TITLE_PORT, "Specify server bind port.", converter = int, default = self.DEFAULT_PORT, default_announce = True)
-        args.add_opt(OPT_TYPE_LONG, TITLE_TARGET_PORT, TITLE_TARGET_PORT, 'Specify default target port.', default = self.DEFAULT_TARGET_PORT, default_announce = True)
-        args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_TARGET_SSL, TITLE_TARGET_SSL, 'Indicate that the target is SSL-secured.')
-        args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_TARGET_SSL_INSECURE, TITLE_TARGET_SSL_INSECURE, 'Indicate that the target is SSL-secured, and that the relay should ignore certificate verification errors.')
+        args.add_opt(
+            OPT_TYPE_SHORT,
+            "b",
+            TITLE_BIND,
+            "Address to bind to.",
+            default=self.DEFAULT_BIND,
+            default_announce=True,
+            default_colour=COLOUR_GREEN,
+        )
+        args.add_opt(
+            OPT_TYPE_SHORT,
+            "p",
+            TITLE_PORT,
+            "Specify server bind port.",
+            converter=int,
+            default=self.DEFAULT_PORT,
+            default_announce=True,
+        )
+        args.add_opt(
+            OPT_TYPE_LONG,
+            TITLE_TARGET_PORT,
+            TITLE_TARGET_PORT,
+            'Specify default target port.',
+            default=self.DEFAULT_TARGET_PORT,
+            default_announce=True,
+        )
+        args.add_opt(
+            OPT_TYPE_LONG_FLAG,
+            TITLE_TARGET_SSL,
+            TITLE_TARGET_SSL,
+            'Indicate that the target is SSL-secured.',
+        )
+        args.add_opt(
+            OPT_TYPE_LONG_FLAG,
+            TITLE_TARGET_SSL_INSECURE,
+            TITLE_TARGET_SSL_INSECURE,
+            'Indicate that the target is SSL-secured, and that the relay should ignore certificate verification errors.',
+        )
 
-        args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_BALANCE_RANDOM, TITLE_BALANCE_RANDOM, 'Select between multiple targets at random.')
-        args.add_opt(OPT_TYPE_LONG_FLAG, TITLE_BALANCE_ROUND_ROBIN, TITLE_BALANCE_ROUND_ROBIN, 'Rotate between targets (default).')
+        args.add_opt(
+            OPT_TYPE_LONG_FLAG,
+            TITLE_BALANCE_RANDOM,
+            TITLE_BALANCE_RANDOM,
+            'Select between multiple targets at random.',
+        )
+        args.add_opt(
+            OPT_TYPE_LONG_FLAG,
+            TITLE_BALANCE_ROUND_ROBIN,
+            TITLE_BALANCE_ROUND_ROBIN,
+            'Rotate between targets (default).',
+        )
 
-        args.add_opt(OPT_TYPE_SHORT, "a", TITLE_ALLOW, "Add network address or CIDR range to whitelist.", multiple = True)
-        args.add_opt(OPT_TYPE_SHORT, "A", TITLE_ALLOW_FILE, "Add addresses or CIDR ranges in file to whitelist.", multiple = True)
-        args.add_opt(OPT_TYPE_SHORT, "d", TITLE_DENY, "Add network address or CIDR range to blacklist.", multiple = True)
-        args.add_opt(OPT_TYPE_SHORT, "D", TITLE_DENY_FILE, "Add addresses or CIDR ranges in file to blacklist.", multiple = True)
+        args.add_opt(
+            OPT_TYPE_SHORT,
+            "a",
+            TITLE_ALLOW,
+            "Add network address or CIDR range to whitelist.",
+            multiple=True,
+        )
+        args.add_opt(
+            OPT_TYPE_SHORT,
+            "A",
+            TITLE_ALLOW_FILE,
+            "Add addresses or CIDR ranges in file to whitelist.",
+            multiple=True,
+        )
+        args.add_opt(
+            OPT_TYPE_SHORT,
+            "d",
+            TITLE_DENY,
+            "Add network address or CIDR range to blacklist.",
+            multiple=True,
+        )
+        args.add_opt(
+            OPT_TYPE_SHORT,
+            "D",
+            TITLE_DENY_FILE,
+            "Add addresses or CIDR ranges in file to blacklist.",
+            multiple=True,
+        )
 
-        args.add_opt(OPT_TYPE_SHORT, "c", TITLE_SSL_CERT, "SSL certificate file path (PEM format). Can also contain the SSL key.")
-        args.add_opt(OPT_TYPE_SHORT, "k", TITLE_SSL_KEY, "SSL key file path (PEM format).")
+        args.add_opt(
+            OPT_TYPE_SHORT,
+            "c",
+            TITLE_SSL_CERT,
+            "SSL certificate file path (PEM format). Can also contain the SSL key.",
+        )
+        args.add_opt(
+            OPT_TYPE_SHORT, "k", TITLE_SSL_KEY, "SSL key file path (PEM format)."
+        )
 
         args.add_validator(self.validate_common_arguments)
         args.add_validator(self.validate_access)
@@ -554,7 +789,9 @@ class TcpRelayServer:
         self.targets = []
 
     def get_target_round_robin(s):
-        s._round_robin_index = (getattr(s, '_round_robin_index', -1) + 1) % len(s.targets)
+        s._round_robin_index = (getattr(s, '_round_robin_index', -1) + 1) % len(
+            s.targets
+        )
         return s.targets[s._round_robin_index]
 
     def init_server(self):
@@ -562,9 +799,13 @@ class TcpRelayServer:
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if self.args[TITLE_SSL_CERT]:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            ctx.load_cert_chain(self.args[TITLE_SSL_CERT], keyfile=self.args[TITLE_SSL_KEY])
+            ctx.load_cert_chain(
+                self.args[TITLE_SSL_CERT], keyfile=self.args[TITLE_SSL_KEY]
+            )
             self.init_socket(self.server_socket)
-            self.server_socket = ctx.wrap_socket(self.server_socket, server_side=True, do_handshake_on_connect=False)
+            self.server_socket = ctx.wrap_socket(
+                self.server_socket, server_side=True, do_handshake_on_connect=False
+            )
 
         self.client_ctx = None
         if self.args[TITLE_TARGET_SSL] or self.args[TITLE_TARGET_SSL_INSECURE]:
@@ -584,7 +825,9 @@ class TcpRelayServer:
     def init_socket(s, so):
         os.set_blocking(so.fileno(), False)
         so.setblocking(False)
-        fcntl.fcntl(so, fcntl.F_SETFL, os.O_NONBLOCK) # Redundant, but to be absolutely sure...
+        fcntl.fcntl(
+            so, fcntl.F_SETFL, os.O_NONBLOCK
+        )  # Redundant, but to be absolutely sure...
 
     def is_loop(s, target_addr, server_addr):
         if target_addr[1] != server_addr[1]:
@@ -604,7 +847,10 @@ class TcpRelayServer:
 
         local_addresses = socket.gethostbyname_ex(socket.gethostname())[2]
         # Target is a local address and we are bound to a local address.
-        if target_addr[0] in local_addresses and server_addr[0] in ["0.0.0.0", target_addr[0]]:
+        if target_addr[0] in local_addresses and server_addr[0] in [
+            "0.0.0.0",
+            target_addr[0],
+        ]:
             return True
 
         # Run through all options, not a loop.
@@ -617,32 +863,49 @@ class TcpRelayServer:
 
     def print_summary(s):
         # Summarize arguments
-        if s.verbose: print_notice('Additional information shall be printed.')
+        if s.verbose:
+            print_notice('Additional information shall be printed.')
 
         if len(s.targets) == 1:
             s.get_target = lambda: s.targets[0]
 
             t = s.get_target()
-            print_notice('Relaying TCP connections on %s to %s' % (colour_addr(s.args[TITLE_BIND], s.port), t))
+            print_notice(
+                'Relaying TCP connections on %s to %s'
+                % (colour_addr(s.args[TITLE_BIND], s.port), t)
+            )
 
         else:
-            print_notice('Relaying TCP connections on %s to the following hosts:' % colour_addr(s.args[TITLE_BIND], s.port))
-            for t in s.targets: print_notice('  * %s' % t)
+            print_notice(
+                'Relaying TCP connections on %s to the following hosts:'
+                % colour_addr(s.args[TITLE_BIND], s.port)
+            )
+            for t in s.targets:
+                print_notice('  * %s' % t)
 
-            if s.args[TITLE_BALANCE_RANDOM]: s.get_target = lambda: s.targets[random.randint(0, len(s.targets)-1)]
-            else: s.get_target = s.get_target_round_robin
+            if s.args[TITLE_BALANCE_RANDOM]:
+                s.get_target = lambda: s.targets[random.randint(0, len(s.targets) - 1)]
+            else:
+                s.get_target = s.get_target_round_robin
 
         if s.args[TITLE_SSL_CERT]:
-            print_notice('SSL-encrypting incoming data with certificate: %s' % colour_green(s.args[TITLE_SSL_CERT]))
-            if s.args[TITLE_SSL_KEY]: print_notice('SSL key file: %s' % colour_green(s.args[TITLE_SSL_KEY]))
+            print_notice(
+                'SSL-encrypting incoming data with certificate: %s'
+                % colour_green(s.args[TITLE_SSL_CERT])
+            )
+            if s.args[TITLE_SSL_KEY]:
+                print_notice('SSL key file: %s' % colour_green(s.args[TITLE_SSL_KEY]))
 
         if s.args[TITLE_TARGET_SSL] or s.args[TITLE_TARGET_SSL_INSECURE]:
             print_notice('Target(s) are assumed to be SSL-secured')
-            if s.args[TITLE_TARGET_SSL_INSECURE]: print_notice('SSL certificate verification is disabled.')
+            if s.args[TITLE_TARGET_SSL_INSECURE]:
+                print_notice('SSL certificate verification is disabled.')
 
     def register_session(s, session):
-        if session.src not in s.sessions: s.sessions[session.src.fileno()] = session
-        if session.dst not in s.sessions: s.sessions[session.dst.fileno()] = session
+        if session.src not in s.sessions:
+            s.sessions[session.src.fileno()] = session
+        if session.dst not in s.sessions:
+            s.sessions[session.dst.fileno()] = session
 
     def register_socket(s, sock, flags):
         fd = sock.fileno()
@@ -656,13 +919,24 @@ class TcpRelayServer:
     def resolve_port(s, value, label):
         try:
             port = int(value)
-            if port < 0 or port > 65535: return None, "%s must be 0-65535. Given: %s" % (label, colour_text(port))
+            if port < 0 or port > 65535:
+                return None, "%s must be 0-65535. Given: %s" % (
+                    label,
+                    colour_text(port),
+                )
             return port, None
-        except ValueError: return None, '%s is invalid. Given: ' % (label, colour_text(port))
+        except ValueError:
+            return None, '%s is invalid. Given: ' % (label, colour_text(port))
 
     def resolve_target_address(s, value):
-        try: ip = socket.gethostbyname(value)
-        except socket.gaierror: return None, value, "Unable to resolve: %s" % colour_text(value, COLOUR_BLUE)
+        try:
+            ip = socket.gethostbyname(value)
+        except socket.gaierror:
+            return (
+                None,
+                value,
+                "Unable to resolve: %s" % colour_text(value, COLOUR_BLUE),
+            )
         return ip, value, None
 
     def run(self):
@@ -689,17 +963,20 @@ class TcpRelayServer:
 
                                 session = TcpRelaySession(self, sock, addr)
 
-                        except (BlockingIOError, socket.error) as e: pass
+                        except (BlockingIOError, socket.error) as e:
+                            pass
                         continue
                     else:
                         session = self.sessions.get(fd)
                         session.handle_data(fd, event)
 
-        finally: self.shutdown()
+        finally:
+            self.shutdown()
         return 0
 
     def shutdown(s):
-        for i in list(s.active_fds): s.unregister_descriptor(i)
+        for i in list(s.active_fds):
+            s.unregister_descriptor(i)
         s.epoll_socket.close()
         s.server_socket.close()
 
@@ -712,10 +989,14 @@ class TcpRelayServer:
 
     def validate_access(self, args):
         a = self.access
-        for i in args[TITLE_ALLOW]: a.add_whitelist(i)
-        for i in args[TITLE_ALLOW_FILE]: a.load_whitelist_file(i)
-        for i in args[TITLE_DENY]: a.add_blacklist(i)
-        for i in args[TITLE_DENY_FILE]: a.load_whitelist_file(i)
+        for i in args[TITLE_ALLOW]:
+            a.add_whitelist(i)
+        for i in args[TITLE_ALLOW_FILE]:
+            a.load_whitelist_file(i)
+        for i in args[TITLE_DENY]:
+            a.add_blacklist(i)
+        for i in args[TITLE_DENY_FILE]:
+            a.load_whitelist_file(i)
         return a.errors
 
     def validate_common_arguments(self, args):
@@ -723,41 +1004,76 @@ class TcpRelayServer:
         self.verbose = args[TITLE_VERBOSE]
 
         self.port, port_error = self.resolve_port(args[TITLE_PORT], 'Bind port')
-        if port_error: errors.append(port_error)
+        if port_error:
+            errors.append(port_error)
 
         for target_items in [t.split(':') for t in self.args.operands]:
 
-            target_ip, target_addr, target_err = self.resolve_target_address(target_items[0])
-            if target_err: errors.append(target_err)
+            target_ip, target_addr, target_err = self.resolve_target_address(
+                target_items[0]
+            )
+            if target_err:
+                errors.append(target_err)
 
             port_label = 'Target port for %s' % colour_blue(target_addr)
             if len(target_items) > 1:
                 target_port, port_err = self.resolve_port(target_items[1], port_label)
             else:
-                target_port, port_err = self.resolve_port(args[TITLE_TARGET_PORT], port_label)
-            if port_err: errors.append(target_err)
+                target_port, port_err = self.resolve_port(
+                    args[TITLE_TARGET_PORT], port_label
+                )
+            if port_err:
+                errors.append(target_err)
 
             # Check for obvious loops
             # If there is a problem with the IP/port information from up above,
             # then we will not bother with this check because loop checking might give false positives.
-            if not target_err and not port_err and self.is_loop((target_ip, target_port), (args[TITLE_BIND], args[TITLE_PORT])):
-                errors.append("Bad target (avoiding a potential loop): %s" % colour_addr(target_ip, target_port, target_addr))
+            if (
+                not target_err
+                and not port_err
+                and self.is_loop(
+                    (target_ip, target_port), (args[TITLE_BIND], args[TITLE_PORT])
+                )
+            ):
+                errors.append(
+                    "Bad target (avoiding a potential loop): %s"
+                    % colour_addr(target_ip, target_port, target_addr)
+                )
 
             # Always append target, even if it's generated a number of errors.
             # On account of the errors, this instance of the script won't survive past argument handling.
             self.targets.append(RelayTarget(target_ip, target_port, target_addr))
 
-        if not self.targets: errors.append('No relay target specified.')
+        if not self.targets:
+            errors.append('No relay target specified.')
         else:
-            num_rotation_options = len([i for i in [TITLE_BALANCE_RANDOM, TITLE_BALANCE_ROUND_ROBIN] if args[i]])
+            num_rotation_options = len(
+                [
+                    i
+                    for i in [TITLE_BALANCE_RANDOM, TITLE_BALANCE_ROUND_ROBIN]
+                    if args[i]
+                ]
+            )
             if num_rotation_options > 1:
-                if len(self.targets) > 1: errors.append('Must only select one rotation type when using multiple targets.')
+                if len(self.targets) > 1:
+                    errors.append(
+                        'Must only select one rotation type when using multiple targets.'
+                    )
                 # If there was only one target, let the user off with a warning.
-                else: print_warning('%s rotation options selected, but only one target was specified.' % colour_text(num_rotation_options))
+                else:
+                    print_warning(
+                        '%s rotation options selected, but only one target was specified.'
+                        % colour_text(num_rotation_options)
+                    )
 
             # Sanity-check for the user to remind them that every target will be treated as SSL.
-            if len(self.targets) > 1 and (args[TITLE_TARGET_SSL] or args[TITLE_TARGET_SSL_INSECURE]):
-                print_warning('SSL endpoints enabled for multiple targets. %s target will be considered to be SSL-enabled.' % colour_text(len(self.targets)))
+            if len(self.targets) > 1 and (
+                args[TITLE_TARGET_SSL] or args[TITLE_TARGET_SSL_INSECURE]
+            ):
+                print_warning(
+                    'SSL endpoints enabled for multiple targets. %s target will be considered to be SSL-enabled.'
+                    % colour_text(len(self.targets))
+                )
 
         return errors
 
@@ -765,10 +1081,14 @@ class TcpRelayServer:
         errors = []
 
         for label in [TITLE_SSL_CERT, TITLE_SSL_KEY]:
-            if args[label] and not os.path.isfile(args[label]): errors.append("%s not found: %s" % (label, colour_green(args[label])))
+            if args[label] and not os.path.isfile(args[label]):
+                errors.append("%s not found: %s" % (label, colour_green(args[label])))
 
         if TITLE_SSL_KEY in self.args and not TITLE_SSL_CERT in args:
-            errors.append('%s path provided, but no %s path was provided.' % (TITLE_SSL_KEY, TITLE_SSL_CERT))
+            errors.append(
+                '%s path provided, but no %s path was provided.'
+                % (TITLE_SSL_KEY, TITLE_SSL_CERT)
+            )
 
         if not errors and args[TITLE_SSL_CERT]:
             # No SSL errors so far. Attempt to SSL-wrap a TCP socket and see if we get any errors.
@@ -780,7 +1100,7 @@ class TcpRelayServer:
                 if re.match("^\[SSL\] PEM lib", str(e)):
                     # '[SSL] PEM lib (_ssl.c:2798)' is super-unhelpful, so we will provide our own error message.
                     # Unconfirmed: Is a missing key the only that can cause this?
-                    m+= "Must specify a key file or a cert file that also contains a key."
+                    m += "Must specify a key file or a cert file that also contains a key."
                 else:
                     # Append regular error message
                     m += str(e)
@@ -789,11 +1109,14 @@ class TcpRelayServer:
         return errors
 
     def validate_version(self, args):
-        if sys.version_info.major == 2: return 'This script currently only supports Python 3.'
+        if sys.version_info.major == 2:
+            return 'This script currently only supports Python 3.'
+
 
 STATE_UNCONNECTED = 1
 STATE_UNINITIALIZED = 2
 STATE_CONNECTED = 3
+
 
 class TcpRelaySession:
 
@@ -810,7 +1133,8 @@ class TcpRelaySession:
 
         if s.server.args[TITLE_SSL_CERT]:
             s.state_client = STATE_UNINITIALIZED
-        else: s.state_client = STATE_CONNECTED
+        else:
+            s.state_client = STATE_CONNECTED
         s.state_server = STATE_UNCONNECTED
 
         s.dst = srv.new_socket()
@@ -828,7 +1152,8 @@ class TcpRelaySession:
                 self.src.do_handshake()
                 self.state_client = STATE_CONNECTED
 
-                if self.verbose: print_notice('Client SSL initialized for %s' % str(self))
+                if self.verbose:
+                    print_notice('Client SSL initialized for %s' % str(self))
             except (SSLWantReadError, SSLWantWriteError, BlockingIOError) as e:
                 self.re_arm(self.src, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLONESHOT)
             except (SSLError, OSError) as e:
@@ -838,25 +1163,29 @@ class TcpRelaySession:
         if self.running and self.state_server == STATE_UNCONNECTED:
 
             target_addr = (self.target.ip, self.target.port)
-            if self.verbose: log_notice('Attempting: %s' % str(self))
+            if self.verbose:
+                log_notice('Attempting: %s' % str(self))
 
             try:
-                try: self.dst.connect(target_addr)
+                try:
+                    self.dst.connect(target_addr)
                 except socket.error as e:
                     # errno.EISCON has been observed to happen when running the relay on WSL.
                     # Uncertain how widespread the problem is.
                     # Any other socket error should be considered to be at the very least a failure of
                     #   this immediate connection attempt.
-                    if e.errno != errno.EISCONN: raise
+                    if e.errno != errno.EISCONN:
+                        raise
                 rearm_server = True
 
-                if self.verbose: print_notice('Completed TCP connection: %s' % str(self))
+                if self.verbose:
+                    print_notice('Completed TCP connection: %s' % str(self))
 
                 if self.server.client_ctx:
                     self.dst = self.server.client_ctx.wrap_socket(
                         self.dst,
                         server_hostname=self.target.hostname,
-                        do_handshake_on_connect=False
+                        do_handshake_on_connect=False,
                     )
 
                     self.state_server = STATE_UNINITIALIZED
@@ -870,7 +1199,8 @@ class TcpRelaySession:
             except (ConnectionError, OSError) as e:
                 # ConnectionError: Likely a reset connection (target not listening?)
                 # OSError: Possibly a timeout, or no route to host.
-                if self.verbose: log_error('Connection %s: %s' % (str(self), e))
+                if self.verbose:
+                    log_error('Connection %s: %s' % (str(self), e))
                 self.shutdown()
 
         if self.running and self.state_server == STATE_UNINITIALIZED:
@@ -884,17 +1214,24 @@ class TcpRelaySession:
                 self.state_server = STATE_CONNECTED
                 self.register_socket(self.src, TcpRelaySession.CLIENT_FLAGS)
 
-                if self.verbose: print_notice('Server SSL initialized for %s' % str(self))
+                if self.verbose:
+                    print_notice('Server SSL initialized for %s' % str(self))
             except (SSLWantReadError, SSLWantWriteError, BlockingIOError) as e:
                 self.re_arm(self.dst, TcpRelaySession.CLIENT_FLAGS)
             except ssl.SSLCertVerificationError as e:
-                if self.verbose: print_error('Failed to verify SSL certificate for %s in %s: %s' % (colour_blue(self.target.hostname), str(self), e))
+                if self.verbose:
+                    print_error(
+                        'Failed to verify SSL certificate for %s in %s: %s'
+                        % (colour_blue(self.target.hostname), str(self), e)
+                    )
                 self.shutdown()
             except (SSLError, OSError) as e:
-                if self.verbose: print_error('SSL handshake error error for %s: %s' % (str(self), e))
+                if self.verbose:
+                    print_error('SSL handshake error error for %s: %s' % (str(self), e))
                 self.shutdown()
 
-        if rearm_server: self.re_arm(self.dst)
+        if rearm_server:
+            self.re_arm(self.dst)
 
     def handle_data(self, fd, event):
 
@@ -902,15 +1239,21 @@ class TcpRelaySession:
             sock_in = self.src
             sock_out = self.dst
 
-            if (event & EPOLLIN and self.state_client == STATE_UNINITIALIZED): self.handle_connection()
+            if event & EPOLLIN and self.state_client == STATE_UNINITIALIZED:
+                self.handle_connection()
         else:
             sock_in = self.dst
             sock_out = self.src
 
-            if (event & EPOLLOUT and self.state_server == STATE_UNCONNECTED) or (event & EPOLLIN and self.state_server == STATE_UNINITIALIZED):
-                self.handle_connection() # Update on pending connection. Try again.
+            if (event & EPOLLOUT and self.state_server == STATE_UNCONNECTED) or (
+                event & EPOLLIN and self.state_server == STATE_UNINITIALIZED
+            ):
+                self.handle_connection()  # Update on pending connection. Try again.
 
-        if not (self.state_client == STATE_CONNECTED and self.state_server == STATE_CONNECTED):
+        if not (
+            self.state_client == STATE_CONNECTED
+            and self.state_server == STATE_CONNECTED
+        ):
             self.re_arm(sock_in)
             return
 
@@ -919,7 +1262,8 @@ class TcpRelaySession:
         data = None
         force_rearm = False
 
-        if event & EPOLLPRI: sock_out.send(sock_in.read(1, socket.MSG_OOB), socket.MSG_OOB)
+        if event & EPOLLPRI:
+            sock_out.send(sock_in.read(1, socket.MSG_OOB), socket.MSG_OOB)
 
         if event & EPOLLIN:
             try:
@@ -930,21 +1274,32 @@ class TcpRelaySession:
                 #       The solution seems to be to only read data once per invocation of epoll.poll()/handle_data()
 
                 data = sock_in.recv(1024)
-                if data: sock_out.send(data)
-            except (SSLWantReadError, SSLWantWriteError): force_rearm = True
-            except socket.error as e: print_exception(e, self)
+                if data:
+                    sock_out.send(data)
+            except (SSLWantReadError, SSLWantWriteError):
+                force_rearm = True
+            except socket.error as e:
+                print_exception(e, self)
 
-        if closing and not (data or force_rearm): self.shutdown() # Double-check that no data was read
-        else: self.re_arm(sock_in) # Re-arm socket
+        if closing and not (data or force_rearm):
+            self.shutdown()  # Double-check that no data was read
+        else:
+            self.re_arm(sock_in)  # Re-arm socket
 
-    def re_arm(s, sock, flags = 0):
-        if s.running and sock.fileno() > 0: s.server.epoll_socket.modify(sock.fileno(), flags or s.CLIENT_FLAGS)
+    def re_arm(s, sock, flags=0):
+        if s.running and sock.fileno() > 0:
+            s.server.epoll_socket.modify(sock.fileno(), flags or s.CLIENT_FLAGS)
 
     def shutdown(s):
-        if not s.running: return
-        if s.verbose: log_notice('Closing: %s' % str(s))
+        if not s.running:
+            return
+        if s.verbose:
+            log_notice('Closing: %s' % str(s))
 
-        subjects = [(s.state_server, s.dst, True), (s.state_client, s.src, s.state_server == STATE_CONNECTED)]
+        subjects = [
+            (s.state_server, s.dst, True),
+            (s.state_client, s.src, s.state_server == STATE_CONNECTED),
+        ]
         for state, sock, do_deregister in subjects:
             fd = sock.fileno()
             del s.server.sessions[fd]
@@ -952,23 +1307,29 @@ class TcpRelaySession:
             if do_deregister:
                 s.server.unregister_socket(sock)
 
-            try: sock.shutdown(socket.SHUT_RDWR)
-            except: pass
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
             sock.close()
 
         s.running = False
+
 
 class RelayTarget(object):
     def __init__(s, t_ip, t_port, t_host):
         s.ip = t_ip
         s.port = t_port
         s.hostname = t_host
+
     __str__ = lambda s: colour_addr(s.ip, s.port, s.hostname)
     get_addr = lambda s: (s.ip, s.port)
 
+
 # Run
 if __name__ == '__main__':
-    try: exit(TcpRelayServer().run())
+    try:
+        exit(TcpRelayServer().run())
     except KeyboardInterrupt:
         print('')
         exit(130)

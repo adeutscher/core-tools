@@ -13,19 +13,32 @@ import fcntl, socket, struct
 # Common Colours and Message Functions
 ###
 
-def _print_message(header_colour, header_text, message, stderr=False): # pragma: no cover
-    f=sys.stdout
-    if stderr:
-        f=sys.stderr
-    print('%s[%s]: %s' % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=ff)
 
-def colour_text(text, colour = None): # pragma: no cover
+def _print_message(
+    header_colour, header_text, message, stderr=False
+):  # pragma: no cover
+    f = sys.stdout
+    if stderr:
+        f = sys.stderr
+    print(
+        '%s[%s]: %s'
+        % (
+            colour_text(header_text, header_colour),
+            colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN),
+            message,
+        ),
+        file=ff,
+    )
+
+
+def colour_text(text, colour=None):  # pragma: no cover
     if not colour:
         colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return '%s%s%s' % (colour, text, COLOUR_OFF)
 
-def enable_colours(force = False): # pragma: no cover
+
+def enable_colours(force=False):  # pragma: no cover
     global COLOUR_PURPLE
     global COLOUR_RED
     global COLOUR_GREEN
@@ -51,6 +64,8 @@ def enable_colours(force = False): # pragma: no cover
         COLOUR_BLUE = ''
         COLOUR_BOLD = ''
         COLOUR_OFF = ''
+
+
 enable_colours()
 
 TYPE_CONNTRACK = 'conntrack'
@@ -59,8 +74,11 @@ TYPE_RAW = 'raw'
 TYPE_STDIN = 'standard input'
 TYPE_PROCFS = 'procfs'
 
+
 def display(connections):
-    connections_s = sorted(connections, key = lambda c: (c.src.addr_n, c.dst.addr_n, c.dst.port))
+    connections_s = sorted(
+        connections, key=lambda c: (c.src.addr_n, c.dst.addr_n, c.dst.port)
+    )
     counts = {}
 
     for cid in set([c.identifier for c in connections]):
@@ -72,7 +90,7 @@ def display(connections):
             'src': colour_text(c.src.addr, COLOUR_BLUE),
             'dst': colour_text(c.dst.addr, COLOUR_BLUE),
             'port': c.dst.port,
-            'count': ''
+            'count': '',
         }
 
         if c.identifier in displayed:
@@ -94,6 +112,7 @@ def parse_addr(addr):
     except ValueError:
         return (None, None)
 
+
 def parse_args(raw_args):
 
     description_pre = 'Display incoming IPv4 TCP connections parsed from /proc/net/tcp, netstat, or conntrack'
@@ -108,42 +127,119 @@ Valid filter/exclusion examples:
 If no explicit filter direction is given, then the is assumed to be referring to source address in input mode and destination address in outgoing mode.
 '''
 
-    parser = argparse.ArgumentParser(description=description_pre, epilog=description_post, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('filter', nargs='*', help='Whitelist filters on output. Conditions must match at least one condition in order to be displayed. Content can be an IP address, CIDR range, or TCP port. TCP ports can be phrased as "tcp/<port>". See below for more details.')
+    parser = argparse.ArgumentParser(
+        description=description_pre,
+        epilog=description_post,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        'filter',
+        nargs='*',
+        help='Whitelist filters on output. Conditions must match at least one condition in order to be displayed. Content can be an IP address, CIDR range, or TCP port. TCP ports can be phrased as "tcp/<port>". See below for more details.',
+    )
 
     # Store colour-formatted
     netstat_c = colour_text('netstat', COLOUR_BLUE)
     conntrack_c = colour_text('conntrack', COLOUR_BLUE)
 
     # General Filters
-    parser.add_argument('-e', action='append', default=[], dest='filters_exclusion', help='Exclusion filters. Exclude a particular set of ports/ranges. See below for details.')
-    parser.add_argument('--filter-and', action='store_true', dest='filter_and', help='If specified, whitelist filters must all match (as opposed to at least one matching).')
-    parser.add_argument('-l', action='store_true', dest='lan', help='LAN Mode. Restrict source addresses (or destination addresses for outgoing mode) to LAN addresses. By default, a LAN address is any address within 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16. Cancels out -r.')
-    parser.add_argument('--lan-interfaces', action='store_true', dest='lan_interfaces', help='When using LAN mode, consider a LAN address to be networks that the machine has an address on.')
-    parser.add_argument('-L', action='store_true', dest='allow_localhost', help='Show localhost connections.')
-    parser.add_argument('-n', action='store_true', dest='netstat', help='Netstat Mode. Use %s as the source for connection information.' % netstat_c)
-    parser.add_argument('-o', action='store_true', dest='outgoing', help='Show outgoing connections instead of incoming connections.')
-    parser.add_argument('-r', action='store_true', dest='remote', help='Remote Mode. Restrict source addresses (or destination addresses for outgoing mode) to remote addresses. A remote address is considered to be any non-LAN address. Cancels out -l.')
-    parser.add_argument('-S', action='store_true', dest='stdin', help='Expect input from stdin.')
+    parser.add_argument(
+        '-e',
+        action='append',
+        default=[],
+        dest='filters_exclusion',
+        help='Exclusion filters. Exclude a particular set of ports/ranges. See below for details.',
+    )
+    parser.add_argument(
+        '--filter-and',
+        action='store_true',
+        dest='filter_and',
+        help='If specified, whitelist filters must all match (as opposed to at least one matching).',
+    )
+    parser.add_argument(
+        '-l',
+        action='store_true',
+        dest='lan',
+        help='LAN Mode. Restrict source addresses (or destination addresses for outgoing mode) to LAN addresses. By default, a LAN address is any address within 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16. Cancels out -r.',
+    )
+    parser.add_argument(
+        '--lan-interfaces',
+        action='store_true',
+        dest='lan_interfaces',
+        help='When using LAN mode, consider a LAN address to be networks that the machine has an address on.',
+    )
+    parser.add_argument(
+        '-L',
+        action='store_true',
+        dest='allow_localhost',
+        help='Show localhost connections.',
+    )
+    parser.add_argument(
+        '-n',
+        action='store_true',
+        dest='netstat',
+        help='Netstat Mode. Use %s as the source for connection information.'
+        % netstat_c,
+    )
+    parser.add_argument(
+        '-o',
+        action='store_true',
+        dest='outgoing',
+        help='Show outgoing connections instead of incoming connections.',
+    )
+    parser.add_argument(
+        '-r',
+        action='store_true',
+        dest='remote',
+        help='Remote Mode. Restrict source addresses (or destination addresses for outgoing mode) to remote addresses. A remote address is considered to be any non-LAN address. Cancels out -l.',
+    )
+    parser.add_argument(
+        '-S', action='store_true', dest='stdin', help='Expect input from stdin.'
+    )
 
     c_options = parser.add_argument_group('Conntrack Options')
-    c_options.add_argument('-C', action='store_true', dest='conntrack', help='Conntrack Mode. Use %s as the source for connection information.' % conntrack_c)
-    c_options.add_argument('-A', action='store_true', dest='conntrack_all', help='Conntrack All-Mode: Also show connections passing through the script runner.')
-    c_options.add_argument('--no-self', action='store_true', dest='block_self', help='When in Conntrack all-mode, exclude connections involving script runner. When enabled while not in conntrack all-mode, incoming mode bars local addresses from source, outgoing, out going mode bars local addresses from dest.')
+    c_options.add_argument(
+        '-C',
+        action='store_true',
+        dest='conntrack',
+        help='Conntrack Mode. Use %s as the source for connection information.'
+        % conntrack_c,
+    )
+    c_options.add_argument(
+        '-A',
+        action='store_true',
+        dest='conntrack_all',
+        help='Conntrack All-Mode: Also show connections passing through the script runner.',
+    )
+    c_options.add_argument(
+        '--no-self',
+        action='store_true',
+        dest='block_self',
+        help='When in Conntrack all-mode, exclude connections involving script runner. When enabled while not in conntrack all-mode, incoming mode bars local addresses from source, outgoing, out going mode bars local addresses from dest.',
+    )
 
     args = parser.parse_args(raw_args)
     errors = []
 
     if args.conntrack and args.netstat:
-        errors.append('Cannot have both %s and %s as sources.' % (netstat_c, conntrack_c))
+        errors.append(
+            'Cannot have both %s and %s as sources.' % (netstat_c, conntrack_c)
+        )
 
     if args.conntrack:
         if platform.system() != 'Linux':
             errors.append('%s requires a Linux system.' % conntrack_c)
 
         # Cannot have allow-localhost AND no -r/-l AND conntrack AND all AND block-self
-        if args.allow_localhost and not (args.lan or args.remote) and args.conntrack_all and args.block_self:
-            errors.append('Cannot show only localhost addresses in %s mode.' % conntrack_c)
+        if (
+            args.allow_localhost
+            and not (args.lan or args.remote)
+            and args.conntrack_all
+            and args.block_self
+        ):
+            errors.append(
+                'Cannot show only localhost addresses in %s mode.' % conntrack_c
+            )
     else:
         # non-conntrack
 
@@ -174,12 +270,14 @@ If no explicit filter direction is given, then the is assumed to be referring to
 
     return args, errors
 
+
 def parse_cidr(cidr):
     try:
         net = ipaddress.ip_network(cidr)
         return (str(net[1]), str(net[-2]))
     except ValueError:
         return (None, None)
+
 
 def parse_filter(s_filter, allow):
 
@@ -251,6 +349,7 @@ def parse_filter(s_filter, allow):
 
     return ((allow, f_target, addresses, port_ranges), f_errors)
 
+
 def parse_filter_raw(raw):
 
     parsing = re.search('^((d|dst|s|src):)?([^:]+)(:(.+))?$', raw)
@@ -282,12 +381,14 @@ def parse_filter_raw(raw):
 
     return (True, target, addr, port, port_raw)
 
+
 def parse_hostname(addr):
     try:
         name, aliases, values = socket.gethostbyname_ex(addr)
         return [(str(v), str(v)) for v in values]
     except socket.gaierror:
         return []
+
 
 def to_str(s):
 
@@ -298,6 +399,7 @@ def to_str(s):
         return str(s, 'utf-8')
 
     return str(s)
+
 
 class ConnectionContext:
 
@@ -319,7 +421,9 @@ class ConnectionContext:
         self.__parsers = kwargs.get('parsers', PARSERS)
         self.__sources = kwargs.get('sources', SOURCES)
 
-        self.localhost, self.interfaces = kwargs.get('interface_source').get_interfaces()
+        self.localhost, self.interfaces = kwargs.get(
+            'interface_source'
+        ).get_interfaces()
         self.reset()
 
     def __is_allowing_localhost(self):
@@ -354,7 +458,15 @@ class ConnectionContext:
 
     def append(self, connection):
 
-        matches = list(filter(lambda i: i.src.addr_b == connection.src.addr_b and i.src.port == connection.src.port and i.dst.addr_b == connection.dst.addr_b and i.dst.port == connection.dst.port, self.connections))
+        matches = list(
+            filter(
+                lambda i: i.src.addr_b == connection.src.addr_b
+                and i.src.port == connection.src.port
+                and i.dst.addr_b == connection.dst.addr_b
+                and i.dst.port == connection.dst.port,
+                self.connections,
+            )
+        )
 
         if matches:
             return
@@ -374,7 +486,7 @@ class ConnectionContext:
         self.connections = []
 
     def run(self):
-        self.connections = [] # Reset connections
+        self.connections = []  # Reset connections
 
         filter_stack = FilterStackAnd()
 
@@ -402,7 +514,7 @@ class ConnectionContext:
 
         # Basic filtering. Covers localhost, direction and pre-baked filters like for remote addresses.
         filter_basic = FilterStackOr()
-        filter_stack.append(filter_basic) # Immediately add to main stack
+        filter_stack.append(filter_basic)  # Immediately add to main stack
 
         # Localhost filter
         filter_localhost = FilterLocalhost()
@@ -425,14 +537,17 @@ class ConnectionContext:
             addresses = self.interfaces
         else:
             addresses = []
-            for a, n in [('10.0.0.1', '255.0.0.0'), ('172.31.0.1', '255.240.0.0'), ('192.168.0.1', '255.255.0.0')]:
-                args = {
-                    'addr': a,
-                    'netmask': n
-                }
+            for a, n in [
+                ('10.0.0.1', '255.0.0.0'),
+                ('172.31.0.1', '255.240.0.0'),
+                ('192.168.0.1', '255.255.0.0'),
+            ]:
+                args = {'addr': a, 'netmask': n}
                 addresses.append(Interface(**args))
 
-        ranges_networks = [(i.network_n + 1, i.network_n + i.max_addresses) for i in addresses]
+        ranges_networks = [
+            (i.network_n + 1, i.network_n + i.max_addresses) for i in addresses
+        ]
 
         mode_lan_raw = self.is_mode_lan
         mode_remote_raw = self.is_mode_remote
@@ -446,35 +561,21 @@ class ConnectionContext:
         if self.is_filter_input:
             # Incoming connections must be aimed at one of our addresses
 
-            components = [
-                {
-                    'dst': ranges_addresses,
-                    'allow': True
-                }
-            ]
+            components = [{'dst': ranges_addresses, 'allow': True}]
 
             if not self.is_including_self:
                 # Block connections coming from our own addresses
-                component = {
-                    'src': ranges_addresses,
-                    'allow': False
-                }
+                component = {'src': ranges_addresses, 'allow': False}
                 components.append(component)
 
             if mode_lan:
                 # In LAN mode, allow only items coming from local networks
-                component = {
-                    'src': ranges_networks,
-                    'allow': True
-                }
+                component = {'src': ranges_networks, 'allow': True}
                 components.append(component)
 
             if mode_remote:
                 # In remote, block items coming from local addresses. Anything not local is remote
-                component = {
-                    'src': ranges_networks,
-                    'allow': False
-                }
+                component = {'src': ranges_networks, 'allow': False}
                 components.append(component)
             # Add input filter as a possible branch
             subfilter = FilterGeneral(components=components)
@@ -486,35 +587,21 @@ class ConnectionContext:
             # I could rig something up to cut down on code duplication,
             #   but that would take away from code readability.
 
-            components = [
-                {
-                    'src': ranges_addresses,
-                    'allow': True
-                }
-            ]
+            components = [{'src': ranges_addresses, 'allow': True}]
 
             if not self.is_including_self:
                 # Block connections going to our own addresses
-                component = {
-                    'dst': ranges_addresses,
-                    'allow': False
-                }
+                component = {'dst': ranges_addresses, 'allow': False}
                 components.append(component)
 
             if mode_lan:
                 # In LAN mode, allow only items going to local networks
-                component = {
-                    'dst': ranges_networks,
-                    'allow': True
-                }
+                component = {'dst': ranges_networks, 'allow': True}
                 components.append(component)
 
             if mode_remote:
                 # In remote, block items going to local addresss. Anything not local is remote
-                component = {
-                    'dst': ranges_networks,
-                    'allow': False
-                }
+                component = {'dst': ranges_networks, 'allow': False}
                 components.append(component)
             subfilter = FilterGeneral(components=components)
             filter_general_or.append(subfilter)
@@ -550,20 +637,13 @@ class ConnectionContext:
                 if target == 'src':
                     target_ports = 'sports'
 
-                component = {
-                    'allow': allow,
-                    target_ports: port_ranges
-                }
+                component = {'allow': allow, target_ports: port_ranges}
 
                 if addr_low and addr_high:
                     c_low = ConnectionAddress(self, addr_low)
                     c_high = ConnectionAddress(self, addr_high)
                     component[target] = [(c_low.addr_n, c_high.addr_n)]
-                c_args = {
-                    'components': [
-                        component
-                    ]
-                }
+                c_args = {'components': [component]}
 
                 filter_addr_stack.append(FilterGeneral(**c_args))
 
@@ -571,7 +651,6 @@ class ConnectionContext:
                 advanced_filters_allow.append(filter_addr_stack)
             else:
                 advanced_filters_deny.append(filter_addr_stack)
-
 
         # Get parser, prepare for loop
         c_parser = self.__parsers[self.type_parser]
@@ -615,6 +694,7 @@ class ConnectionContext:
             print('Source not found: ', src)
             return 1
 
+
 class FilterLocalhost:
     def __init__(self):
         self.__allow_localhost = False
@@ -634,13 +714,14 @@ class FilterLocalhost:
         # Connection involves a localhost address
         return self.__allow_localhost
 
+
 class FilterNotLocalhost:
     '''
-        not localhost
-        AND
-        (
-            not allowing localhost OR -r/-l specified
-        )
+    not localhost
+    AND
+    (
+        not allowing localhost OR -r/-l specified
+    )
     '''
 
     def __init__(self, context):
@@ -650,7 +731,10 @@ class FilterNotLocalhost:
         if connection.is_localhost:
             return False
 
-        return not self.context.is_allowing_localhost or (self.context.is_mode_lan or self.context.is_mode_remote)
+        return not self.context.is_allowing_localhost or (
+            self.context.is_mode_lan or self.context.is_mode_remote
+        )
+
 
 class FilterGeneral:
     def __init__(self, **kwargs):
@@ -661,13 +745,13 @@ class FilterGeneral:
 
         for component in self.components:
             '''
-                Block (blacklist):
-                    If the component matches, then immediately return False.
-                    If the component doesn't match, then continue to next component
+            Block (blacklist):
+                If the component matches, then immediately return False.
+                If the component doesn't match, then continue to next component
 
-                Allow (whitelist)
-                    If the component matches, then continue to next component
-                    If the component doesn't match, then immediately return False
+            Allow (whitelist)
+                If the component matches, then continue to next component
+                If the component doesn't match, then immediately return False
             '''
 
             match_dst = True
@@ -682,18 +766,62 @@ class FilterGeneral:
             allow = component['allow']
 
             if dst:
-                match_dst = len(list(filter(lambda a: connection.dst.addr_n >= a[0] and connection.dst.addr_n <= a[1], dst))) > 0
+                match_dst = (
+                    len(
+                        list(
+                            filter(
+                                lambda a: connection.dst.addr_n >= a[0]
+                                and connection.dst.addr_n <= a[1],
+                                dst,
+                            )
+                        )
+                    )
+                    > 0
+                )
 
             if match_dst and dports:
-                match_dst = len(list(filter(lambda p: connection.dst.port >= p[0] and connection.dst.port <= p[1], dports))) > 0
+                match_dst = (
+                    len(
+                        list(
+                            filter(
+                                lambda p: connection.dst.port >= p[0]
+                                and connection.dst.port <= p[1],
+                                dports,
+                            )
+                        )
+                    )
+                    > 0
+                )
 
             if src:
-                match_src = len(list(filter(lambda a: connection.src.addr_n >= a[0] and connection.src.addr_n <= a[1], src))) > 0
+                match_src = (
+                    len(
+                        list(
+                            filter(
+                                lambda a: connection.src.addr_n >= a[0]
+                                and connection.src.addr_n <= a[1],
+                                src,
+                            )
+                        )
+                    )
+                    > 0
+                )
 
             if match_src and sports:
-                match_dst = len(list(filter(lambda p: connection.src.port >= p[0] and connection.src.port <= p[1], sports))) > 0
+                match_dst = (
+                    len(
+                        list(
+                            filter(
+                                lambda p: connection.src.port >= p[0]
+                                and connection.src.port <= p[1],
+                                sports,
+                            )
+                        )
+                    )
+                    > 0
+                )
 
-            match = match_dst and match_src # Shorthand
+            match = match_dst and match_src  # Shorthand
 
             if allow and not match:
                 # In Allow component: If the component doesn't match, then immediately return False
@@ -705,6 +833,7 @@ class FilterGeneral:
 
         # Either survived all filter condition components, or there were no such components
         return True
+
 
 class FilterStackAnd:
     # Note: Not just using filter() in order to keep things consistent
@@ -720,6 +849,7 @@ class FilterStackAnd:
             if not item.check(connection):
                 return False
         return True
+
 
 class FilterStackOr:
     def __init__(self):
@@ -738,6 +868,7 @@ class FilterStackOr:
             if subfilter.check(connection):
                 return True
         return False
+
 
 class Interface:
     def __init__(self, **kwargs):
@@ -779,7 +910,9 @@ class Interface:
     def __get_network_b(self):
         r = b''
         for i in range(4):
-            r += bytes([((self.addr_b[i]) - ((self.addr_b[i]) & ~int(self.netmask_b[i])))])
+            r += bytes(
+                [((self.addr_b[i]) - ((self.addr_b[i]) & ~int(self.netmask_b[i])))]
+            )
         return r
 
     def __get_network_n(self):
@@ -790,7 +923,7 @@ class Interface:
 
     def __get_max_addrs(self):
         # Max IPv4 value in int form
-        mm = self.__convert_n(bytes([255,255,255,255]))
+        mm = self.__convert_n(bytes([255, 255, 255, 255]))
         return mm & ~self.netmask_n - 1
 
     def __str__(self):
@@ -817,6 +950,7 @@ class Interface:
 
     max_addresses = property(__get_max_addrs)
 
+
 class InterfaceSource:
     def get_interfaces(self):
         interfaces = []
@@ -838,34 +972,29 @@ class InterfaceSource:
 
         return localhost, interfaces
 
-    def get_interface_names(self): # pragma: no cover
+    def get_interface_names(self):  # pragma: no cover
         return os.listdir('/sys/class/net')
 
-    def load_interface(self, name): # pragma: no cover
+    def load_interface(self, name):  # pragma: no cover
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         ifquery = struct.pack('256s', bytes(name[:15], 'utf-8'))
 
         kwargs = {}
 
-        kwargs['addr'] = socket.inet_ntoa(fcntl.ioctl(
-            s.fileno(),
-            0x8915,  # SIOCGIFADDR
-            ifquery
-        )[20:24])
+        kwargs['addr'] = socket.inet_ntoa(
+            fcntl.ioctl(s.fileno(), 0x8915, ifquery)[20:24]  # SIOCGIFADDR
+        )
 
-        kwargs['broadcast'] = socket.inet_ntoa(fcntl.ioctl(
-            s.fileno(),
-            0x8919,  # SIOCGIFBRDADDR
-            ifquery
-        )[20:24])
+        kwargs['broadcast'] = socket.inet_ntoa(
+            fcntl.ioctl(s.fileno(), 0x8919, ifquery)[20:24]  # SIOCGIFBRDADDR
+        )
 
-        kwargs['netmask'] = socket.inet_ntoa(fcntl.ioctl(
-            s.fileno(),
-            0x891b,  # SIOCGIFNETMASK
-            ifquery
-        )[20:24])
+        kwargs['netmask'] = socket.inet_ntoa(
+            fcntl.ioctl(s.fileno(), 0x891B, ifquery)[20:24]  # SIOCGIFNETMASK
+        )
 
         return Interface(**kwargs)
+
 
 class Connection:
     def __init__(self, **kwargs):
@@ -908,8 +1037,9 @@ class Connection:
     interfaces = property(__get_interfaces)
     is_localhost = property(__is_localhost)
 
+
 class ConnectionAddress:
-    def __init__(self, context, addr, port = None, netmask = '255.255.255.255'):
+    def __init__(self, context, addr, port=None, netmask='255.255.255.255'):
         self.context = context
 
         self.addr = addr
@@ -917,7 +1047,12 @@ class ConnectionAddress:
         self.port = port
 
     def __get_addr_n(self):
-        return (int(self.addr_b[0]) * 16777216) + (self.addr_b[1] * 65536) + (self.addr_b[2] * 256) + self.addr_b[3]
+        return (
+            (int(self.addr_b[0]) * 16777216)
+            + (self.addr_b[1] * 65536)
+            + (self.addr_b[2] * 256)
+            + self.addr_b[3]
+        )
 
     def __str__(self):
         return '%s/%d' % (self.addr, self.port)
@@ -932,6 +1067,7 @@ class ConnectionAddress:
         return s
 
     addr_n = property(__get_addr_n)
+
 
 class ParserConntrack:
     def __init__(self, context):
@@ -949,7 +1085,9 @@ class ParserConntrack:
             return None
 
         values = {}
-        for key, value in [(p.split('=')[0], p.split('=')[1]) for p in parts if re.search('^[^=]+=', p)]:
+        for key, value in [
+            (p.split('=')[0], p.split('=')[1]) for p in parts if re.search('^[^=]+=', p)
+        ]:
             values[key] = value
 
         conn_args = {
@@ -957,9 +1095,10 @@ class ParserConntrack:
             'proto': parts[0],
             'addr_a': (values['src'], int(values['sport'])),
             'addr_b': (values['dst'], int(values['dport'])),
-            'state': state
+            'state': state,
         }
         return Connection(**conn_args)
+
 
 class ParserNetstat:
     def __init__(self, context):
@@ -987,9 +1126,10 @@ class ParserNetstat:
             'proto': cols[0],
             'addr_a': local_tup,
             'addr_b': remote_tup,
-            'state': state
+            'state': state,
         }
         return Connection(**conn_args)
+
 
 class ParserProcFS:
     def __init__(self, context):
@@ -997,7 +1137,20 @@ class ParserProcFS:
 
     def __get_addr_tuple(self, raw):
         parts = raw.split(':')
-        return ('%d.%d.%d.%d' % tuple(reversed((int(parts[0][0:2], 16), int(parts[0][2:4], 16), int(parts[0][4:6], 16), int(parts[0][6:8], 16)))), int(parts[1], 16))
+        return (
+            '%d.%d.%d.%d'
+            % tuple(
+                reversed(
+                    (
+                        int(parts[0][0:2], 16),
+                        int(parts[0][2:4], 16),
+                        int(parts[0][4:6], 16),
+                        int(parts[0][6:8], 16),
+                    )
+                )
+            ),
+            int(parts[1], 16),
+        )
 
     def parse(self, line):
         parts = [l for l in line.split(' ') if l]
@@ -1018,11 +1171,12 @@ class ParserProcFS:
             'proto': 'tcp',
             'addr_a': tup_local,
             'addr_b': tup_remote,
-            'state': raw_state
+            'state': raw_state,
         }
         return Connection(**conn_args)
 
-class ParserRaw: # pragma: no cover
+
+class ParserRaw:  # pragma: no cover
     # NYI
     def __init__(self, context):
         self.context = context
@@ -1030,30 +1184,37 @@ class ParserRaw: # pragma: no cover
     def parse(self, line):
         raise Exception('Raw parse NYI')
 
+
 PARSERS = {
     TYPE_CONNTRACK: ParserConntrack,
     TYPE_NETSTAT: ParserNetstat,
     TYPE_RAW: ParserRaw,
-    TYPE_PROCFS: ParserProcFS
+    TYPE_PROCFS: ParserProcFS,
 }
 
-class SourceCmd: # pragma: no cover
+
+class SourceCmd:  # pragma: no cover
     # Not testing
     def __enter__(self):
-        self.proc = subprocess.Popen(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.proc = subprocess.Popen(
+            self.cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
         return self.proc.stdout
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.proc.terminate()
 
+
 class SourceConntrack(SourceCmd):
     cmd = ['conntrack', '-L']
+
 
 class SourceNetstat(SourceCmd):
     cmd = ['netstat', '-tn']
 
+
 class SourceProcFS:
-    def __init__(self, path = '/proc/net/tcp'):
+    def __init__(self, path='/proc/net/tcp'):
         self.__path = path
 
     def __enter__(self):
@@ -1064,8 +1225,9 @@ class SourceProcFS:
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.handle.close()
 
+
 class SourceStandardInput:
-    def __init__(self, stream = None):
+    def __init__(self, stream=None):
         self.__stream = stream or sys.stdin
 
     def __enter__(self):
@@ -1077,18 +1239,21 @@ class SourceStandardInput:
     def readline(self):
         return self.__stream.readline()
 
+
 SOURCES = {
     TYPE_CONNTRACK: SourceConntrack,
     TYPE_NETSTAT: SourceNetstat,
     TYPE_STDIN: SourceStandardInput,
-    TYPE_PROCFS: SourceProcFS
+    TYPE_PROCFS: SourceProcFS,
 }
+
 
 def main(**kwargs):
     exit_code, connections = run(**kwargs)
     if exit_code == 0:
         display(connections)
     return exit_code
+
 
 def run(**kwargs):
 
@@ -1136,8 +1301,16 @@ def run(**kwargs):
     connections = runner.run()
     return 0, connections
 
-if __name__ == '__main__': # pragma: no cover
+
+if __name__ == '__main__':  # pragma: no cover
     try:
-        exit(main(args=sys.argv[1:], interface_source=InterfaceSource(), parsers=PARSERS, sources=SOURCES))
+        exit(
+            main(
+                args=sys.argv[1:],
+                interface_source=InterfaceSource(),
+                parsers=PARSERS,
+                sources=SOURCES,
+            )
+        )
     except KeyboardInterrupt:
         exit(130)

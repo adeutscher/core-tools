@@ -114,7 +114,7 @@ def _get_command_new(resolution, display=False, **kwargs):
         else:
             switches.append('/p:%s' % password)
 
-    switches.append('/u:%s' % user or os.getlogin())
+    switches.append('/u:%s' % (user or os.getlogin()))
     # Server address
     switches.append('/v:%s' % target)
 

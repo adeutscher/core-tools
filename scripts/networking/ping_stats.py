@@ -3,7 +3,8 @@
 # General
 from getopt import gnu_getopt
 import logging
-import sys # Argument Parsing
+import sys  # Argument Parsing
+
 # Note: Intentionally not using time.perf_counter to allow for Python2.
 from time import sleep, time
 
@@ -15,7 +16,8 @@ from re import search, sub
 # TCP Support
 import errno, socket
 
-def _build_logger(label, err = None, out = None):
+
+def _build_logger(label, err=None, out=None):
     obj = logging.getLogger(label)
     obj.setLevel(logging.DEBUG)
     # Err
@@ -32,18 +34,22 @@ def _build_logger(label, err = None, out = None):
     obj.addHandler(out_handler)
     return obj
 
+
 logger = _build_logger('ping_stats')
+
 
 def _colour_green(text):
     # Lazy shorthand for the common habit of using green to highlight paths.
     return _colour_text(text, COLOUR_GREEN)
 
-def _colour_text(text, colour = None):
+
+def _colour_text(text, colour=None):
     colour = colour or COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return '%s%s%s' % (colour, text, COLOUR_OFF)
 
-def _enable_colours(force = None):
+
+def _enable_colours(force=None):
     global COLOUR_BOLD
     global COLOUR_BLUE
     global COLOUR_RED
@@ -66,7 +72,10 @@ def _enable_colours(force = None):
         COLOUR_GREEN = ''
         COLOUR_YELLOW = ''
         COLOUR_OFF = ''
+
+
 _enable_colours()
+
 
 def _translate_result(result):
     if result == RESULT_SUCCESS:
@@ -78,18 +87,21 @@ def _translate_result(result):
     if result == RESULT_UNREACHABLE:
         return 'unreachable'
 
+
 '''
 Translate seconds to something more human-readable
 '''
+
+
 def _translate_seconds(duration):
 
     modules = [
         ('seconds', 60),
-        ('minutes',60),
-        ('hours',24),
-        ('days',7),
-        ('weeks',52),
-        ('years',100)
+        ('minutes', 60),
+        ('hours', 24),
+        ('days', 7),
+        ('weeks', 52),
+        ('years', 100),
     ]
 
     num = max(0, int(duration))
@@ -112,7 +124,7 @@ def _translate_seconds(duration):
 
         num = int(num / value)
         if not num:
-            break # No more modules to process
+            break  # No more modules to process
 
     if len(times) == 1:
         return ' '.join(times)
@@ -124,6 +136,8 @@ def _translate_seconds(duration):
         s = d.join(reversed(times))
         sl = s.split(d, len(times) - 2)
         return ', '.join(sl)
+
+
 MODE_RELIABLE = 0x01
 MODE_UNRELIABLE = 0x02
 
@@ -133,6 +147,7 @@ RESULT_CLOSED = 3
 RESULT_UNREACHABLE = 4
 
 DEFAULT_STREAK_COUNT = 10
+
 
 class PingContext:
     def __init__(self):
@@ -144,6 +159,7 @@ class PingContext:
         self.time_max = self.time_min = self.time_avg = 0
         self.time_end = self.time_start = 0
 
+
 def do_icmp(**kwargs):
 
     target = kwargs.get('ip')
@@ -152,10 +168,10 @@ def do_icmp(**kwargs):
     if platform() in ['Linux', 'Darwin']:
         # Unix platform
         # ToDo: Improve this check
-        cmd_args=['ping', '-W1', '-c1', target]
+        cmd_args = ['ping', '-W1', '-c1', target]
     else:
         # Windows Environment (assumed)
-        cmd_args=['ping', '-w', '1', '-n', '1', target]
+        cmd_args = ['ping', '-w', '1', '-n', '1', target]
     p = cmd(cmd_args, stdout=pipe, stderr=pipe)
     out, err = p.communicate()
     out = str(out).replace('\\n', '\n')
@@ -165,7 +181,7 @@ def do_icmp(**kwargs):
 
     result = {}
 
-    pattern=r'(Reply from [^:]+: bytes|\d+ bytes from)[^\n]+'
+    pattern = r'(Reply from [^:]+: bytes|\d+ bytes from)[^\n]+'
     l = search(pattern, str(out))
 
     if not l or p.returncode:
@@ -179,10 +195,13 @@ def do_icmp(**kwargs):
 
     # Strip out the icmp_seq value because our implementation invokes a new
     #   ping process. icmp_seq will always be '1'.
-    line = sub('((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)', '', l.group(0))
+    line = sub(
+        '((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)', '', l.group(0)
+    )
     line = line.replace('time=', 't=')
     line = sub('(\.[\d]{2})\d? ms', r'\1 ms', line)
     return result, display, line
+
 
 def do_tcp(**kwargs):
 
@@ -206,7 +225,10 @@ def do_tcp(**kwargs):
             time_duration = time() - time_start
 
             if debug:
-                logger.debug('Connection result (%.02f seconds): %s' % (time_duration, result_conn))
+                logger.debug(
+                    'Connection result (%.02f seconds): %s'
+                    % (time_duration, result_conn)
+                )
 
             # If connect_ex() returned 11 (EAGAIN), then continue the loop.
             # Give up after 10s. If the traffic is being dropped, then
@@ -255,9 +277,12 @@ def do_tcp(**kwargs):
         break
     return result, display, line
 
+
 '''
 Get display phrasing for target
 '''
+
+
 def get_target(**kwargs):
 
     # Shorthand
@@ -265,14 +290,19 @@ def get_target(**kwargs):
     ip = kwargs.get('ip')
 
     if addr != ip:
-        return '%s (%s)' % (_colour_text(addr, COLOUR_BLUE), _colour_text(ip, COLOUR_BLUE))
+        return '%s (%s)' % (
+            _colour_text(addr, COLOUR_BLUE),
+            _colour_text(ip, COLOUR_BLUE),
+        )
     else:
         return _colour_text(addr, COLOUR_BLUE)
+
 
 def get_tcp_socket():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(1)
     return s
+
 
 def main(args_raw):
     valid, args = parse_args(args_raw)
@@ -306,25 +336,37 @@ def main(args_raw):
 
     return exit_code
 
-def parse_args(args_raw):
 
+def parse_args(args_raw):
     def hexit(hexit_code):
 
-        logger.info('Usage: %s address [-c count] [-r] [-u] [streak_count]' % _colour_green('./ping-stats.py'))
-        logger.info(' -r: Exit when a streak of successful pings reaches the streak count.')
+        logger.info(
+            'Usage: %s address [-c count] [-r] [-u] [streak_count]'
+            % _colour_green('./ping-stats.py')
+        )
+        logger.info(
+            ' -r: Exit when a streak of successful pings reaches the streak count.'
+        )
         logger.info(' -u: Exit when a streak of failed pings reaches the streak count.')
-        logger.info(' -p port : Instead of using ICMP pings, scan on the specified TCP port.')
+        logger.info(
+            ' -p port : Instead of using ICMP pings, scan on the specified TCP port.'
+        )
         logger.info(' -c count: Limit the total number of packets sent.')
-        logger.info('           Will exit with a non-zero exit code if limit is reached')
+        logger.info(
+            '           Will exit with a non-zero exit code if limit is reached'
+        )
         logger.info('           while attempting a streak.')
         logger.info(' -d: Debug mode. Print the raw output of ping command.')
         logger.info(' -t: Tally mode. Always display a tally of successful pings.')
         logger.info(' -i seconds: Interval time between pings (Default: 1)')
-        logger.info('Set streak count as an optional second argument. Default: %s' % _colour_text(DEFAULT_STREAK_COUNT))
+        logger.info(
+            'Set streak count as an optional second argument. Default: %s'
+            % _colour_text(DEFAULT_STREAK_COUNT)
+        )
 
         exit(hexit_code)
 
-    def validate_int(value_raw, label, expr = lambda i: i > 0, msg = None):
+    def validate_int(value_raw, label, expr=lambda i: i > 0, msg=None):
         try:
             value_parsed = int(value_raw)
             if not expr(value_parsed):
@@ -336,7 +378,7 @@ def parse_args(args_raw):
 
     # Value-tracking
 
-    args = { 'mode': 0 }
+    args = {'mode': 0}
 
     try:
         opts, operands = gnu_getopt(args_raw, 'c:dhi:p:rtu')
@@ -368,7 +410,12 @@ def parse_args(args_raw):
                 args['interval'] = value
         elif arg == '-p':
             # Port
-            valid, value = validate_int(value, 'port', lambda i: i > 0 and i <= 65535, 'Bad TCP port number. Must be an integer in the range of 1-65535')
+            valid, value = validate_int(
+                value,
+                'port',
+                lambda i: i > 0 and i <= 65535,
+                'Bad TCP port number. Must be an integer in the range of 1-65535',
+            )
             error = error or not valid
             if valid:
                 args['port'] = value
@@ -396,7 +443,10 @@ def parse_args(args_raw):
         try:
             args['ip'] = socket.gethostbyname(args['addr'])
         except socket.gaierror:
-            logger.error('Unable to resolve address: %s' % _colour_text(args['addr'], COLOUR_BLUE))
+            logger.error(
+                'Unable to resolve address: %s'
+                % _colour_text(args['addr'], COLOUR_BLUE)
+            )
             error = True
 
     if args['mode'] & (MODE_RELIABLE | MODE_UNRELIABLE):
@@ -411,14 +461,20 @@ def parse_args(args_raw):
         count = args.get('count')
 
         if count and count < streak:
-            logger.error('Can never reach streak goal of %s with a count limit of %s.' % (_colour_text(streak), _colour_text(count)))
+            logger.error(
+                'Can never reach streak goal of %s with a count limit of %s.'
+                % (_colour_text(streak), _colour_text(count))
+            )
             error = True
 
     return not error, args
 
+
 '''
 Print a summary of arguments.
 '''
+
+
 def print_args(**kwargs):
     port = kwargs.get('port')
     if port:
@@ -443,10 +499,16 @@ def print_args(**kwargs):
 
         streak = kwargs.get('streak', DEFAULT_STREAK_COUNT)
 
-        logger.info('Waiting until %s %s be %s %s times in a row.' % (target, word, wording_method, _colour_text(streak)))
+        logger.info(
+            'Waiting until %s %s be %s %s times in a row.'
+            % (target, word, wording_method, _colour_text(streak))
+        )
 
         if count:
-            logger.info('Will terminate unsuccessfully if we cannot do so after %s %s attempts.' % (_colour_text(count), wording_noun))
+            logger.info(
+                'Will terminate unsuccessfully if we cannot do so after %s %s attempts.'
+                % (_colour_text(count), wording_noun)
+            )
 
     elif count:
         logger.info('%s attempt count: %s' % (wording_noun, _colour_text(count)))
@@ -454,6 +516,7 @@ def print_args(**kwargs):
     interval = kwargs.get('interval')
     if interval:
         logger.info('Time between attempts (seconds): %s' % _colour_text(interval))
+
 
 def print_results(args, ctx, exit_code):
 
@@ -471,9 +534,14 @@ def print_results(args, ctx, exit_code):
     if streak_check:
         logger.info('\nDuration: %s', _translate_seconds(ctx.time_end - ctx.time_start))
 
-    if not exit_code and streak_check and ctx.total == args.get('count') and (
-        (mode & MODE_RELIABLE and ctx.streak_success < streak)
-        or (mode & MODE_UNRELIABLE and ctx.streak_fail < streak)
+    if (
+        not exit_code
+        and streak_check
+        and ctx.total == args.get('count')
+        and (
+            (mode & MODE_RELIABLE and ctx.streak_success < streak)
+            or (mode & MODE_UNRELIABLE and ctx.streak_fail < streak)
+        )
     ):
         # Set an exit code if we weren't able to get the required number of successful/failed pings within the limit.
         # (Do not override the exit code of a keyboard interrupt)
@@ -481,15 +549,23 @@ def print_results(args, ctx, exit_code):
 
     logger.info('\n--- %s ping statistics ---' % get_target(**args))
     # ping numbers in ping-like format
-    logger.info('%s packets transmitted, %d received, %.02f%% packet loss' % (ctx.total, ctx.total_success, 100 - float(ctx.total_success) / ctx.total * 100))
+    logger.info(
+        '%s packets transmitted, %d received, %.02f%% packet loss'
+        % (
+            ctx.total,
+            ctx.total_success,
+            100 - float(ctx.total_success) / ctx.total * 100,
+        )
+    )
     # rtt stats. I don't worry about this as much as success percentage.
-    logger.info('rtt min/avg/max %.03f/%.03f/%.03f' % (ctx.time_min, ctx.time_avg, ctx.time_max))
+    logger.info(
+        'rtt min/avg/max %.03f/%.03f/%.03f' % (ctx.time_min, ctx.time_avg, ctx.time_max)
+    )
 
     return not error
 
 
 def run(ctx, **kwargs):
-
     def get_symbol(result, is_success):
         if is_success:
             c = COLOUR_GREEN
@@ -549,7 +625,7 @@ def run(ctx, **kwargs):
             # Second iteration
             ctx.time_max = max(ctx.time_max, diff)
             ctx.time_min = min(ctx.time_min, diff)
-        ctx.time_avg += ((diff - ctx.time_avg) / ctx.total)
+        ctx.time_avg += (diff - ctx.time_avg) / ctx.total
 
         line = (line or '').strip()
         extra = ''
@@ -565,12 +641,19 @@ def run(ctx, **kwargs):
 
             # Only bother announcing the number of successes in a row when testing for reliability.
             if mode & MODE_RELIABLE:
-                extra = ' (%s succeeded)' % _colour_text('%d/%d' % (ctx.streak_success, streak))
+                extra = ' (%s succeeded)' % _colour_text(
+                    '%d/%d' % (ctx.streak_success, streak)
+                )
             elif mode & MODE_UNRELIABLE:
                 if tally:
-                    extra = '(%s failed, %s succeeded in a row)' % (_colour_text('%d/%d' % (ctx.streak_fail, streak)), _colour_text(ctx.streak_success))
+                    extra = '(%s failed, %s succeeded in a row)' % (
+                        _colour_text('%d/%d' % (ctx.streak_fail, streak)),
+                        _colour_text(ctx.streak_success),
+                    )
                 else:
-                    extra = '(%s failed)' % _colour_text('%d/%d' % (ctx.streak_fail, streak))
+                    extra = '(%s failed)' % _colour_text(
+                        '%d/%d' % (ctx.streak_fail, streak)
+                    )
             elif tally:
                 extra = '(%s succeeded in a row)' % _colour_text(ctx.streak_success)
 
@@ -579,24 +662,31 @@ def run(ctx, **kwargs):
             ctx.streak_success = 0
 
             if mode & MODE_RELIABLE:
-                extra = '(%s succeeded)' % _colour_text('%d/%d' % (ctx.streak_success, streak))
+                extra = '(%s succeeded)' % _colour_text(
+                    '%d/%d' % (ctx.streak_success, streak)
+                )
             elif mode & MODE_UNRELIABLE:
-                extra = '(%s failed)' % _colour_text('%d/%d' % (ctx.streak_fail, streak))
+                extra = '(%s failed)' % _colour_text(
+                    '%d/%d' % (ctx.streak_fail, streak)
+                )
             else:
                 extra = '(%s failed in a row)' % _colour_text(ctx.streak_fail)
 
-        line_output = '%s  %s ' % (_colour_text(target, COLOUR_BLUE), _colour_text(display or _translate_result(result), colour))
+        line_output = '%s  %s ' % (
+            _colour_text(target, COLOUR_BLUE),
+            _colour_text(display or _translate_result(result), colour),
+        )
         if line:
             line_output += ' %s' % line
         if extra:
             line_output += ' %s' % extra
-        chart = chart[max(0, len(chart)-chart_length):] # Trim chart
+        chart = chart[max(0, len(chart) - chart_length) :]  # Trim chart
         if len(colours) > chart_length:
             colours.pop(0)
 
         display_chart = ''
         for i in range(len(colours)):
-            if not i or colours[i-1] != colours[i]:
+            if not i or colours[i - 1] != colours[i]:
                 # Initial colours or switch colours
                 display_chart += COLOUR_OFF
                 display_chart += colours[i]
@@ -620,7 +710,16 @@ def run(ctx, **kwargs):
 
         # Print update display.
         # Padding the count digits to avoid a bunch of relatively rapid format jumps.
-        logger.info('%03d/%03d %s  [%s]  %s' % (ctx.total_success, ctx.total, _colour_text(percentage_text, percentage_colour), display_chart, line_output))
+        logger.info(
+            '%03d/%03d %s  [%s]  %s'
+            % (
+                ctx.total_success,
+                ctx.total,
+                _colour_text(percentage_text, percentage_colour),
+                display_chart,
+                line_output,
+            )
+        )
 
         # Perform checks to see if the loop should continue
         if count and ctx.total >= count:
@@ -633,7 +732,8 @@ def run(ctx, **kwargs):
         # If there is another loop upcoming, sleep for the remainder of a second that's left.
         sleep(max(0, interval - diff))
 
-if __name__ == '__main__': # pragma: no cover
+
+if __name__ == '__main__':  # pragma: no cover
     try:
         exit(main(sys.argv[1:]))
     except KeyboardInterrupt:

@@ -13,7 +13,8 @@ CHANNEL_MAX = 11
 
 # Colours
 
-def enable_colours(force = False):
+
+def enable_colours(force=False):
     global COLOUR_PURPLE
     global COLOUR_RED
     global COLOUR_GREEN
@@ -39,6 +40,8 @@ def enable_colours(force = False):
         COLOUR_BLUE = ''
         COLOUR_BOLD = ''
         COLOUR_OFF = ''
+
+
 enable_colours()
 
 # Store argument titles as variables
@@ -50,32 +53,53 @@ TITLE_SSID = "ssid"
 TITLE_IS_WEP = "wep"
 TITLE_IS_JOIN = "join"
 
-def _print_message(header_colour, header_text, message, stderr=False):
-    f=sys.stdout
-    if stderr:
-        f=sys.stderr
-    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message), file=f)
 
-def colour_text(text, colour = None):
+def _print_message(header_colour, header_text, message, stderr=False):
+    f = sys.stdout
+    if stderr:
+        f = sys.stderr
+    print(
+        "%s[%s]: %s"
+        % (
+            colour_text(header_text, header_colour),
+            colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN),
+            message,
+        ),
+        file=f,
+    )
+
+
+def colour_text(text, colour=None):
     if not colour:
         colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
+
 def do_access_point(args):
     config_file = make_access_point_config(args)
     if error_count:
-        print_error("Problem making config file at %s." % colour_text(config_file, COLOUR_GREEN))
+        print_error(
+            "Problem making config file at %s." % colour_text(config_file, COLOUR_GREEN)
+        )
         exit(1)
 
     run_command(["hostapd", config_file], True, False)
 
+
 def do_join_wireless(args):
     config_file = make_join_wireless_config(args)
     if error_count:
-        print_error("Problem making config file at %s" % colour_text(config_file, COLOUR_GREEN))
+        print_error(
+            "Problem making config file at %s" % colour_text(config_file, COLOUR_GREEN)
+        )
         exit(1)
-    run_command(["wpa_supplicant", "-i", args.get(TITLE_INTERFACE), "-c", config_file], True, False)
+    run_command(
+        ["wpa_supplicant", "-i", args.get(TITLE_INTERFACE), "-c", config_file],
+        True,
+        False,
+    )
+
 
 def do_script(cli_args):
 
@@ -84,7 +108,9 @@ def do_script(cli_args):
     good_args = validate_args(args) and good_args
 
     if not good_args:
-        print_usage("./access-point.py [-j] [-b bridge] [-B] [-c channel] [-i interface] [-I] [-p password] [-P] [-s SSID] [-S] [-w]")
+        print_usage(
+            "./access-point.py [-j] [-b bridge] [-B] [-c channel] [-i interface] [-I] [-p password] [-P] [-s SSID] [-S] [-w]"
+        )
         exit(1)
 
     print_summary(args)
@@ -92,24 +118,29 @@ def do_script(cli_args):
     if args.get(TITLE_IS_WEP, False) and args.get(TITLE_PASSWORD, None):
         # A final warning or two about WEP, whether we are hosting or joining.
         print_warning(colour_text("!!! WEP IS HILARIOUSLY INSECURE !!!"))
-        print_warning("This script should only be used as part of a demonstration of how easy it is is to break into a WEP network.")
+        print_warning(
+            "This script should only be used as part of a demonstration of how easy it is is to break into a WEP network."
+        )
 
     if args.get(TITLE_IS_JOIN, False):
         do_join_wireless(args)
     else:
         do_access_point(args)
 
+
 def is_interface(candidate):
     return candidate in os.listdir('/sys/class/net')
+
 
 def make_access_point_config(args):
     config = "/tmp/hostapd-%s-temp.conf" % args[TITLE_INTERFACE]
     error = False
     try:
         # We only want our current user to be able to see this.
-        os.umask(077)
+        os.umask(0o077)
         with open(config, "w") as f:
-            f.write("""
+            f.write(
+                """
 # Common values
 ssid=%s
 interface=%s
@@ -124,9 +155,17 @@ max_num_sta=5
 
 ctrl_interface=/var/run/hostapd
 ctrl_interface_group=wheel
-""" % (args[TITLE_SSID], args[TITLE_INTERFACE], args[TITLE_BRIDGE], args[TITLE_CHANNEL]))
-            if(args.get(TITLE_IS_WEP, False)):
-                f.write("""
+"""
+                % (
+                    args[TITLE_SSID],
+                    args[TITLE_INTERFACE],
+                    args[TITLE_BRIDGE],
+                    args[TITLE_CHANNEL],
+                )
+            )
+            if args.get(TITLE_IS_WEP, False):
+                f.write(
+                    """
 # WEP Options
 # Reminder: WEP IS A BAD IDEA, FOR DEMO PURPOSES ONLY
 
@@ -137,81 +176,108 @@ wep_key_len_broadcast="%d"
 wep_key_len_unicast="%d"
 wep_rekey_period=300
 
-""" % (args[TITLE_PASSWORD], len(args[TITLE_PASSWORD]), len(args[TITLE_PASSWORD])))
+"""
+                    % (
+                        args[TITLE_PASSWORD],
+                        len(args[TITLE_PASSWORD]),
+                        len(args[TITLE_PASSWORD]),
+                    )
+                )
             elif args.get(TITLE_PASSWORD, None):
                 # WPA
-                f.write("""
+                f.write(
+                    """
 wpa=2
 auth_algs=1
 rsn_pairwise=CCMP
 wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP CCMP
 wpa_passphrase=%s
-""" % args[TITLE_PASSWORD])
+"""
+                    % args[TITLE_PASSWORD]
+                )
             f.close()
 
     except OSError as e:
         print_error(e)
     return config
 
+
 def make_join_wireless_config(args):
     config = "/tmp/wpa-supplicant-%s-temp.conf" % args[TITLE_INTERFACE]
     error = False
     try:
         # We only want our current user to be able to see this.
-        os.umask(077)
+        os.umask(0o077)
         with open(config, "w") as f:
-            f.write("""
+            f.write(
+                """
 ctrl_interface=/var/run/wpa_supplicant_%s
-ctrl_interface_group=wheel""" % args.get(TITLE_INTERFACE))
+ctrl_interface_group=wheel"""
+                % args.get(TITLE_INTERFACE)
+            )
 
             if not args.get(TITLE_PASSWORD, None):
-                f.write("""
+                f.write(
+                    """
 network={
   ssid="%s"
   key_mgmt=NONE
 }
-""" % args.get(TITLE_SSID))
+"""
+                    % args.get(TITLE_SSID)
+                )
             else:
 
                 if re.match('^([a-f0-9]{2}[:|-]){5}[a-f0-9]{2}$', args.get(TITLE_SSID)):
-                    ssid_string="bssid=%s" % args.get(TITLE_SSID)
+                    ssid_string = "bssid=%s" % args.get(TITLE_SSID)
                 else:
                     # Regular SSID
-                    ssid_string="ssid=\"%s\"" % args.get(TITLE_SSID)
+                    ssid_string = "ssid=\"%s\"" % args.get(TITLE_SSID)
 
                 if args.get(TITLE_IS_WEP, False):
-                    f.write("""
+                    f.write(
+                        """
 network={
   %s
   key_mgmt=NONE
   wep_key0="%s"
   wep_tx_keyidx=0
 }
-""" % (ssid_string, args.get(TITLE_PASSWORD)))
+"""
+                        % (ssid_string, args.get(TITLE_PASSWORD))
+                    )
                 else:
                     # WPA2
-                    f.write("""
+                    f.write(
+                        """
 network={
   %s
   proto=WPA2
   psk="%s"
   priority=5
 }
-""" % (ssid_string, args.get(TITLE_PASSWORD)))
+"""
+                        % (ssid_string, args.get(TITLE_PASSWORD))
+                    )
 
     except OSError as e:
         print_exception(e)
     return (config, error)
 
+
 error_count = 0
+
+
 def print_error(message):
     global error_count
     error_count += 1
     _print_message(COLOUR_RED, "Error", message)
 
+
 def print_notice(message):
     _print_message(COLOUR_BLUE, "Notice", message)
+
 
 def print_summary(args):
 
@@ -236,15 +302,27 @@ def print_summary(args):
         print_notice("%s an open %s%s" % (verbword, nounword, closer))
 
     if args.get(TITLE_IS_JOIN, False):
-        print_notice("Joining network using the %s interface." % colour_text(args[TITLE_INTERFACE], COLOUR_BLUE))
+        print_notice(
+            "Joining network using the %s interface."
+            % colour_text(args[TITLE_INTERFACE], COLOUR_BLUE)
+        )
     else:
-        print_notice("The %s interface will be attached to the %s bridge." % (colour_text(args[TITLE_INTERFACE], COLOUR_BLUE), colour_text(args[TITLE_BRIDGE], COLOUR_GREEN)))
+        print_notice(
+            "The %s interface will be attached to the %s bridge."
+            % (
+                colour_text(args[TITLE_INTERFACE], COLOUR_BLUE),
+                colour_text(args[TITLE_BRIDGE], COLOUR_GREEN),
+            )
+        )
+
 
 def print_usage(message):
     _print_message(COLOUR_PURPLE, "Usage", message)
 
+
 def print_warning(message):
     _print_message(COLOUR_YELLOW, "Warning", message)
+
 
 def process_args(cli_args):
     values = {}
@@ -258,7 +336,7 @@ def process_args(cli_args):
         print_error(e)
         exit(1)
 
-    for opt,optarg in opts:
+    for opt, optarg in opts:
         if opt == "-b":
             if validate_bridge_interface(optarg, TITLE_BRIDGE):
                 set_var(values, TITLE_BRIDGE, optarg)
@@ -266,13 +344,18 @@ def process_args(cli_args):
                 good_args = False
         elif opt == "-B":
             # Manual bridge input
-            record_var(values, TITLE_BRIDGE, COLOUR_BOLD, validate_bridge_interface, False)
+            record_var(
+                values, TITLE_BRIDGE, COLOUR_BOLD, validate_bridge_interface, False
+            )
         elif opt == "-c":
             try:
                 if int(optarg) >= CHANNEL_MIN and int(optarg) <= CHANNEL_MAX:
                     set_var(values, TITLE_CHANNEL, int(optarg))
                 else:
-                    print_error("Channel must be between %d and %d inclusive." % (CHANNEL_MIN, CHANNEL_MAX))
+                    print_error(
+                        "Channel must be between %d and %d inclusive."
+                        % (CHANNEL_MIN, CHANNEL_MAX)
+                    )
                     good_args = False
             except ValueError:
                 print_error("Channel must be an integer. Given: %s" % optarg)
@@ -284,7 +367,9 @@ def process_args(cli_args):
                 good_args = False
         elif opt == "-I":
             # Manual interface input
-            record_var(values, TITLE_INTERFACE, COLOUR_BOLD, validate_wireless_interface, False)
+            record_var(
+                values, TITLE_INTERFACE, COLOUR_BOLD, validate_wireless_interface, False
+            )
         elif opt == "-j":
             values[TITLE_IS_JOIN] = True
         elif opt == "-p":
@@ -321,24 +406,33 @@ def process_args(cli_args):
 
     return values, good_args
 
+
 def record_var(values, title, colour=COLOUR_BOLD, validator=None, reportOverwrite=True):
     temp = ""
     while not temp:
         temp = getpass.getpass("Enter %s: " % title)
         if not temp:
-            continue # Immediately loop again if empty.
+            continue  # Immediately loop again if empty.
 
         # Validation, if provided.
         if validator and not validator(temp, title):
             # Validator returned an error.
-            temp=""
+            temp = ""
     set_var(values, title, temp, colour, reportOverwrite)
+
 
 def run_command(command_list, sudo_required=False, ctrl_c_error=True):
     ret = 0
     try:
         if sudo_required and os.geteuid():
-            print_notice("We are not %s, so %s will be run through %s." % (colour_text("root", COLOUR_RED), colour_text(command_list[0], COLOUR_BLUE), colour_text("sudo", COLOUR_BLUE)))
+            print_notice(
+                "We are not %s, so %s will be run through %s."
+                % (
+                    colour_text("root", COLOUR_RED),
+                    colour_text(command_list[0], COLOUR_BLUE),
+                    colour_text("sudo", COLOUR_BLUE),
+                )
+            )
             command_list.insert(0, "sudo")
 
         p = subprocess.Popen(command_list, stdout=sys.stdout, stderr=sys.stderr)
@@ -354,15 +448,26 @@ def run_command(command_list, sudo_required=False, ctrl_c_error=True):
         ret = 1
     exit(ret)
 
+
 def set_var(values, title, value, colour=COLOUR_BOLD, reportOverwrite=True):
     if title in values and value != values[title]:
         # Print a warning if a value is already set.
         # Don't bother raising a fuss if the same value has been specified twice.
         if reportOverwrite:
-            print_warning("More than one %s specified in arguments: Replacing '%s' with '%s'" % (title, colour_text(value, colour), colour_text(values[title], colour)))
+            print_warning(
+                "More than one %s specified in arguments: Replacing '%s' with '%s'"
+                % (
+                    title,
+                    colour_text(value, colour),
+                    colour_text(values[title], colour),
+                )
+            )
         else:
-            print_warning("More than one %s specified in arguments. Using latest value." % title)
+            print_warning(
+                "More than one %s specified in arguments. Using latest value." % title
+            )
     values[title] = value
+
 
 def validate_args(args):
     all_clear = True
@@ -386,12 +491,18 @@ def validate_args(args):
         if args.get(TITLE_IS_WEP, False):
             # A WEP access point may have either 5 or 13 characters.
             if len(args[TITLE_PASSWORD]) != 5 and len(args[TITLE_PASSWORD]) != 13:
-                print_error("WEP key must be 5 or 13 characters (given key was %s characters)." % colour_text(len(args[TITLE_PASSWORD])))
+                print_error(
+                    "WEP key must be 5 or 13 characters (given key was %s characters)."
+                    % colour_text(len(args[TITLE_PASSWORD]))
+                )
                 all_clear = False
         else:
             # A WPA2 access point may have a passphrase between 8 and 63 characters (inclusive).
             if len(args[TITLE_PASSWORD]) < 8 or len(args[TITLE_PASSWORD]) > 63:
-                print_error("A WPA2 access point may have a passphrase between 8 and 63 characters in length (given key was %s characters).)" % colour_text(len(args[TITLE_PASSWORD])))
+                print_error(
+                    "A WPA2 access point may have a passphrase between 8 and 63 characters in length (given key was %s characters).)"
+                    % colour_text(len(args[TITLE_PASSWORD]))
+                )
                 all_clear = False
     elif args.get(TITLE_IS_WEP, False):
         # Password is None, but WEP is enabled.
@@ -400,8 +511,10 @@ def validate_args(args):
         all_clear = False
     return all_clear
 
+
 def validate_bridge_interface(candidate, title):
     return validate_interface(candidate, title, "bridge")
+
 
 def validate_command(command):
     all_clear = True
@@ -409,6 +522,7 @@ def validate_command(command):
         print_error("%s is not found in PATH." % colour_text(command, COLOUR_BLUE))
         all_clear = False
     return all_clear
+
 
 def validate_interface(candidate, title, subtype=None):
     if not is_interface(candidate):
@@ -419,18 +533,24 @@ def validate_interface(candidate, title, subtype=None):
         return False
     return True
 
+
 def validate_wireless_interface(candidate, title):
     return validate_interface(candidate, title, "wireless")
+
 
 def validate_ssid(candidate, title):
     if not candidate:
         print_error("Empty %s value." % title)
         return False
-    max_len=32
+    max_len = 32
     if len(candidate) > max_len:
-        print_error("SSID cannot be more than %s characters long (requested SSID was %s characters)." % (colour_text(max_len), colour_text(len(candidate))))
+        print_error(
+            "SSID cannot be more than %s characters long (requested SSID was %s characters)."
+            % (colour_text(max_len), colour_text(len(candidate)))
+        )
         return False
     return True
+
 
 def which(program):
     # Credit: "Jay": https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
@@ -448,6 +568,7 @@ def which(program):
             if is_exe(exe_file):
                 return exe_file
     return None
+
 
 if __name__ == "__main__":
     do_script(sys.argv)
