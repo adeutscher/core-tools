@@ -26,22 +26,22 @@ def translate_seconds(duration):
         mod_value = num % value
 
         if mod_value == 1:
-            noun = re.sub("s$", "", noun)
+            noun = re.sub('s$', '', noun)
 
         if mod_value:
-            times.append("%s %s" % (mod_value, noun))
+            times.append('%s %s' % (mod_value, noun))
 
         num = int(num / value)
         if not num:
             break # No more modules to process
 
     if len(times) == 1:
-        return " ".join(times)
+        return ' '.join(times)
     elif len(times) == 2:
-        return ", ".join(reversed(times))
+        return ', '.join(reversed(times))
     else:
         # Oxford comma
-        d = ", and "
+        d = ', and '
         s = d.join(reversed(times))
         sl = s.split(d, len(times) - 2)
-        return ", ".join(sl)
+        return ', '.join(sl)
