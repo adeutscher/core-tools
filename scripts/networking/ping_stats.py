@@ -6,6 +6,7 @@ import logging
 import sys  # Argument Parsing
 
 # Note: Intentionally not using time.perf_counter to allow for Python2.
+from re import IGNORECASE, search
 from time import sleep, time
 
 # ICMP support
@@ -145,6 +146,7 @@ RESULT_SUCCESS = 1
 RESULT_TIMEOUT = 2
 RESULT_CLOSED = 3
 RESULT_UNREACHABLE = 4
+RESULT_BROKEN = 5
 
 DEFAULT_STREAK_COUNT = 10
 
@@ -160,15 +162,67 @@ class PingContext:
         self.time_end = self.time_start = 0
 
 
+def do_http(**kwargs):
+
+    target = kwargs.get('url')
+    debug = kwargs.get('debug', False)
+    timeout = kwargs.get('timeout')
+
+    result = RESULT_SUCCESS
+    display = None
+    line = None
+
+    if sys.version_info.major >= 3:
+        from urllib.error import HTTPError, URLError
+    else:
+        from urllib2 import HTTPError, URLError
+
+    try:
+        status_code = do_http_callout(target, timeout)
+
+    except HTTPError:
+        result = RESULT_UNREACHABLE
+        display = 'communication error'
+    except URLError as e:
+        if search(r'Name or service not known', str(e), IGNORECASE):
+            result = RESULT_UNREACHABLE
+            display = 'DNS lookup error'
+        else:
+            result = RESULT_BROKEN
+            display = 'broken URL'
+    except socket.timeout as e:
+        result = RESULT_TIMEOUT
+        display = 'timeout'
+
+    if result == RESULT_SUCCESS and status_code >= 400:
+        result = RESULT_CLOSED
+
+    return result, display, line
+
+
+def do_http_callout(url, timeout):
+    if sys.version_info.major >= 3:
+        from urllib.request import urlopen
+    else:
+        from urllib2 import urlopen
+
+    r = urlopen(url, timeout=timeout)
+    if sys.version_info.major >= 3:
+        return r.status
+    else:
+        return r.getcode()
+
+
 def do_icmp(**kwargs):
 
     target = kwargs.get('ip')
     debug = kwargs.get('debug', False)
+    timeout = kwargs.get('timeout')
 
     if platform() in ['Linux', 'Darwin']:
         # Unix platform
         # ToDo: Improve this check
-        cmd_args = ['ping', '-W1', '-c1', target]
+        cmd_args = ['ping', '-W%d' % timeout, '-c1', target]
     else:
         # Windows Environment (assumed)
         cmd_args = ['ping', '-w', '1', '-n', '1', target]
@@ -283,11 +337,15 @@ Get display phrasing for target
 '''
 
 
-def get_target(**kwargs):
+def get_target_display(**kwargs):
 
     # Shorthand
     addr = kwargs.get('addr')
     ip = kwargs.get('ip')
+    url = kwargs.get('url')
+
+    if url:
+        return _colour_text(url, COLOUR_BLUE)
 
     if addr != ip:
         return '%s (%s)' % (
@@ -310,7 +368,9 @@ def main(args_raw):
     if not valid:
         return 1
 
-    if 'port' in args:
+    if 'url' in args:
+        args['callback'] = do_http
+    elif 'port' in args:
         args['callback'] = do_tcp
     else:
         args['callback'] = do_icmp
@@ -324,7 +384,9 @@ def main(args_raw):
 
     exit_code = 0
     try:
-        result = run(ctx, **args)
+        is_broken = run(ctx, **args)
+        if is_broken:
+            exit_code = 1
     except KeyboardInterrupt:
         # Unlike ping, always return exit code 130
         # Inner catch here in order to display results after cancelling
@@ -332,7 +394,7 @@ def main(args_raw):
     ctx.time_end = time()
 
     if not print_results(args, ctx, exit_code):
-        return 1
+        exit_code = 1
 
     return exit_code
 
@@ -359,6 +421,7 @@ def parse_args(args_raw):
         logger.info(' -d: Debug mode. Print the raw output of ping command.')
         logger.info(' -t: Tally mode. Always display a tally of successful pings.')
         logger.info(' -i seconds: Interval time between pings (Default: 1)')
+        logger.info(' --timeout seconds: Timeout duration for ICMP/HTTP (Default: 1)')
         logger.info(
             'Set streak count as an optional second argument. Default: %s'
             % _colour_text(DEFAULT_STREAK_COUNT)
@@ -369,19 +432,19 @@ def parse_args(args_raw):
     def validate_int(value_raw, label, expr=lambda i: i > 0, msg=None):
         try:
             value_parsed = int(value_raw)
-            if not expr(value_parsed):
-                raise ValueError()
-            return True, value_parsed
+            if expr(value_parsed):
+                return True, value_parsed
         except ValueError:
-            logger.error(msg or 'Invalid %s: %s' % (label, value_raw))
-            return False, None
+            pass
+        logger.error(msg or 'Invalid %s: %s' % (label, value_raw))
+        return False, None
 
     # Value-tracking
 
-    args = {'mode': 0}
+    args = {'mode': 0, 'timeout': 1}
 
     try:
-        opts, operands = gnu_getopt(args_raw, 'c:dhi:p:rtu')
+        opts, operands = gnu_getopt(args_raw, 'c:dhi:p:rtu', ['timeout='])
     except Exception as e:
         logger.error('Error parsing arguments: %s' % str(e))
         hexit(1)
@@ -390,44 +453,40 @@ def parse_args(args_raw):
     error = False
 
     for arg, value in opts:
+        valid = True
         if arg == '-h':
             hexit(0)
 
         if arg == '-c':
             # Count
-            valid, value = validate_int(value, 'count')
-            error = error or not valid
-            if valid:
-                args['count'] = value
+            valid, args['count'] = validate_int(value, 'count')
         elif arg == '-d':
             # Debug
             args['debug'] = True
         elif arg == '-i':
             # Interval
-            valid, value = validate_int(value, 'interval')
-            error = error or not valid
-            if valid:
-                args['interval'] = value
+            valid, args['interval'] = validate_int(value, 'interval')
         elif arg == '-p':
             # Port
-            valid, value = validate_int(
+            valid, args['port'] = validate_int(
                 value,
                 'port',
                 lambda i: i > 0 and i <= 65535,
                 'Bad TCP port number. Must be an integer in the range of 1-65535',
             )
-            error = error or not valid
-            if valid:
-                args['port'] = value
         elif arg == '-r':
             # Reliable-mode
             args['mode'] |= MODE_RELIABLE
         elif arg == '-t':
             # Tally
             args['tally'] = True
+        elif arg == '--timeout':
+            valid, args['timeout'] = validate_int(value, 'timeout')
         elif arg == '-u':
             # Unreliable-mode
             args['mode'] |= MODE_UNRELIABLE
+
+        error = error or not valid
 
     if args['mode'] == MODE_RELIABLE | MODE_UNRELIABLE:
         # Reliable-mode and unreliable-mode are mutually exclusive
@@ -437,6 +496,8 @@ def parse_args(args_raw):
     if not operands:
         logger.error('No target server specified.')
         error = True
+    elif search(r'^https?://', operands[0], IGNORECASE):
+        args['url'] = operands[0]
     else:
         args['addr'] = operands[0]
 
@@ -477,14 +538,19 @@ Print a summary of arguments.
 
 def print_args(**kwargs):
     port = kwargs.get('port')
-    if port:
+    url = kwargs.get('url')
+
+    if url:
+        wording_noun = 'HTTP attempt'
+        wording_method = 'reached over HTTP'
+    elif port:
         wording_noun = 'TCP attempt'
         wording_method = 'reached over the TCP/%d port' % port
     else:
         wording_noun = 'Ping'
         wording_method = 'pinged'
 
-    target = get_target(**kwargs)
+    target = get_target_display(**kwargs)
 
     mode = kwargs['mode']
     count = kwargs.get('count')
@@ -547,7 +613,7 @@ def print_results(args, ctx, exit_code):
         # (Do not override the exit code of a keyboard interrupt)
         error = True
 
-    logger.info('\n--- %s ping statistics ---' % get_target(**args))
+    logger.info('\n--- %s ping statistics ---' % get_target_display(**args))
     # ping numbers in ping-like format
     logger.info(
         '%s packets transmitted, %d received, %.02f%% packet loss'
@@ -566,6 +632,10 @@ def print_results(args, ctx, exit_code):
 
 
 def run(ctx, **kwargs):
+
+    # Note whether or not we ran into an unresolvable runtime error.
+    is_broken = False
+
     def get_symbol(result, is_success):
         if is_success:
             c = COLOUR_GREEN
@@ -593,7 +663,7 @@ def run(ctx, **kwargs):
     mode = kwargs.get('mode')
     streak = kwargs.get('streak', DEFAULT_STREAK_COUNT)
     tally = kwargs.get('tally', False)
-    target = kwargs.get('ip')
+    target_display = get_target_display(**kwargs)
 
     ctx.time_start = time()
 
@@ -641,7 +711,7 @@ def run(ctx, **kwargs):
 
             # Only bother announcing the number of successes in a row when testing for reliability.
             if mode & MODE_RELIABLE:
-                extra = ' (%s succeeded)' % _colour_text(
+                extra = '(%s succeeded)' % _colour_text(
                     '%d/%d' % (ctx.streak_success, streak)
                 )
             elif mode & MODE_UNRELIABLE:
@@ -673,7 +743,7 @@ def run(ctx, **kwargs):
                 extra = '(%s failed in a row)' % _colour_text(ctx.streak_fail)
 
         line_output = '%s  %s ' % (
-            _colour_text(target, COLOUR_BLUE),
+            target_display,
             _colour_text(display or _translate_result(result), colour),
         )
         if line:
@@ -722,15 +792,20 @@ def run(ctx, **kwargs):
         )
 
         # Perform checks to see if the loop should continue
+        if result == RESULT_BROKEN:
+            is_broken = True
+            break
         if count and ctx.total >= count:
             break
         if mode & MODE_RELIABLE and ctx.streak_success >= streak:
             break
-        elif mode & MODE_UNRELIABLE and ctx.streak_fail >= streak:
+        if mode & MODE_UNRELIABLE and ctx.streak_fail >= streak:
             break
 
         # If there is another loop upcoming, sleep for the remainder of a second that's left.
         sleep(max(0, interval - diff))
+
+    return is_broken
 
 
 if __name__ == '__main__':  # pragma: no cover
