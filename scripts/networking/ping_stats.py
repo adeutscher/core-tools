@@ -180,9 +180,15 @@ def do_http(**kwargs):
     try:
         status_code = do_http_callout(target, timeout)
 
-    except HTTPError:
-        result = RESULT_UNREACHABLE
-        display = 'communication error'
+    except HTTPError as e:
+        if e.code >= 300 and e.code <= 399:
+            # Manual handling of redirects
+            # This approach needs improvement
+            status_code = e.code
+            display = 'redirect'
+        else:
+            result = RESULT_CLOSED
+            display = 'HTTP %d' % e.code
     except URLError as e:
         if search(r'Name or service not known', str(e), IGNORECASE):
             result = RESULT_UNREACHABLE
