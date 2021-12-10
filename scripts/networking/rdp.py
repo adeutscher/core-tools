@@ -764,7 +764,7 @@ def main(args_raw):
         #  (this amount of time implies a connection that didn't just
         #   die from xfreerdp timing out when trying to connect)
         _logger.info(
-            'RDP Session Duration: %s' % _colour_text(self.translate_seconds(time_diff))
+            'RDP Session Duration: %s' % _colour_text(_translate_seconds(time_diff))
         )
 
     exit(exit_code)
