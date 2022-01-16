@@ -14,6 +14,9 @@ from platform import system as platform
 from subprocess import Popen as cmd, PIPE as pipe
 from re import search, sub
 
+# Script Support
+from os.path import isfile, realpath
+
 # TCP Support
 import errno, socket
 
@@ -263,6 +266,21 @@ def do_icmp(**kwargs):
     return result, display, line
 
 
+def do_script(**kwargs):
+
+    target = kwargs.get('script')
+    process = cmd(target)
+    out, err = process.communicate()
+
+    result = process.returncode == 0
+
+    if result:
+        display = 'executed'
+    else:
+        display = 'execution failed'
+
+    return result, display, None
+
 def do_tcp(**kwargs):
 
     target = kwargs.get('ip')
@@ -348,10 +366,14 @@ def get_target_display(**kwargs):
     # Shorthand
     addr = kwargs.get('addr')
     ip = kwargs.get('ip')
+    script = kwargs.get('script')
     url = kwargs.get('url')
 
     if url:
         return _colour_text(url, COLOUR_BLUE)
+
+    if script:
+        return _colour_text(script)
 
     if addr != ip:
         return '%s (%s)' % (
@@ -376,6 +398,8 @@ def main(args_raw):
 
     if 'url' in args:
         args['callback'] = do_http
+    elif 'script' in args:
+        args['callback'] = do_script
     elif 'port' in args:
         args['callback'] = do_tcp
     else:
@@ -427,7 +451,8 @@ def parse_args(args_raw):
         logger.info(' -d: Debug mode. Print the raw output of ping command.')
         logger.info(' -t: Tally mode. Always display a tally of successful pings.')
         logger.info(' -i seconds: Interval time between pings (Default: 1)')
-        logger.info(' --timeout seconds: Timeout duration for ICMP/HTTP (Default: 1)')
+        logger.info(' --timeout <seconds>: Timeout duration for ICMP/HTTP (Default: 1)')
+        logger.info(' --script <path>: script to execute instead of directly networking')
         logger.info(
             'Set streak count as an optional second argument. Default: %s'
             % _colour_text(DEFAULT_STREAK_COUNT)
@@ -450,7 +475,7 @@ def parse_args(args_raw):
     args = {'mode': 0, 'timeout': 1}
 
     try:
-        opts, operands = gnu_getopt(args_raw, 'c:dhi:p:rtu', ['timeout='])
+        opts, operands = gnu_getopt(args_raw, 'c:dhi:p:rtu', ['script', 'timeout='])
     except Exception as e:
         logger.error('Error parsing arguments: %s' % str(e))
         hexit(1)
@@ -483,6 +508,8 @@ def parse_args(args_raw):
         elif arg == '-r':
             # Reliable-mode
             args['mode'] |= MODE_RELIABLE
+        elif arg == '--script':
+            args['script'] = True
         elif arg == '-t':
             # Tally
             args['tally'] = True
@@ -504,6 +531,11 @@ def parse_args(args_raw):
         error = True
     elif search(r'^https?://', operands[0], IGNORECASE):
         args['url'] = operands[0]
+    elif args.get('script'):
+        args['script'] = value = realpath(operands[0])
+        if not isfile(value):
+            error = True
+            logger.error('Script does not exist: %s' % value)
     else:
         args['addr'] = operands[0]
 
