@@ -586,6 +586,7 @@ def _resolve_ec2_target(**kwargs):
         _logger.error(
             'Unable to decode encrypted password data from any candidate instance.'
         )
+        return False, None, None, None
 
     if kwargs.get('user_manual', False):
         user = kwargs['user']
