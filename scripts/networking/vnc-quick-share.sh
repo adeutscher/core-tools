@@ -173,7 +173,6 @@ function vnc(){
 
   if [ -n "${__password}" ]; then
     notice "Password \"security\" enabled."
-    __opt=("-passwd" "\"${__password}\"")
     __options=("${__options[@]}" "${__opt[@]}")
   fi
 
@@ -184,12 +183,19 @@ function vnc(){
   fi
 
   # Sleep briefly to give the user time to read above notices.
+  echo x11vnc -display :0 -auth guess -noxrecord -forever -shared ${__options[@]}
   sleep 3
 
   local ret
-  # shellcheck disable=SC2086
-  x11vnc -display :0 -auth guess -noxrecord -forever -shared "${__options[@]}"
-  ret=$?
+  if [ -n "${__password}" ]; then
+    # shellcheck disable=SC2086
+    x11vnc -display :0 -auth guess -noxrecord -forever -shared ${__options[@]} -passwd "${__password}"
+    ret=$?
+  else
+    # shellcheck disable=SC2086
+    x11vnc -display :0 -auth guess -noxrecord -forever -shared ${__options[@]}
+    ret=$?
+  fi
   return "${ret}"
 }
 
