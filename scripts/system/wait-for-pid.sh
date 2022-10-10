@@ -354,8 +354,10 @@ fi
 
 current=0
 while [ "${current}" -lt "${#PIDS[*]}" ]; do
-  COMMANDS[${current}]="$(ps -eo cmd -q "${PIDS[${current}]}" | tail -n1)"
-  DURATIONS[${current}]="$(ps axwo etimes -q "${PIDS[${current}]}" | tail -n1)"
+  pid="${PIDS[${current}]}" # Shorthand
+
+  COMMANDS[${current}]="$(ps awxo pid,cmd -q "${pid}" | awk '{if($1 == '"${pid}"'){ $1=""; print $0 }}' | sed -r 's/^\s+//g')"
+  DURATIONS[${current}]="$(ps awxo pid,etimes -q "${pid}" | awk '{if($1 == '"${pid}"'){ $1=""; print $0 }}' | sed -r 's/^\s+//g')"
   print_wait "$(printf "Waiting for PID: ${BOLD}%s${NC}: %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
   current="$((current+1))"
 done

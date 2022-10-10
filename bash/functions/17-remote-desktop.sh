@@ -78,6 +78,5 @@ __add_to_path_if_dir "/opt/freerdp-nightly/bin"
 
 # If xfreerdp is present, add shortcuts.
 if qtype xfreerdp; then
-  alias rdp="$toolsDir/scripts/networking/rdp.py"
   alias rdp-small="rdp -g 800x600"
 fi
