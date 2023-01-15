@@ -32,10 +32,14 @@ warning(){
 
 # Script functions
 
-if ! type astyle 2> /dev/null >&2; then
-  error "$(printf "$BLUE%s$NC is required for this script." "astyle")"
-  exit 1
-fi
+check_requirement(){
+  if ! type "${1}" 2> /dev/null >&2; then
+    error "$(printf "${BLUE}%s${NC} is required for this script." "${1}")"
+    exit 1
+  fi
+}
+check_requirement "astyle"
+check_requirement "black"
 
 if [ -z "$1" ]; then
   error "Usage: format-code.sh extension [target-directory]"
@@ -66,6 +70,7 @@ while read target; do
   # Trim out home directory for display purposes.
   displayTarget="$(sed 's|^'"$HOME"'|~|g' <<< "${target}")"
 
+  cmd="astyle"
   for extension in ${extensions}; do
     case "${extension}" in
       .c)
@@ -83,6 +88,9 @@ while read target; do
       .php)
         switches="--style=linux -xj -cnN --lineend=linux"
         ;;
+      .py)
+        cmd="black"
+        switches="-S"
       *)
         error "$(printf "Unhandled extension: $GREEN%s$NC" "${extension}")"
         continue
@@ -97,7 +105,7 @@ while read target; do
     fi
 
     notice "$(printf "Formatting all '$GREEN%s$NC' files dir: $GREEN%s$NC" "${extension}" "${displayTarget}")"
-    notice "$(printf "$BLUE%s$NC switches: $BOLD%s$NC" "astyle" "${switches}")"
+    notice "$(printf "$BLUE%s$NC switches: $BOLD%s$NC" "${cmd}" "${switches}")"
 
     _total=0
     _formatted=0
@@ -118,7 +126,7 @@ while read target; do
       elif grep -qwm1 "$no_format_keyword" "$__code_file"; then
         notice "$(printf "Skipping ${GREEN}%s${NC}, found no-format keyword: ${BOLD}%s${NC}" "$__code_file" "$no_format_keyword")"
       else
-        output="$(astyle $switches "$__code_file")"
+        output="$("${cmd}" $switches "$__code_file")"
         current_colour="${BOLD}"
         if [ -z "$output" ]; then
           error "$(printf "No output for file: ${GREEN}%s${NC}" "${__code_file_display}")"
