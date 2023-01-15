@@ -21,28 +21,28 @@ if [ -t 1 ]; then
 fi
 
 error(){
-  printf "${RED}"'Error'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
+  printf "${RED}Error${NC} %s\n" "${@}"
   __error_count=$((${__error_count:-0}+1))
 }
 
 notice(){
-  printf "${BLUE}"'Notice'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
+  printf "${BLUE}Notice${NC} %s\n" "${@}"
 }
 
 print_complete(){
-  printf "${GREEN}"'Complete'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
+  printf "${GREEN}Complete${NC} %s\n" "${@}"
 }
 
 print_duration(){
-  printf "${YELLOW}"'Duration'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
+  printf "  ${YELLOW}Duration${NC} %s\n" "${@}"
 }
 
 print_wait(){
-  printf "${PURPLE}"'Waiting'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
+  printf "${PURPLE}Waiting${NC} %s\n" "${@}"
 }
 
 warning(){
-  printf "${YELLOW}"'Warning'"${NC}"'['"${GREEN}"'%s'"${NC}"']: %s\n' "$(basename "${0}")" "${@}"
+  printf "${YELLOW}Warning${NC} %s\n" "${@}"
 }
 
 # Time-related Functions
@@ -180,7 +180,7 @@ wait_for_pids(){
     current=0
     while [ "${current}" -lt "${#PIDS[*]}" ]; do
       if ! (( "${COMPLETED[${current}]:-0}" )) && ! pid_exists "${PIDS[${current}]}"; then
-        print_complete "$(printf "PID Complete: ${BOLD}%s${NC}: %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
+        print_complete "$(printf "PID Complete: ${BOLD}%s${NC} %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
         time_diff="$(($(date +%s)-time_start))"
         print_duration "$(printf "Process time: ${BOLD}%s${NC}" "$(__translate_seconds "$((time_diff+${DURATIONS[${current}]}))")")"
         print_duration "$(printf "Watch time: ${BOLD}%s${NC}" "$(__translate_seconds "${time_diff}")")"
@@ -358,7 +358,7 @@ while [ "${current}" -lt "${#PIDS[*]}" ]; do
 
   COMMANDS[${current}]="$(ps awxo pid,cmd -q "${pid}" | awk '{if($1 == '"${pid}"'){ $1=""; print $0 }}' | sed -r 's/^\s+//g')"
   DURATIONS[${current}]="$(ps awxo pid,etimes -q "${pid}" | awk '{if($1 == '"${pid}"'){ $1=""; print $0 }}' | sed -r 's/^\s+//g')"
-  print_wait "$(printf "Waiting for PID: ${BOLD}%s${NC}: %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
+  print_wait "$(printf "for: ${BOLD}%s${NC} %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
   current="$((current+1))"
 done
 
