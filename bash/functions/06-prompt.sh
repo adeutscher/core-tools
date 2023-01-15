@@ -22,7 +22,7 @@ PROMPT_COMMAND='__build_prompt'
 __build_prompt() {
 
   # Track the exit value of the last command.
-  # This needs to be done before ANYTHING other call in order to capture the exit code properly.
+  # This needs to be done before ANY other call in order to capture the exit code properly.
   # Will process it later.
   local __RETURN_VALUE=$?
 
@@ -89,7 +89,6 @@ __build_prompt() {
       local svn_status=$(cut -d',' -f 3 <<< "$svn_output")
       # Square braces in svn_output are accounted for because the output is delimited by an equal number of characters.
       local vc_count=$(__strlen "$svn_output")
-
     else
       # Try git output.
       # Assuming that a directory will not be valid for two version control checkouts at one time.
@@ -207,8 +206,8 @@ __build_prompt() {
 __get_fs(){
   if __is_unix; then
       stat -f -c "%T" .
-    else
-      # Default to ext4 to make non-Unix green.
+  else
+    # Default to ext4 to make non-Unix green.
     printf "ext4"
   fi
 }
@@ -293,6 +292,12 @@ __prompt_file_system_colour(){
 __prompt_hostname_colour (){
   # Colour hostname field.
   # REMINDER: Place specific hostnames BEFORE wildcard hostnames.
+
+  if [ -n "${PROMPT_HOSTNAME_COLOUR}" ]; then
+    printf "${PROMPT_HOSTNAME_COLOUR}"
+    return
+  fi
+
   case "${1:-${DISPLAY_HOSTNAME:-$HOSTNAME}}" in
     laptop.*|nuc.*|machine-a.*)
       # Desktop systems should be in green.
@@ -344,9 +349,9 @@ __prompt_username_colour (){
 }
 
 __prompt_ssh_origin (){
-    if [ -n "$SSH_CLIENT" ]; then
-        printf " from $(printf $SSH_CLIENT | cut -d' ' -f 1)"
-    fi
+  if [ -n "$SSH_CLIENT" ]; then
+    printf " from $(printf $SSH_CLIENT | cut -d' ' -f 1)"
+  fi
 }
 
 # SVN Functions.
@@ -452,7 +457,7 @@ __svn_remote_clean ()
         printf "$1"
     fi
 
-        unset STATE HUGE_REPO
+    unset STATE HUGE_REPO
 }
 
 __svn_stat (){
