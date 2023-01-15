@@ -2,6 +2,7 @@
 # This bashrc file is a main hub for my BASH functions and aliases.
 
 # Set toolsDir to default to ~/tools/ if it has not already been set.
+# Reminder: toolsDir is set in your profile's bashrc file.
 export toolsDir="${toolsDir:-$HOME/tools}"
 
 # If the tools are not at $toolsDir, someone messed up.
@@ -24,24 +25,10 @@ if [ -d "$toolsDir" ]; then
         . "$toolsDir/bash/functions/hosts/${HOSTNAME%-*}.sh"
     fi
 
-    if [ -d "$toolsDir/.svn" ]; then
-        # SVN checkout of tools will have additional locations.
-        # We will not be nesting modules within other checkouts for Git, so do not bother looking.
-        svnDirs="$toolsDir/secure $toolsDir/modules $toolsDir/bash/modules"
-        # If not an SVN checkout, assuming git.
-    fi
-
-    if ! grep -q "^$toolsDir$" <<< "$HOME/tools"; then
-        # I would often do an SVN checkout of the core tools to $HOME/tools.
-        # Git clones that will never need modules may also get this treatment.
-        # Adding in this check to avoid an endless loop.
-        searchDirs="$HOME/tools"
-    fi
-
     # Cycle through each possible location for variable-location modules.
     # Each path added here should be an absolute path in order to
     #     make __module_dir (and by extension, the things that take its values) absolute paths.
-    for __module_location in "$searchDirs" $svnDirs "$HOME/work"; do
+    for __module_location in "$(readlink -f "${toolsDir}/..")" "$HOME/work"; do
         if [ -z "$__module_location" ] || [[ "$toolsDir" == "$__module_location" ]]; then
             continue # Skip empty or avoid loop.
         elif [ -d "$__module_location" ]; then
