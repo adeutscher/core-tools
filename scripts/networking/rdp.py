@@ -13,6 +13,8 @@ from time import time
 import logging
 import os
 
+def print_error(s):
+    print(f'Error: {s}')
 
 def _build_logger(label, err=None, out=None):
     obj = logging.getLogger(label)
@@ -247,7 +249,6 @@ def _parse_args(args_list):
 
     if not _is_installed():
         _logger.error('Command is not installed: %s' % _colour_text('xfreerdp'))
-        good = False
 
     # Define/use parser
     ###
@@ -401,6 +402,9 @@ def _parse_args(args_list):
         parsed_args.ec2_key_directory
     ):
         _logger.error(f'Key directory not found: {parsed_args.ec2_key_directory}')
+        good = False
+
+    if not _is_installed() and not parsed_args.ec2_password_only:
         good = False
 
     return good, args
