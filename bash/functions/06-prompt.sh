@@ -215,6 +215,11 @@ __get_fs(){
 
 __prompt_box_colour(){
   # Get a colour for the prompt box based on operating system hints.
+  if [ -n "${PROMPT_BOX_COLOUR}" ]; then
+    printf "${PROMPT_BOX_COLOUR}"
+    return
+  fi
+
   case "$(uname)" in
   Linux)
     printf "$Colour_BIBlue"
