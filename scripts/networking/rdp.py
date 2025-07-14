@@ -369,7 +369,7 @@ def _parse_args(args_list):
     # Set/validate geometry
     if parsed_args.geometry:
         # Parse geometry
-        if match('^\s*\d+x\d+\s*$', parsed_args.geometry):
+        if match(r'^\s*\d+x\d+\s*$', parsed_args.geometry):
             parts = parsed_args.geometry.strip().split('x')
             args['width'] = int(parts[0])
             args['height'] = int(parts[1])
@@ -416,7 +416,7 @@ def _print_summary(resolution, **kwargs):
     target, user, has_password = resolution
 
     if kwargs['domain']:
-        user = '%s\%s' % (kwargs['domain'], user)
+        user = r'%s\%s' % (kwargs['domain'], user)
 
     display_values = {
         'server': _colour_text(target, COLOUR_BLUE),
@@ -640,7 +640,7 @@ def _translate_seconds(duration):
         mod_value = num % value
 
         if mod_value == 1:
-            noun = sub('s$', '', noun)
+            noun = sub(r's$', '', noun)
 
         if mod_value:
             times.append(f'{mod_value} {noun}')

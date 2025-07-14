@@ -863,7 +863,7 @@ while [ -n "${1}" ]; do
 
   while [ -n "${1}" ]; do
     # Break if an option.
-    grep -q "^\-" <<< "${1}" && break
+    grep -q "^-" <<< "${1}" && break
 
     if [[ "${1}" == "all" ]]; then
       do_all=1

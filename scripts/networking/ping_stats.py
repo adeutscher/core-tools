@@ -259,10 +259,10 @@ def do_icmp(**kwargs):
     # Strip out the icmp_seq value because our implementation invokes a new
     #   ping process. icmp_seq will always be '1'.
     line = sub(
-        '((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)', '', l.group(0)
+        r'((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)', '', l.group(0)
     )
     line = line.replace('time=', 't=')
-    line = sub('(\.[\d]{2})\d? ms', r'\1 ms', line)
+    line = sub(r'(\.[\d]{2})\d? ms', r'\1 ms', line)
     return result, display, line
 
 

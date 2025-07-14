@@ -54,7 +54,7 @@ class BrowseController:
 class ViewController:
 
     def __get_directory(self):
-        return os.path.join(self.baseDirectory, re.sub('^\/+', '', self.relativeDirectory or ''))
+        return os.path.join(self.baseDirectory, re.sub(r'^\/+', '', self.relativeDirectory or ''))
 
     def __get_directoryId(self):
         # If a directory exists, make the path file-name-friendly by replacing and '/' in the path with a '-'

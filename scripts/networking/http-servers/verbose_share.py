@@ -4,7 +4,7 @@
 #   * https://pymotw.com/2/BaseHTTPServer/index.html#module-BaseHTTPServer
 #   * https://docs.python.org/2/library/simplehttpserver.html
 
-import cgi, datetime, getopt, os, re, socket, sys, urllib
+import datetime, getopt, os, re, socket, sys, urllib
 import CoreHttpServer as common
 from CoreHttpServer import args, print_notice
 common.local_files.append(os.path.realpath(__file__))
@@ -89,6 +89,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         if m and l > m:
             return self.serve_content('Maximum length: %d' % m, code = 413)
 
+        import cgi
         form = cgi.FieldStorage(
             fp=self.rfile,
             headers=self.headers,

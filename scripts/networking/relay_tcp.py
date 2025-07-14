@@ -242,7 +242,7 @@ class ArgHelper:
         match_pattern = "^[a-z0-9]$"
         if opt_type & MASK_OPT_TYPE_LONG:
             prefix = "--"
-            match_pattern = "^[a-z0-9\-]+$"  # ToDo: Improve on this regex?
+            match_pattern = r'^[a-z0-9\-]+$'  # ToDo: Improve on this regex?
 
         arg = prefix + flag
 
@@ -506,7 +506,7 @@ class OptArg:
 
 class NetAccess:
     # Basic IPv4 CIDR syntax check
-    REGEX_INET4_CIDR = '^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
+    REGEX_INET4_CIDR = r'^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 
     def __init__(self):
         self.errors = []
@@ -1097,7 +1097,7 @@ class TcpRelayServer:
                 ctx.load_cert_chain(args[TITLE_SSL_CERT], keyfile=args[TITLE_SSL_KEY])
             except SSLError as e:
                 m = "Unexpected %s: " % colour_text(type(e).__name__, COLOUR_RED)
-                if re.match("^\[SSL\] PEM lib", str(e)):
+                if re.match(r'^\[SSL\] PEM lib', str(e)):
                     # '[SSL] PEM lib (_ssl.c:2798)' is super-unhelpful, so we will provide our own error message.
                     # Unconfirmed: Is a missing key the only that can cause this?
                     m += "Must specify a key file or a cert file that also contains a key."

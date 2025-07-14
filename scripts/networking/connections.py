@@ -1155,7 +1155,7 @@ class ParserProcFS:
     def parse(self, line):
         parts = [l for l in line.split(' ') if l]
 
-        if not parts or not re.match('\d+:', parts[0]):
+        if not parts or not re.match(r'\d+:', parts[0]):
             return None
 
         raw_state = parts[3]

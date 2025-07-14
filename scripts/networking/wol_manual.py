@@ -27,10 +27,10 @@ from socket import socket as socket_object
 MAC_PATTERN = r'^([0-9a-f]{2}[:-]){5}([0-9a-f]{2})$'
 
 # Basic syntax check for IPv4 CIDR range.
-REGEX_INET4_CIDR = '^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
+REGEX_INET4_CIDR = r'^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 
 # Basic syntax check for IPv4 address.
-REGEX_INET4 = '^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
+REGEX_INET4 = r'^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 
 
 def build_logger(label, err=None, out=None):

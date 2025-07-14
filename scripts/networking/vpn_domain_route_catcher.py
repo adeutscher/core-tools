@@ -117,7 +117,7 @@ MODE_PCAP = 3
 
 args = {TITLE_DOMAINS: [], TITLE_MODE: MODE_PCAP}
 
-REGEX_INET4 = '^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
+REGEX_INET4 = r'^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 
 # Magic numbers gained from counting tshark fields.
 

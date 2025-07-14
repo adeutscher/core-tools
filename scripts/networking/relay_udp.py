@@ -210,7 +210,7 @@ class ArgHelper:
         match_pattern = "^[a-z0-9]$"
         if opt_type & MASK_OPT_TYPE_LONG:
             prefix = "--"
-            match_pattern = "^[a-z0-9\-]+$"  # ToDo: Improve on this regex?
+            match_pattern = r'^[a-z0-9\-]+$'  # ToDo: Improve on this regex?
 
         arg = prefix + flag
 
@@ -474,7 +474,7 @@ class OptArg:
 
 class NetAccess:
     # Basic IPv4 CIDR syntax check
-    REGEX_INET4_CIDR = '^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
+    REGEX_INET4_CIDR = r'^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 
     def __init__(self):
         self.errors = []

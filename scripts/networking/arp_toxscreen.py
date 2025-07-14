@@ -372,7 +372,7 @@ class ToxScreenSession:
         addresses = []
 
         for line in content:
-            cols = re.sub('\s+', ' ', line).split(' ')
+            cols = re.sub(r'\s+', ' ', line).split(' ')
             if cols[3] == mac:
                 addresses.append(colour_text(cols[0], COLOUR_GREEN))
 

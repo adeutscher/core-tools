@@ -82,11 +82,11 @@ def print_error(message):
     error_count += 1
     _print_message(COLOUR_RED, "Error", message)
 
-local_files = [re.sub("\.pyc", ".py", __file__)]
+local_files = [re.sub(r'\.pyc', ".py", __file__)]
 def print_exception(e, msg=None):
     # Shorthand wrapper to handle an exception.
     # msg: Used to provide more context.
-    sub_msg = ""
+    sub_msg = ''
     if msg:
         sub_msg = "%s, " % msg
 
@@ -122,7 +122,7 @@ DEFAULT_TIMEOUT = 10
 DEFAULT_BIND = "0.0.0.0"
 DEFAULT_PORT = 8080
 
-REGEX_INET4='^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
+REGEX_INET4 = r'^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 
 TITLE_BIND = "bind"
 TITLE_PORT = "port"
@@ -232,7 +232,7 @@ class ArgHelper:
         match_pattern = "^[a-z0-9]$"
         if opt_type & MASK_OPT_TYPE_LONG:
             prefix = "--"
-            match_pattern = "^[a-z0-9\-]+$" # ToDo: Improve on this regex?
+            match_pattern = r"^[a-z0-9\-]+$" # ToDo: Improve on this regex?
 
         arg = prefix + flag
 
@@ -621,7 +621,7 @@ def serve(handler, change_directory = False, data = None):
         print("")
     except ssl.SSLError as e:
         m = "Unexpected %s: " % colour_text(type(e).__name__, COLOUR_RED)
-        if re.match("^\[SSL\] PEM lib", str(e)):
+        if re.match(r'^\[SSL\] PEM lib', str(e)):
             # '[SSL] PEM lib (_ssl.c:2798)' is super-unhelpful, so we will provide our own error message.
             # Unconfirmed: Is a missing key the only that can cause this?
             m+= "Must specify a key file or a cert file that also contains a key."
@@ -1357,7 +1357,7 @@ class CaselessDict(dict):
 
 class NetAccess:
     # Basic IPv4 CIDR syntax check
-    REGEX_INET4_CIDR='^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
+    REGEX_INET4_CIDR= r'^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 
     def __init__(self):
         self.errors = []

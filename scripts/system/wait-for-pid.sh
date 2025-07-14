@@ -237,7 +237,7 @@ while [ -n "${1}" ]; do
   shift $((OPTIND - 1))
   while [ -n "${1}" ]; do
     # Break if the option began with a '-', going back to getopts phase.
-    grep -q "^\-" <<< "${1}" && break
+    grep -q "^-" <<< "${1}" && break
 
     # Mark that there was an attempt to give a PID.
     # If the attempt failed, then there will be a more specific error message down the chain.
