@@ -1,6 +1,5 @@
 
 # General SSH Config
-# priority:1
 
 Host *
 

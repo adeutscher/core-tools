@@ -1,0 +1,19 @@
+# Priority for this module's SSH section, read by ssh-compile-config.
+#
+# Lower numbers are written earlier. Modules with the same priority are ordered by variable name.
+# Priority only applies when a section is first added. Existing sections keep their place.
+#
+# Format:
+#   * Blank lines and lines starting with '#' are ignored.
+#   * The first remaining line must be a non-negative integer, read in base 10 (e.g. "08" is 8).
+#   * Any lines after that are ignored.
+#
+# Fallbacks, in order:
+#   1. This file, if it exists. If its value is invalid, a warning is printed and the default is used.
+#      The legacy tag below is not checked in that case.
+#   2. If this file does not exist, a legacy "# priority:N" comment on its own line in ssh/config.
+#      A notice suggesting a move to this file is printed on every run.
+#   3. If neither is found, the default of 10.
+#
+# core-tools uses 1 so that its general "Host *" defaults are written above other modules.
+1
