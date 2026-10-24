@@ -46,7 +46,16 @@ RUN dnf config-manager --add-repo https://download.docker.com/linux/centos/docke
 # **************************************************************
 # Install TFLint
 # **************************************************************
-RUN curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+RUN curl -sSLO https://github.com/terraform-linters/tflint/releases/latest/download/tflint_linux_amd64.zip
+
+# 2. Unzip the archive
+RUN unzip tflint_linux_amd64.zip
+
+# 3. Move the binary into your PATH
+RUN install -c -v tflint /usr/local/bin/
+
+# 4. Clean up zip
+RUN rm tflint_linux_amd64.zip
 
 # **************************************************************
 # Install tflocal
@@ -59,7 +68,7 @@ RUN pip install terraform-local
 # **************************************************************
 
 WORKDIR /etc/pki/ca-trust/source/anchors/
-COPY files/pki/ca-certificates/tac-ca.crt .
+COPY files/pki/ca-certificates/domain-ca.crt .
 RUN update-ca-trust force-enable
 
 # **************************************************************

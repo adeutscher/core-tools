@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TF_BASE_VER="${TF_BASE_VER:-1.8}"
+TF_BASE_VER="${TF_BASE_VER:-1.16}"
 
 function get_azdo_access_token()
 {
@@ -84,6 +84,7 @@ docker run -it --rm \
     -e AUTH0_DOMAIN="${AUTH0_DOMAIN}" \
     -e AUTH0_CLIENT_ID="${AUTH0_CLIENT_ID}" \
     -e AUTH0_CLIENT_SECRET="${AUTH0_CLIENT_SECRET}" \
+    -e CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN}" \
     -e GITLAB_TOKEN="${GITLAB_TOKEN}" \
     -e GITLAB_URI="${GITLAB_URI}" \
     -e GITLAB_BASE_URL="${GITLAB_BASE_URL}" \
@@ -93,9 +94,9 @@ docker run -it --rm \
     -e GITLAB_GROUP="${GITLAB_GROUP}" \
     -e AZDO_ORG_SERVICE_URL="${AZDO_ORG_SERVICE_URL}" \
     -e AZDO_PERSONAL_ACCESS_TOKEN="$(get_azdo_access_token)" \
-    -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+    -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-${CLOUDFLARE_R2_ACCESS_KEY_ID}}" \
     -e AWS_REGION="${AWS_REGION}" \
-    -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+    -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-${CLOUDFLARE_R2_SECRET_ACCESS_KEY}}" \
     -e AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN}" \
     -e VAULT_ADDR="${VAULT_ADDR}" \
     -e VAULT_TOKEN="$(get_vault_token)" \
