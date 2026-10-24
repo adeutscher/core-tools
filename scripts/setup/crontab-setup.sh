@@ -3,7 +3,7 @@
 # Load common functions.
 . "$(dirname "${0}")/functions.sh"
 
-crontab_contents="$(crontab -l)\n"
+crontab_contents="$(crontab -l 2> /dev/null)"
 marker="core-tools-crontab"
 
 # Prep new tasks in case we need to use them.
@@ -23,13 +23,13 @@ new_tasks="$(cat << EOF
 #   * To run at every hour between 9am and 5pm: 0 9-17 * * * <command>
 
 # Rotate temporary directory.
-@reboot "$toolsDir/scripts/files/make-temp.sh" 2>/dev/null >&2
-1 0 * * * "$toolsDir/scripts/files/make-temp.sh" 2>/dev/null >&2
+@reboot "$toolsDir/scripts/files/make-temp.sh" -q > /dev/null
+1 0 * * * "$toolsDir/scripts/files/make-temp.sh" -q > /dev/null
 EOF
 )"
 
 temp_file="$(mktemp)"
-printf "${crontab_contents}" > "${temp_file}"
+printf '%s\n' "${crontab_contents}" > "${temp_file}"
 temp_file_checksum="$(md5sum "${temp_file}" | cut -d' ' -f1)"
 "${DOTFILE_SCRIPT}" -f - -o "${temp_file}" -i "${marker}" <<< "${new_tasks}"
 temp_file_checksum_new="$(md5sum "${temp_file}" | cut -d' ' -f1)"

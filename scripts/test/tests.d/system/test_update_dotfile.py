@@ -111,6 +111,32 @@ class DotFileUpdaterCommandTests(BaseUpdateTestCase):
             self.assertContains(f'marker:{marker} checksum:', contents_modified)
             self.assertContains(f'end:{marker}', contents_modified)
 
+    '''
+    Block written at the end of a file must leave the file newline-terminated (crontab requires this).
+    '''
+    def test_trailing_newline(self):
+        with tempdir() as td:
+
+            dst = os.path.join(td, 'dst-file')
+            marker = 'demo-marker'
+
+            with open(dst, 'w') as f:
+                f.write('1234\n')
+
+            for contents in ['abcde', 'fghij']:
+                # Second pass replaces the existing block in-place.
+                cmd = ['-o', dst, '-i', marker, '-f', '-']
+                with io.StringIO(contents) as s:
+                    exit_code = self.mod.main(cmd, stream_input=s)
+                self.assertEqual(0, exit_code)
+
+                with open(dst, 'r') as f:
+                    contents_modified = f.read()
+
+                self.assertContains(contents, contents_modified)
+                self.assertTrue(contents_modified.endswith('\n'))
+                self.assertTrue(contents_modified.rstrip().endswith(f'end:{marker}'))
+
 class DotFileUpdaterCommandErrorTests(BaseUpdateTestCase):
 
     def test_config_bad_json(self):

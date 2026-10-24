@@ -421,7 +421,7 @@ class DotFileUpdater:
 
     def resolve(self, raw_content):
 
-        resolved_sysvars, unresolved_sysvars = resolve(raw_content, self.__system_variables, '#\<([^}]+)?\>#')
+        resolved_sysvars, unresolved_sysvars = resolve(raw_content, self.__system_variables, r'#\<([^}]+)?\>#')
         if unresolved_sysvars and not self.debug:
             for label, full, count in unresolved_sysvars:
                 resolved_sysvars = resolved_sysvars.replace(full, '')
@@ -633,7 +633,7 @@ class DotFileUpdaterFile:
         display_out = colour_text(item.path_out, COLOUR_GREEN)
 
         if unchanged:
-            print('No chanes to %s content in %s' % (colour_text(item.id), display_out))
+            print('No changes to %s content in %s' % (colour_text(item.id), display_out))
             return True
 
         if old_start is not None and item.weight == old_weight:
@@ -734,6 +734,9 @@ class DotFileUpdaterFile:
         print('Saving changes to file: %s' % colour_text(self.__path, COLOUR_GREEN))
         with open(self.__path, 'w') as f:
             f.write('\n'.join(self.__lines))
+            if self.__lines:
+                # Terminate the final line. Some consumers (e.g. crontab) reject files without it.
+                f.write('\n')
 
 class DotFileUpdaterItem:
 
