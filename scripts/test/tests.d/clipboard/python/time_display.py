@@ -22,7 +22,7 @@ class TimeDisplayTests(unittest.TestCase):
         self.assertEqual('4 hours, 5 minutes, and 52 seconds', self.mod.translate_seconds(hours + minutes + seconds))
 
     def test_combo_oxford_b(self):
-        years = 3 * 52 * 7 * 24 * 60 * 60
+        years = 3 * 365 * 24 * 60 * 60
         hours = 4 * 60 * 60
         minutes = 5 * 60
         seconds = 52
@@ -30,13 +30,19 @@ class TimeDisplayTests(unittest.TestCase):
         self.assertEqual('3 years, 4 hours, 5 minutes, and 52 seconds', self.mod.translate_seconds(years + hours + minutes + seconds))
 
     def test_combo_oxford_c(self):
-        years = 3 * 52 * 7 * 24 * 60 * 60
+        years = 3 * 365 * 24 * 60 * 60
         weeks = 42 * 7 * 24 * 60 * 60
         hours = 4 * 60 * 60
         minutes = 5 * 60
         seconds = 52
 
         self.assertEqual('3 years, 42 weeks, 4 hours, 5 minutes, and 52 seconds', self.mod.translate_seconds(years + weeks + hours + minutes + seconds))
+
+    def test_combo_year_and_day(self):
+        years = 2 * 365 * 24 * 60 * 60
+        days = 1 * 24 * 60 * 60
+
+        self.assertEqual('2 years, 1 day', self.mod.translate_seconds(years + days))
 
     def test_combo_two_values_a(self):
         hours = 4 * 60 * 60
@@ -52,6 +58,17 @@ class TimeDisplayTests(unittest.TestCase):
 
     def test_only_days(self):
         self.__test_unit('day', 60 * 60 * 24, 7)
+
+    def test_only_weeks(self):
+        week = 60 * 60 * 24 * 7
+        self.assertEqual('1 week', self.mod.translate_seconds(week))
+        # 52 weeks is 364 days, which is short of a full year.
+        self.assertEqual('52 weeks', self.mod.translate_seconds(52 * week))
+
+    def test_only_years(self):
+        year = 60 * 60 * 24 * 365
+        self.assertEqual('1 year', self.mod.translate_seconds(year))
+        self.assertEqual('100 years', self.mod.translate_seconds(100 * year))
 
     def test_only_hours(self):
         self.__test_unit('hour', 60 * 60, 24)

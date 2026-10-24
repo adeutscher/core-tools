@@ -4,44 +4,41 @@ import re
 
 def translate_seconds(duration):
     '''Translate seconds to something more human-readable.'''
+    # Each module is a unit name (in plural form) and its length in seconds, from largest to smallest.
+    # A year is treated as 365 days.
     modules = [
-        ('seconds', 60),
-        ('minutes',60),
-        ('hours',24),
-        ('days',7),
-        ('weeks',52),
-        ('years',100)
+        ('years', 365 * 24 * 60 * 60),
+        ('weeks', 7 * 24 * 60 * 60),
+        ('days', 24 * 60 * 60),
+        ('hours', 60 * 60),
+        ('minutes', 60),
+        ('seconds', 1)
     ]
 
     num = max(0, int(duration))
 
     if not num:
         # Handle empty
-        return '0 %s' % modules[0][0]
+        return '0 %s' % modules[-1][0]
 
     times = []
-    for i in range(len(modules)):
+    for noun, value in modules:
 
-        noun, value = modules[i]
-        mod_value = num % value
+        count, num = divmod(num, value)
 
-        if mod_value == 1:
+        if count == 1:
             noun = re.sub('s$', '', noun)
 
-        if mod_value:
-            times.append('%s %s' % (mod_value, noun))
-
-        num = int(num / value)
-        if not num:
-            break # No more modules to process
+        if count:
+            times.append('%s %s' % (count, noun))
 
     if len(times) == 1:
         return ' '.join(times)
     elif len(times) == 2:
-        return ', '.join(reversed(times))
+        return ', '.join(times)
     else:
         # Oxford comma
         d = ', and '
-        s = d.join(reversed(times))
+        s = d.join(times)
         sl = s.split(d, len(times) - 2)
         return ', '.join(sl)

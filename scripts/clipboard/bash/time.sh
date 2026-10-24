@@ -17,82 +17,69 @@ __translate_seconds(){
   # 1: 3 hours, 2 minutes, 1 second
   # 2: 3h 2m 1s
 
-  local __num=$1
-  local __c=0
-  local __i=0
+  # Units with a value of zero are left out (e.g. "1 hour and 5 seconds").
+  # A duration of zero is displayed as "0 seconds" ("0s" in mode 2).
+  # A year is treated as 365 days.
 
-  if [ "${2:-0}" -eq 2 ]; then
-    # Each "module" should be the unit and the number of that unit until the next phrasing.
-    local __modules=(s:60 m:60 h:24 d:7 w:52 y:100 c:100)
+  local __num="${1}"
+  local __mode="${2:-0}"
+  local __units __unit __name __rest __size __singular __count __i
+  local __parts=()
+
+  # Only accept non-negative integers.
+  [[ "${__num}" =~ ^[0-9]+$ ]] || return 1
+  __num=$((10#${__num}))
+
+  if [ "${__mode}" = 2 ]; then
+    # Each unit should be its abbreviation and its length in seconds, from largest to smallest.
+    __units=(c:3153600000 y:31536000 w:604800 d:86400 h:3600 m:60 s:1)
   else
-    # Each "module" should be a pairing of a name (in plural form),
-    #  the number of that unit until the next phrasing,
+    # Each unit should be a pairing of a name (in plural form),
+    #  its length in seconds (from largest to smallest),
     #  and (optionally) the phrasing of a single unit (in case lopping an 's' off of the end won't cut it)
-    local __modules=(seconds:60 minutes:60 hours:24 days:7 weeks:52 years:100 centuries:100:century)
+    __units=(centuries:3153600000:century years:31536000 weeks:604800 days:86400 hours:3600 minutes:60 seconds:1)
   fi
 
-  local __modules_count="$(wc -w <<< "${__modules[*]}")"
-  while [ "$__i" -lt "$__modules_count" ]; do
-    # Cycling through to get values for each unit.
-    local __value="$(cut -d':' -f2 <<< "${__modules[$__i]}")"
+  for __unit in "${__units[@]}"; do
+    __name="${__unit%%:*}"
+    __rest="${__unit#*:}"
+    __size="${__rest%%:*}"
 
-    local __mod_value="$(($__num % $__value))"
-    local __num="$((__num / $__value))"
+    __count=$((__num / __size))
+    __num=$((__num % __size))
 
-    local __times[$__i]="$__mod_value"
-    local __c=$(($__c+1))
-    local __i=$(($__i+1))
-    if (( ! $__num )); then
-      break
+    # Skip units with nothing in them, unless the whole duration is zero.
+    if (( ! __count )) && { (( __size > 1 )) || (( ${#__parts[@]} )); }; then
+      continue
+    fi
+
+    if [ "${__mode}" = 2 ]; then
+      # Short, compressed, and space-efficient version.
+      __parts+=("${__count}${__name}")
+    elif [ "${__count}" -eq 1 ]; then
+      # Attempt special singular unit, otherwise lop the 's' off of unit plural for singular.
+      __singular=""
+      [[ "${__rest}" == *:* ]] && __singular="${__rest#*:}"
+      __parts+=("${__count} ${__singular:-${__name%s}}")
+    else
+      # Standard plural.
+      __parts+=("${__count} ${__name}")
     fi
   done
-  unset __module
 
-  local __i=$(($__c-1))
-  while [ "$__i" -ge "0" ]; do
-    # Splitting logic for compressed version (mode 2) and
-    #   other phrasings requires much less tangled code.
-    if [ "${2:-0}" -eq 2 ]; then
-      # Short, compressed, and space-efficient version.
-
-      printf "${__times[$__i]}$(cut -d':' -f1 <<< "${__modules[$__i]}")"
-
-      if (( $__i )); then
+  for (( __i = 0; __i < ${#__parts[@]}; __i++ )); do
+    if (( __i )); then
+      # Prepare for the next unit.
+      if [ "${__mode}" = 2 ]; then
         printf " "
-      fi
-    else
-      # Long version
-
-      # Cycling through used units in reverse.
-      if [ "${2:-0}" -eq 0 ] && (( ! $__i )) && [ "$__c" -gt 1 ]; then
-        printf "and "
-      fi
-
-      # Handle plural
-      if [ "${__times[$__i]}" -eq 1 ]; then
-        # Attempt special singluar unit.
-        local __s="$(cut -d':' -f3 <<< "${__modules[$__i]}")"
-        if [ -n "$__s" ]; then
-          # Singular unit had content.
-          printf "${__times[$__i]} $__s"
-        else
-          # Lop the 's' off of unit plural for singular.
-          printf "${__times[$__i]} $(cut -d':' -f1 <<< "${__modules[$__i]}" | sed 's/s$//')"
-        fi
+      elif [ "${__mode}" = 0 ] && (( __i == ${#__parts[@]} - 1 )); then
+        # If you aren't a fan of the Oxford comma, then take out this line.
+        (( ${#__parts[@]} > 2 )) && printf ","
+        printf " and "
       else
-        # Standard plural.
-        printf "${__times[$__i]} $(cut -d':' -f1 <<< "${__modules[$__i]}")"
-      fi
-
-      if (( $__i )); then
-        # Prepare for the next unit.
-        # If you aren't a fan of the Oxford comma, then take out this line
-        [ "$__c" -ge 2 ] && printf ","
-        # Print space. Leave this in.
-        printf " "
+        printf ", "
       fi
     fi
-
-    local __i=$(($__i-1))
+    printf "%s" "${__parts[__i]}"
   done
 }
