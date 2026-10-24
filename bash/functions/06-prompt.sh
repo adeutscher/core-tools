@@ -251,7 +251,7 @@ __prompt_file_system_colour(){
   fi
 
   case "${__fs}" in
-    "ext"*|xfs)
+    btrfs|"ext"*|xfs)
       # Green text.
       # Ext_ file systems are most likely a local drive.
       printf "$Colour_BIGreen"
@@ -432,7 +432,7 @@ __svn_clean ()
     if [ $SVNP_HAVE_HUGE_REPO ]; then
         HUGE_REPO=" -N ";
     else
-        pwd | egrep -q $SVNP_HUGE_REPO_EXCLUDE_PATH && HUGE_REPO=" -N "
+        pwd | grep -E -q $SVNP_HUGE_REPO_EXCLUDE_PATH && HUGE_REPO=" -N "
     fi
     STATE=$(LANG='C' svn $HUGE_REPO status -q 2>/dev/null | grep -c "^\s*[MAD]")
     if [ $STATE != 0 ]; then
@@ -448,9 +448,9 @@ __svn_remote_clean ()
     if [ $SVNP_HAVE_HUGE_REPO ]; then
         HUGE_REPO=" -N ";
     else
-        pwd | egrep -q $SVNP_HUGE_REPO_EXCLUDE_PATH && HUGE_REPO=" -N "
+        pwd | grep -E -q $SVNP_HUGE_REPO_EXCLUDE_PATH && HUGE_REPO=" -N "
     fi
-    STATE=$(LANG='C' svn $HUGE_REPO status -u -q 2>/dev/null | egrep -c " *\*")
+    STATE=$(LANG='C' svn $HUGE_REPO status -u -q 2>/dev/null | grep -E -c " *\*")
     if [ $STATE != 0 ]; then
         printf "$2"
     else
