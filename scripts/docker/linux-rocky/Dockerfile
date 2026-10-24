@@ -19,7 +19,7 @@ RUN dnf install -y \
 # **************************************************************  
 
 WORKDIR /etc/pki/ca-trust/source/anchors/
-COPY files/pki/ca-certificates/tac-ca.crt .
+COPY files/pki/ca-certificates/domain-ca.crt .
 RUN update-ca-trust force-enable
 
 # **************************************************************

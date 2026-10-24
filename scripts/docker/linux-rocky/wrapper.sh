@@ -9,8 +9,8 @@ function get_azdo_access_token()
         return
     fi
 
-    if [ -f "~/.azdo_tok" ]; then
-        cat ~/.azdo_tok
+    if [ -f "${HOME}/.azdo_tok" ]; then
+        cat ${HOME}/.azdo_tok
         return
     fi
 }
