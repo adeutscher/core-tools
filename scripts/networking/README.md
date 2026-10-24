@@ -43,43 +43,55 @@ Arguments:
 * `-s script`: processing script to run when a suspicious instance is detected.
 * `-c cooldown`: Seconds between script runs per suspect.
 
-## connections.sh
+## connections.py
 
-List incoming connections scraped from `netstat` or `conntrack -L` output.
+List incoming TCP connections over IPv4 and IPv6. By default, connections are read directly from the kernel over Netlink (the `sock_diag` interface that `ss` uses), without running any commands. If Netlink is unavailable, the script quietly falls back to `/proc/net/tcp` and `/proc/net/tcp6`. `conntrack -L` can be used instead with -C.
 
 Usage:
 
-    ./connections.sh [-acChlLmoqrRsv] [matches]
+    ./connections.py [-46AChLlorS] [-e filter] [--filter-and] [--json] [--lan-interfaces] [--netstat | --procfs] [--no-self] [filters]
 
 By default, displays incoming connections. Use -o to display outgoing connections instead.
 
-Specify matches to restrict output. For example, './connections.sh 192.168.0.0/24' would only show incoming connections from '192.168.0.0/24'. Switching to outgoing mode (-o) changes this to only display connections to matching subnets.
+Specify filters to restrict output. For example, './connections.py 192.168.0.0/24' would only show incoming connections from '192.168.0.0/24'. Switching to outgoing mode (-o) changes this to only display connections to matching subnets.
 
-Valid matches:
+A connection is displayed if it matches at least one filter (or all of them with --filter-and).
 
-* Interface: Addresses used by an interface will be used (use -r to take the interfaces' routes).
-             If a bridge member is added by accident, then the bridge can be detected.
-* IPv4 address (e.g. 192.168.0.1)
-* IPv4 CIDR range (e.g. 192.168.0.0/24)
-* Destination port number (e.g. 22).
+Valid filters:
+
+* IPv4 or IPv6 address (e.g. 192.168.0.1 or 2001:db8::1)
+* IPv4 or IPv6 CIDR range (e.g. 192.168.0.0/24 or fd00::/8)
+* Hostname, resolved to its IPv4 and IPv6 addresses (e.g. localhost)
+* TCP port, phrased as `tcp/22` or `*:22`. A bare number such as `22` is treated as an address, not a port.
+* Address and port (e.g. 10.20.30.40:1234 or 192.168.0.0/24:443). IPv6 addresses need brackets when a port is given (e.g. [2001:db8::1]:443 or [fd00::/8]:22).
+* Port lists and ranges (e.g. tcp/22,80 or *:1000-2000)
+* Direction prefix: `src:` or `dst:` (e.g. dst:40.30.20.10). Without a prefix, a filter applies to the source address in incoming mode and the destination address in outgoing mode. This includes ports, so in incoming mode `tcp/22` matches a source port of 22. Use `dst:tcp/22` to match connections to a local service on port 22.
+
+IPv4 connections to dual-stack IPv6 sockets (`::ffff:a.b.c.d`) are shown as IPv4. Link-local IPv6 addresses are shown with their interface (e.g. `fe80::1%eth0`) when read over Netlink. `/proc/net/tcp6` and `netstat` do not report interfaces. Interfaces in filters are ignored.
+
+This machine's addresses are also read over Netlink, including secondary addresses. Without Netlink, only each interface's primary IPv4 address is found, and IPv6 addresses are read from `/proc/net/if_inet6`.
+
+Connection direction is determined from listening sockets when the input includes them (Netlink, `/proc/net/tcp`, and `netstat`). Otherwise, the side with the higher port is assumed to be the client.
 
 Arguments:
 
-* `-a`: All-mode. When using conntrack, do not restrict to just our device's addresses. Address checks will look at both ends of connection for a match.
-* `-c`: Conntrack-mode. Use conntrack instead of netstat to detect connections. Must be root to use.
-* `-C`: Force colours, even if output is not a terminal.
+* `-4`: Only show IPv4 connections, including IPv4 connections to dual-stack IPv6 sockets. Cannot be combined with -6.
+* `-6`: Only show IPv6 connections. Cannot be combined with -4.
+* `-A`: Conntrack all-mode. Also show connections passing through this machine. Requires -C.
+* `-C`: Conntrack mode. Use `conntrack -L` instead of Netlink to detect connections. Linux only, and `conntrack` must be run as root.
+* `-e filter`: Exclusion filter. Hide connections matching the filter. Uses the same format as filters above, and can be given multiple times.
+* `--filter-and`: Require a connection to match all filters instead of at least one.
 * `-h`: Help. Print a help menu and exit.
-* `-l`: Show loopback connections, which are ignored by default. Will only work with netstat.
-* `-L`: LAN-only mode. Only show incoming connections from LAN addresses (or to LAN addresses for outgoing mode).
-* `-m`: Monitor mode. Constantly re-poll and print out connection information.
+* `--json`: Print each matching connection as a JSON object instead of a grouped summary.
+* `-L`: Show localhost connections, which are ignored by default.
+* `-l`: LAN-only mode. Only show incoming connections from LAN addresses (or to LAN addresses for outgoing mode). By default, a LAN address is any address within 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7 (unique local), or fe80::/10 (link-local). Cancels out -r.
+* `--lan-interfaces`: When using LAN-only mode, treat the networks that this machine has an address on as LAN addresses.
+* `--netstat`: Legacy netstat mode. Use `netstat` instead of Netlink to detect connections. Replaces `-n`, which still works but prints a deprecation warning.
+* `--no-self`: In conntrack all-mode, exclude connections involving this machine. Outside of all-mode, hide connections from local addresses in incoming mode (or to local addresses in outgoing mode).
 * `-o`: Outgoing mode. Display outgoing connections instead of incoming connections. Address checks will look at destination for a match.
-* `-q`: "Quiet"-ish mode: Print information in barebones format (probably for future parsing).
-* `-r`: Range mode. When specifying interfaces as a filter, use local CIDR ranges instead of just IPv4 addresses.
-* `-R`: Remote-only mode: Only show incoming connections from non-LAN addresses (or to non-LAN addresses for outgoing mode).
-* `-s`: Separate mode. Do not summarize connections, displaying individual ports.
-* `-S`: Standard input. Collect input from stdin, assumed to be valid netstat or conntrack output
-* `-v`: Verbose mode. Reach out to my `getlabel` script to attempt to resolve MAC addresses.
-   * `-vv` will call `getlabel` with -v for additional information.
+* `--procfs`: Legacy procfs mode. Read `/proc/net/tcp` and `/proc/net/tcp6` instead of Netlink.
+* `-r`: Remote-only mode. Only show incoming connections from non-LAN addresses (or to non-LAN addresses for outgoing mode). Cancels out -l.
+* `-S`: Standard input. Read input from stdin instead of running a command. Input is assumed to be in `/proc/net/tcp` format, or `netstat`/`conntrack` output when combined with --netstat or -C.
 
 ## dhclient-force.sh
 

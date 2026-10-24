@@ -11,7 +11,18 @@ def load(name, path):
             import importlib.util
             spec = importlib.util.spec_from_file_location(name, path)
             foo = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(foo)
+            # Register while executing, as in the importlib recipe.
+            # Dataclasses with string annotations look up their module here.
+            # Restore afterwards, since some test modules share a script's name.
+            previous = sys.modules.get(name)
+            sys.modules[name] = foo
+            try:
+                spec.loader.exec_module(foo)
+            finally:
+                if previous is None:
+                    del sys.modules[name]
+                else:
+                    sys.modules[name] = previous
             return foo
     raise Exception('Loading data not yet implemented in this testing structure for your version of python.')
 
