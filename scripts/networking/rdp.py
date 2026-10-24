@@ -3,18 +3,21 @@
 from argparse import ArgumentParser
 from base64 import b64decode
 from functools import cache
+from getpass import getpass
 from re import match, sub
-from socket import gaierror, gethostbyname
-from subprocess import DEVNULL as devnull, PIPE as pipe, Popen as run_cmd
-from sys import argv, stderr, stdout
+from socket import SOCK_STREAM, gaierror, getaddrinfo
+from subprocess import Popen as run_cmd
+from sys import argv, exit, stderr, stdout
 from threading import Thread, Lock
 from time import time
 
 import logging
 import os
 
+
 def print_error(s):
     print(f'Error: {s}')
+
 
 def _build_logger(label, err=None, out=None):
     obj = logging.getLogger(label)
@@ -34,10 +37,10 @@ def _build_logger(label, err=None, out=None):
     return obj
 
 
-def _collect_password(self, prompt):
+def _collect_password(prompt):
     temp = ''
     while not temp.strip():
-        temp = getpass.getpass('%s: ' % prompt)
+        temp = getpass('%s: ' % prompt)
     return temp
 
 
@@ -85,8 +88,18 @@ def _enable_colours(force=None):
         COLOUR_OFF = ''
 
 
-def _get_command_new(resolution, display=False, **kwargs):
-    '''Get command string for new-style xfreerdp switches.'''
+def _format_address(host, port=None):
+    '''Join a host and optional port into an xfreerdp server address.'''
+    if ':' in host:
+        # xfreerdp rejects bare IPv6 addresses in /v:, even without a port.
+        host = f'[{host}]'
+    if port is None:
+        return host
+    return f'{host}:{port}'
+
+
+def _get_command(resolution, display=False, **kwargs):
+    '''Get command string for xfreerdp switches.'''
 
     target, user, password = resolution
 
@@ -96,6 +109,11 @@ def _get_command_new(resolution, display=False, **kwargs):
 
     if kwargs.get('legacy_security'):
         switches.append('/sec:rdp')
+
+    if kwargs.get('legacy_tls'):
+        # Older hosts (e.g. Windows 7) only offer TLS 1.0, which OpenSSL 3
+        # refuses at its default security level. Options must share one switch.
+        switches.append('/tls:seclevel:0,enforce:1.0')
 
     if kwargs.get('ignore_certs'):
         switches.append('/cert:ignore')
@@ -118,44 +136,7 @@ def _get_command_new(resolution, display=False, **kwargs):
 
     switches.append('/u:%s' % (user or os.getlogin()))
     # Server address
-    switches.append('/v:%s' % target)
-
-    return switches
-
-
-def _get_command_old(resolution, display=None, **kwargs):
-    '''Get command string for old-style xfreerdp switches.
-    The old style of switches probably aren't in use anymore,
-    but it's a short and straightforward method.
-
-    This entire script came about because I didn't want to juggle
-    switches between a machine with the old style and a script with
-    the new one.'''
-
-    target, user, password = resolution
-
-    # Static switches
-    cmd = 'xfreerdp --plugin cliprdr'
-    switches = cmd.split(' ')
-
-    # RDP Security Switch
-    if kwargs.get('legacy_security'):
-        switches.extend('--sec rdp'.split(' '))
-
-    # Display size
-    switches.extend(['-g', self.geometry])
-    # Domain/Password/User
-    if kwargs.get('domain'):
-        switches.extend(['-d', kwargs.get('domain')])
-
-    if password:
-        if display:
-            switches.extend(['-p', _colour_text(''.rjust(len(self.password), '*'))])
-        else:
-            switches.extend(['-p', password])
-    switches.extend(['-u', user or os.getlogin()])
-    # Server address
-    switches.append(target)
+    switches.append('/v:%s' % _format_address(target, kwargs.get('port')))
 
     return switches
 
@@ -200,26 +181,28 @@ def _is_installed():
     return False
 
 
-@cache
-def _is_new_rdp():
-    try:
-        p = run_cmd(['xfreerdp'], stdout=pipe, stderr=devnull)
+def _launch(switches):
+    '''Start xfreerdp, passing switches over a pipe instead of argv.
 
-        # Read the first 10 lines for the usage summary.
-        # Not counting on it being on a specific line within self.
-        i = 0
-        for line in p.stdout.readlines():
-            i += 1
-            if i > 10:
-                break
-            if bytes('[/v:<server>[:port]]', 'utf-8') in line:
-                return True
-                break
-    except OSError:
-        # Since we are already checking for xfreerdp, this probably will not come up.
-        # This is mostly here because I was doing some initial development on a machine without xfreerdp.
-        pass
-    return False
+    Arguments on the command line (including the password) are visible to
+    other local users through ps and /proc/<pid>/cmdline. /args-from reads
+    one argument per line from the given file descriptor instead.'''
+
+    fd_read, fd_write = os.pipe()
+    try:
+        with os.fdopen(fd_write, 'w') as handle:
+            fd_write = None
+            handle.write(''.join(f'{switch}\n' for switch in switches[1:]))
+        return run_cmd(
+            [switches[0], f'/args-from:fd:{fd_read}'],
+            pass_fds=(fd_read,),
+            stdout=stdout,
+            stderr=stderr,
+        )
+    finally:
+        os.close(fd_read)
+        if fd_write is not None:
+            os.close(fd_write)
 
 
 def _parse_args(args_list):
@@ -234,6 +217,15 @@ def _parse_args(args_list):
     ENV_WIDTH = 'RDP_WIDTH'
     ENV_RDP_INTERNAL = 'RDP_EC2_USE_INTERNAL'
     ENV_EC2_KEY_DIRECTORY = 'EC2_KEY_DIRECTORY'
+
+    def split_port(value):
+        '''Split "host:port" or "[ipv6]:port". A bare IPv6 address has no port.'''
+        found = match(r'^\[([^\]]+)\](?::([^:]*))?$', value) or match(
+            r'^([^:]*):([^:]*)$', value
+        )
+        if found:
+            return found.group(1), found.group(2)
+        return value, None
 
     def validate_int(value_raw, label, expr=lambda i: i > 0, msg=None):
         try:
@@ -276,6 +268,12 @@ def _parse_args(args_list):
         dest='legacy_security',
         action='store_true',
         help='Use legacy RDP security mode',
+    )
+    g_rdp.add_argument(
+        '--legacy-tls',
+        dest='legacy_tls',
+        action='store_true',
+        help='Allow TLS 1.0 and weak ciphers (needed for Windows 7 and older)',
     )
     g_rdp.add_argument(
         '--height', dest='height', help='RDP window height (overrides -g)'
@@ -328,15 +326,19 @@ def _parse_args(args_list):
     ###
 
     # Arguments dictionary with basic fields.
+    server, port_raw = split_port(parsed_args.server)
+
     args = {
         # Target
-        'server': parsed_args.server,
+        'server': server,
+        'port': None,
         # Misc
         'verbose': parsed_args.verbose,
         # RDP Options
         'audio': parsed_args.audio,
         'ignore_certs': parsed_args.ignore_certs,
         'legacy_security': parsed_args.legacy_security,
+        'legacy_tls': parsed_args.legacy_tls,
         'height': DEFAULT_HEIGHT,
         'width': DEFAULT_WIDTH,
         # User Options
@@ -354,6 +356,17 @@ def _parse_args(args_list):
         'ec2_prioritize_internal': parsed_args.ec2_prioritize_internal
         or len(os.environ.get(ENV_RDP_INTERNAL, '')) > 0,
     }
+
+    # Validate port
+    if port_raw is not None:
+        good_value, args['port'] = validate_int(
+            port_raw, 'port', expr=lambda i: 0 < i < 65536
+        )
+        good = good and good_value
+
+    if not server:
+        _logger.error(f'Invalid server address: {parsed_args.server}')
+        good = False
 
     # Details for user options
     ###
@@ -379,12 +392,12 @@ def _parse_args(args_list):
 
     # Set/validate height after geometry
     if parsed_args.height:
-        good_value, args['height'] = validate_int(parsed_args.height)
+        good_value, args['height'] = validate_int(parsed_args.height, 'height')
         good = good and good_value
 
     # Set/validate width after geometry
     if parsed_args.width:
-        good_value, args['width'] = validate_int(parsed_args.width)
+        good_value, args['width'] = validate_int(parsed_args.width, 'width')
         good = good and good_value
 
     # Details for EC2 options
@@ -413,18 +426,20 @@ def _parse_args(args_list):
 def _print_summary(resolution, **kwargs):
     '''Output a summary of what xfreerdp will be doing.'''
 
-    target, user, has_password = resolution
+    address, user, has_password = resolution
 
     if kwargs['domain']:
         user = r'%s\%s' % (kwargs['domain'], user)
 
     display_values = {
-        'server': _colour_text(target, COLOUR_BLUE),
+        'server': _colour_text(
+            _format_address(address, kwargs.get('port')), COLOUR_BLUE
+        ),
         'geometry': _colour_text('%sx%s' % (kwargs['width'], kwargs['height'])),
         'user': _colour_text(user or kwargs['user'] or os.getlogin()),
     }
 
-    if kwargs['server'] != target:
+    if kwargs['server'] != address:
         display_values['server'] = '(%s) %s' % (
             _colour_text(kwargs['server']),
             display_values['server'],
@@ -447,6 +462,9 @@ def _print_summary(resolution, **kwargs):
 
         if kwargs.get('legacy_security'):
             _logger.warning('Using legacy security mode.')
+
+        if kwargs.get('legacy_tls'):
+            _logger.warning('Allowing legacy TLS 1.0.')
 
         if kwargs.get('ignore_certs'):
             _logger.warning('Ignoring certificate validation.')
@@ -601,19 +619,28 @@ def _resolve_ec2_target(**kwargs):
 
 
 def _resolve_target(**kwargs):
-    if kwargs['ec2']:
-        return _resolve_ec2_target(**kwargs)
+    '''Returns the connection target and the address it resolves to.
 
+    Outside of EC2, xfreerdp is given the server name as written so that
+    certificate validation and NLA/Kerberos see the real hostname. The name is
+    still resolved here to fail early and to show the address in the summary.'''
+
+    if kwargs['ec2']:
+        good, target, user, password = _resolve_ec2_target(**kwargs)
+        return good, target, target, user, password
+
+    target = kwargs['server']
+    address = None
     try:
-        target = gethostbyname(kwargs['server'])
+        # First result follows the system's address preference (IPv4 or IPv6).
+        address = getaddrinfo(target, None, type=SOCK_STREAM)[0][4][0]
         good = True
     except gaierror:
         _logger.error(
-            'Unable to resolve server address: %s'
-            % _colour_text(parsed_args.server, COLOUR_BLUE)
+            'Unable to resolve server address: %s' % _colour_text(target, COLOUR_BLUE)
         )
         good = False
-    return good, target, kwargs['user'], kwargs['password']
+    return good, target, address, kwargs['user'], kwargs['password']
 
 
 def _translate_seconds(duration):
@@ -724,38 +751,42 @@ def main(args_raw):
     # Confirm requirements that aren't needed for default usage.
     good = _confirm_requirements(**args) and good
 
-    good_resolution, target, user, password = _resolve_target(**args)
+    good_resolution, target, address, user, password = _resolve_target(**args)
     good = good and good_resolution
 
     if not good:
         exit(1)
 
-    _print_summary((target, user, password is not None), **args)
+    _print_summary((address, user, password is not None), **args)
 
     if args.get('ec2_password_only'):
         _logger.info(f'User: {user or os.getlogin()}')
         _logger.info(f'Password: {password}')
         exit(0)
 
-    if _is_new_rdp():
-        cmd_func = _get_command_new
-    else:
-        cmd_func = _get_command_old
-    switches = cmd_func((target, user, password), **args)
+    switches = _get_command((target, user, password), **args)
+
+    if any('\n' in switch for switch in switches):
+        # /args-from reads one argument per line.
+        _logger.error('Arguments (user, domain, or password) cannot contain newlines.')
+        exit(1)
 
     # Run RDP
     time_start = time()
 
+    p = None
     try:
         if args.get('verbose'):
-            print(' '.join(cmd_func((target, user, password), True, **args)))
-        p = run_cmd(switches, stdout=stdout, stderr=stderr)
+            print(' '.join(_get_command((target, user, password), True, **args)))
+        stdout.flush()
+        p = _launch(switches)
 
         # Run until the process ends.
         p.communicate()
         exit_code = p.returncode
     except KeyboardInterrupt:
-        p.kill()
+        if p:
+            p.kill()
         exit_code = 130
     except OSError as e:
         print_error('OSError: %s' % e)
