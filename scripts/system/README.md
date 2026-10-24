@@ -132,7 +132,8 @@ Notes:
 
 * The `-s` switch can be used to specify how often processes should be checked for completeness. By default, this is every 0.5 seconds.
 * The script currently assumes that a PID will not be re-used by another process between check intervals.
-* If no PIDs exist when the script is invoked, then the script will exit with a non-zero exit code.
+* If no PIDs exist when the script is invoked, then the script will exit with a non-zero exit code. The `-l` switch makes this case exit successfully instead.
+* If only some patterns match running processes, then the unmatched patterns are reported as warnings and the script waits on the processes that did match. The `--strict` switch instead fails if any pattern matches no processes.
 * Process names are dealt with by invoking `pgrep`. `pgrep` reads off of the Linux procfs. Procfs is a bit unfortunate in that the name of a process (which `pgrep` searches for by default trims the process name to be a maximum of 15 characters.
   Command searches longer than 15 characters shall not register.
 * A downside of this script is that it is unable to detect whether or not a process ended with a non-zero exit code.
