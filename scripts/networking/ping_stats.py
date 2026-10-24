@@ -15,10 +15,14 @@ from subprocess import Popen as cmd, PIPE as pipe
 from re import search, sub
 
 # Script Support
+from os import environ
 from os.path import isfile, realpath
 
 # TCP Support
 import errno, socket
+
+# HTTP Support
+import ssl
 
 
 def _build_logger(label, err=None, out=None):
@@ -153,6 +157,8 @@ RESULT_BROKEN = 5
 
 DEFAULT_STREAK_COUNT = 10
 
+ENV_PREFER_IPV6 = 'PING_PREFER_IPV6'
+
 
 class PingContext:
     def __init__(self):
@@ -176,8 +182,10 @@ def do_http(**kwargs):
     line = None
 
     if sys.version_info.major >= 3:
+        from http.client import HTTPException, InvalidURL
         from urllib.error import HTTPError, URLError
     else:
+        from httplib import HTTPException, InvalidURL
         from urllib2 import HTTPError, URLError
 
     try:
@@ -193,20 +201,93 @@ def do_http(**kwargs):
             result = RESULT_CLOSED
             display = 'HTTP %d' % e.code
     except URLError as e:
-        if search(r'Name or service not known', str(e), IGNORECASE):
-            result = RESULT_UNREACHABLE
-            display = 'DNS lookup error'
+        # urlopen wraps socket-level failures (including connect timeouts)
+        #   in a URLError, so classify by the underlying reason.
+        reason = getattr(e, 'reason', None)
+        if isinstance(reason, (socket.error, socket.timeout)):
+            result, display = _classify_socket_error(reason)
         else:
             result = RESULT_BROKEN
             display = 'broken URL'
-    except socket.timeout as e:
+    except (socket.error, socket.timeout) as e:
+        # Errors raised after the connection is established
+        #   (e.g. a read timeout or a reset) are not wrapped.
+        result, display = _classify_socket_error(e)
+    except InvalidURL:
+        result = RESULT_BROKEN
+        display = 'broken URL'
+    except HTTPException:
+        # Malformed or truncated response.
         result = RESULT_TIMEOUT
-        display = 'timeout'
+        display = 'bad response'
+    except ValueError:
+        result = RESULT_BROKEN
+        display = 'broken URL'
 
     if result == RESULT_SUCCESS and status_code >= 400:
         result = RESULT_CLOSED
 
     return result, display, line
+
+
+def _classify_socket_error(e):
+    cert_errors = tuple(
+        c
+        for c in (
+            getattr(ssl, 'SSLCertVerificationError', None),
+            getattr(ssl, 'CertificateError', None),
+        )
+        if c
+    )
+
+    if isinstance(e, socket.timeout):
+        return RESULT_TIMEOUT, 'timeout'
+    if isinstance(e, socket.gaierror):
+        return RESULT_UNREACHABLE, 'DNS lookup error'
+    if cert_errors and isinstance(e, cert_errors):
+        # Will not resolve itself between attempts.
+        return RESULT_BROKEN, 'certificate error'
+    if isinstance(e, ssl.SSLError):
+        return RESULT_TIMEOUT, 'SSL error'
+
+    code = getattr(e, 'errno', None)
+    if code == errno.ECONNREFUSED:
+        return RESULT_CLOSED, 'connection refused'
+    if code in (errno.EHOSTUNREACH, errno.ENETUNREACH):
+        return RESULT_UNREACHABLE, 'unreachable'
+    return RESULT_TIMEOUT, 'connection error'
+
+
+def _strip_ipv6_prefix(addr):
+    '''
+    Strip a prefix length from an IPv6 address.
+
+    This is a user convenience for copy-pasting addresses out of the output
+      of the 'ip' command (e.g. 'ip -6 addr'), which prints them with their
+      prefix length (e.g. 'fe80::1/64'). It is not CIDR or subnet support.
+
+    Accepts both 'addr/64%iface' and 'addr%iface/64'.
+    Anything that is not an IPv6 literal is returned unchanged.
+    '''
+    m = search(
+        r'^(?P<ip>[^/%]+)'
+        r'(?:/(?P<len_a>\d{1,3})(?P<scope_a>%[^/%]+)?|(?P<scope_b>%[^/%]+)/(?P<len_b>\d{1,3}))$',
+        addr,
+    )
+    if not m:
+        return addr
+
+    length = int(m.group('len_a') or m.group('len_b'))
+    if length > 128:
+        return addr
+
+    try:
+        socket.inet_pton(socket.AF_INET6, m.group('ip'))
+    except (AttributeError, socket.error, ValueError):
+        # Not an IPv6 literal, so leave it for normal resolution.
+        return addr
+
+    return m.group('ip') + (m.group('scope_a') or m.group('scope_b') or '')
 
 
 def do_http_callout(url, timeout):
@@ -227,14 +308,27 @@ def do_icmp(**kwargs):
     target = kwargs.get('ip')
     debug = kwargs.get('debug', False)
     timeout = kwargs.get('timeout')
+    ipv6 = kwargs.get('family') == socket.AF_INET6
 
-    if platform() in ['Linux', 'Darwin']:
-        # Unix platform
-        # ToDo: Improve this check
-        cmd_args = ['ping', '-W%d' % timeout, '-c1', target]
+    system = platform()
+    if system == 'Windows':
+        # Windows takes its reply timeout in milliseconds.
+        cmd_args = ['ping', '-w', str(timeout * 1000), '-n', '1', target]
+        if ipv6:
+            cmd_args.insert(1, '-6')
+    elif system == 'Darwin':
+        if ipv6:
+            # macOS ping is IPv4-only.
+            # ToDo: Confirm whether ping6 has a per-reply timeout option.
+            cmd_args = ['ping6', '-c1', target]
+        else:
+            # macOS takes -W in milliseconds.
+            cmd_args = ['ping', '-W%d' % (timeout * 1000), '-c1', target]
     else:
-        # Windows Environment (assumed)
-        cmd_args = ['ping', '-w', '1', '-n', '1', target]
+        # Linux (iputils) takes -W in seconds.
+        cmd_args = ['ping', '-W%d' % timeout, '-c1', target]
+        if ipv6:
+            cmd_args.insert(1, '-6')
     p = cmd(cmd_args, stdout=pipe, stderr=pipe)
     out, err = p.communicate()
     out = str(out).replace('\\n', '\n')
@@ -244,7 +338,8 @@ def do_icmp(**kwargs):
 
     result = {}
 
-    pattern = r'(Reply from [^:]+: bytes|\d+ bytes from)[^\n]+'
+    # Windows IPv6 replies have no 'bytes=' field, so also accept 'time'.
+    pattern = r'(Reply from \S+: (bytes|time)|\d+ bytes from)[^\n]+'
     l = search(pattern, str(out))
 
     if not l or p.returncode:
@@ -259,7 +354,9 @@ def do_icmp(**kwargs):
     # Strip out the icmp_seq value because our implementation invokes a new
     #   ping process. icmp_seq will always be '1'.
     line = sub(
-        r'((\d+ bytes|Reply) from [^:]+:|\s+(bytes|icmp_seq)=\d+)', '', l.group(0)
+        r'((\d+ bytes|Reply) from \S+( \([^)]*\))?:|\s+(bytes|icmp_seq)=\d+)',
+        '',
+        l.group(0),
     )
     line = line.replace('time=', 't=')
     line = sub(r'(\.[\d]{2})\d? ms', r'\1 ms', line)
@@ -269,23 +366,32 @@ def do_icmp(**kwargs):
 def do_script(**kwargs):
 
     target = kwargs.get('script')
+    timeout = kwargs.get('timeout')
     process = cmd(target)
-    out, err = process.communicate()
 
-    result = process.returncode == 0
+    # Poll rather than using communicate(timeout=...) to stay Python2-compatible.
+    deadline = time() + timeout
+    while process.poll() is None:
+        if time() >= deadline:
+            process.kill()
+            process.wait()
+            return RESULT_TIMEOUT, 'timeout', None
+        sleep(0.05)
 
-    if result:
-        display = 'executed'
-    else:
-        display = 'execution failed'
+    if process.returncode == 0:
+        return RESULT_SUCCESS, 'executed', None
+    return RESULT_TIMEOUT, 'execution failed', None
 
-    return result, display, None
 
 def do_tcp(**kwargs):
 
     target = kwargs.get('ip')
     port = kwargs.get('port')
     debug = kwargs.get('debug', False)
+    family = kwargs.get('family', socket.AF_INET)
+    # Prefer the address tuple from getaddrinfo, which keeps the
+    #   scope ID of IPv6 link-local addresses.
+    sockaddr = kwargs.get('sockaddr') or (target, port)
 
     line = 'TCP/%s' % port
     display = None
@@ -296,10 +402,10 @@ def do_tcp(**kwargs):
         # Note: Python2's socket objects do not have an __exit__ method,
         #         so with/__exit__ cannot be used if this script is to be
         #         usable on the older version.
-        s = get_tcp_socket()
+        s = get_tcp_socket(family)
         try:
             # https://www.tutorialspoint.com/python_penetration_testing/python_penetration_testing_network_scanner.htm
-            result_conn = s.connect_ex((target, port))
+            result_conn = s.connect_ex(sockaddr)
             time_duration = time() - time_start
 
             if debug:
@@ -337,13 +443,15 @@ def do_tcp(**kwargs):
                 #   nmap can't or doesn't distinguish between the two causes, so I'm not too worried distinguishing either
                 result = RESULT_CLOSED
 
-            elif result_conn == errno.EHOSTUNREACH:
+            elif result_conn in (errno.EHOSTUNREACH, errno.ENETUNREACH):
                 # Socket gave up.
                 # This can come about with a timeout on a resource on the
                 #  same collision domain as the machine running this script.
 
                 # Unreachable should be distinguished from
                 #  an unreachable result from an ambiguous timeout
+
+                # ENETUNREACH is typical when there is no IPv6 route.
                 result = RESULT_UNREACHABLE
 
             else:
@@ -384,8 +492,8 @@ def get_target_display(**kwargs):
         return _colour_text(addr, COLOUR_BLUE)
 
 
-def get_tcp_socket():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+def get_tcp_socket(family=socket.AF_INET):
+    s = socket.socket(family, socket.SOCK_STREAM)
     s.settimeout(1)
     return s
 
@@ -433,7 +541,7 @@ def parse_args(args_raw):
     def hexit(hexit_code):
 
         logger.info(
-            'Usage: %s address [-c count] [-r] [-u] [streak_count]'
+            'Usage: %s address [-4|-6] [-c count] [-r] [-u] [streak_count]'
             % _colour_green('./ping-stats.py')
         )
         logger.info(
@@ -443,6 +551,15 @@ def parse_args(args_raw):
         logger.info(
             ' -p port : Instead of using ICMP pings, scan on the specified TCP port.'
         )
+        logger.info(' -4: Use IPv4 only (ICMP/TCP).')
+        logger.info(' -6: Use IPv6 only (ICMP/TCP).')
+        logger.info(
+            ' --prefer-ipv6: Use IPv6 when the target has both IPv4 and IPv6 (ICMP/TCP).'
+        )
+        logger.info(
+            '                Can also be set with %s=1.' % _colour_text(ENV_PREFER_IPV6)
+        )
+        logger.info('                Default: Use IPv4 when available.')
         logger.info(' -c count: Limit the total number of packets sent.')
         logger.info(
             '           Will exit with a non-zero exit code if limit is reached'
@@ -451,8 +568,12 @@ def parse_args(args_raw):
         logger.info(' -d: Debug mode. Print the raw output of ping command.')
         logger.info(' -t: Tally mode. Always display a tally of successful pings.')
         logger.info(' -i seconds: Interval time between pings (Default: 1)')
-        logger.info(' --timeout <seconds>: Timeout duration for ICMP/HTTP (Default: 1)')
-        logger.info(' --script <path>: script to execute instead of directly networking')
+        logger.info(
+            ' --timeout <seconds>: Timeout duration for ICMP/HTTP/script (Default: 1)'
+        )
+        logger.info(
+            ' --script <path>: script to execute instead of directly networking'
+        )
         logger.info(
             'Set streak count as an optional second argument. Default: %s'
             % _colour_text(DEFAULT_STREAK_COUNT)
@@ -472,10 +593,14 @@ def parse_args(args_raw):
 
     # Value-tracking
 
-    args = {'mode': 0, 'timeout': 1}
+    args = {'mode': 0, 'timeout': 1, 'family': socket.AF_UNSPEC}
+    families = set()
+    prefer_ipv6 = False
 
     try:
-        opts, operands = gnu_getopt(args_raw, 'c:dhi:p:rtu', ['script', 'timeout='])
+        opts, operands = gnu_getopt(
+            args_raw, '46c:dhi:p:rtu', ['prefer-ipv6', 'script', 'timeout=']
+        )
     except Exception as e:
         logger.error('Error parsing arguments: %s' % str(e))
         hexit(1)
@@ -483,12 +608,29 @@ def parse_args(args_raw):
     # Error check
     error = False
 
+    # The environment variable only sets a default, so unlike --prefer-ipv6 it
+    #   never conflicts with -4 or with URL/script targets.
+    prefer_ipv6_env = False
+    env_value = environ.get(ENV_PREFER_IPV6, '').strip().lower()
+    if env_value in ('1', 'true', 'yes', 'on'):
+        prefer_ipv6_env = True
+    elif env_value not in ('', '0', 'false', 'no', 'off'):
+        logger.error(
+            'Invalid %s value: %s (expected 1/0, true/false, yes/no, or on/off)'
+            % (ENV_PREFER_IPV6, environ.get(ENV_PREFER_IPV6))
+        )
+        error = True
+
     for arg, value in opts:
         valid = True
         if arg == '-h':
             hexit(0)
 
-        if arg == '-c':
+        if arg == '-4':
+            families.add(socket.AF_INET)
+        elif arg == '-6':
+            families.add(socket.AF_INET6)
+        elif arg == '-c':
             # Count
             valid, args['count'] = validate_int(value, 'count')
         elif arg == '-d':
@@ -508,6 +650,8 @@ def parse_args(args_raw):
         elif arg == '-r':
             # Reliable-mode
             args['mode'] |= MODE_RELIABLE
+        elif arg == '--prefer-ipv6':
+            prefer_ipv6 = True
         elif arg == '--script':
             args['script'] = True
         elif arg == '-t':
@@ -526,10 +670,28 @@ def parse_args(args_raw):
         logger.error('Cannot wait for reliable and unreliable pings at the same time.')
         error = True
 
+    if len(families) > 1:
+        logger.error('Cannot use -4 and -6 at the same time.')
+        error = True
+    elif families:
+        args['family'] = families.pop()
+
+    if prefer_ipv6 and args['family'] == socket.AF_INET:
+        logger.error('Cannot use -4 and --prefer-ipv6 at the same time.')
+        error = True
+
+    is_url = operands and search(r'^https?://', operands[0], IGNORECASE)
+    if (args['family'] != socket.AF_UNSPEC or prefer_ipv6) and (
+        is_url or args.get('script')
+    ):
+        # urllib cannot be told which family to use.
+        logger.error('-4, -6, and --prefer-ipv6 only apply to ICMP and TCP targets.')
+        error = True
+
     if not operands:
         logger.error('No target server specified.')
         error = True
-    elif search(r'^https?://', operands[0], IGNORECASE):
+    elif is_url:
         args['url'] = operands[0]
     elif args.get('script'):
         args['script'] = value = realpath(operands[0])
@@ -537,10 +699,26 @@ def parse_args(args_raw):
             error = True
             logger.error('Script does not exist: %s' % value)
     else:
-        args['addr'] = operands[0]
+        # Convenience for addresses copy-pasted from 'ip' output.
+        args['addr'] = _strip_ipv6_prefix(operands[0])
 
         try:
-            args['ip'] = socket.gethostbyname(args['addr'])
+            info = socket.getaddrinfo(
+                args['addr'], args.get('port'), args['family'], socket.SOCK_STREAM
+            )
+            # Take the first address of the preferred family, falling back to
+            #   the first address of any family.
+            preferred = (
+                socket.AF_INET6 if prefer_ipv6 or prefer_ipv6_env else socket.AF_INET
+            )
+            entry = next((i for i in info if i[0] == preferred), info[0])
+            args['family'] = entry[0]
+            args['sockaddr'] = entry[4]
+            # getnameinfo keeps the '%interface' scope of link-local addresses,
+            #   which ping needs and sockaddr[0] drops.
+            args['ip'] = socket.getnameinfo(
+                args['sockaddr'], socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+            )[0]
         except socket.gaierror:
             logger.error(
                 'Unable to resolve address: %s'
@@ -549,17 +727,17 @@ def parse_args(args_raw):
             error = True
 
     if args['mode'] & (MODE_RELIABLE | MODE_UNRELIABLE):
+        streak = DEFAULT_STREAK_COUNT
         if len(operands) > 1:
             valid, streak = validate_int(operands[-1], 'attempt count', lambda i: i > 0)
             error = error or not valid
             if valid:
                 args['streak'] = streak
-        else:
-            streak = DEFAULT_STREAK_COUNT
 
         count = args.get('count')
 
-        if count and count < streak:
+        # Skip the comparison if the streak was invalid (already reported).
+        if count and streak and count < streak:
             logger.error(
                 'Can never reach streak goal of %s with a count limit of %s.'
                 % (_colour_text(streak), _colour_text(count))

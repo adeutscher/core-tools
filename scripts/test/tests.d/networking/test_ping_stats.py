@@ -1,12 +1,17 @@
 #!/usr/bin/env python
 
 import common, unittest # General test requirements
+from unittest import mock # Address resolution overrides
 import errno, socket # TCP Tests/Mock Implementation
+import os # Environment variable tests
 import re # Time Display Tests
 
 mod_static = common.load('ping_stats', common.TOOLS_DIR + '/scripts/networking/ping_stats.py')
 
 def load_module(**kwargs):
+    # Keep the caller's shell from changing address selection in tests.
+    os.environ.pop('PING_PREFER_IPV6', None)
+
     mod = common.load('ping_stats', common.TOOLS_DIR + '/scripts/networking/ping_stats.py')
     mod._enable_colours(kwargs.get('colours', False))
     mod.logger = common.logging.getLogger(common.LABEL_TEST_LOGGER)
@@ -15,7 +20,7 @@ def load_module(**kwargs):
     if kwargs.get('override', True):
         mod.sleep = ctx.do_sleep
         mod.cmd = ctx.do_cmd
-        mod.get_tcp_socket = lambda: ctx
+        mod.get_tcp_socket = lambda family=socket.AF_INET: ctx.make_socket(family)
     return mod, ctx
 
 class MockContext:
@@ -33,6 +38,7 @@ class MockContext:
         self.tcp_connect_replies = []
         self.tcp_closures = 0
         self.tcp = []
+        self.tcp_families = []
 
     def arm_ping(self, exit_code = 0, line = None):
         if not line:
@@ -70,6 +76,10 @@ class MockContext:
 
     def close(self):
         self.tcp_closures += 1
+
+    def make_socket(self, family):
+        self.tcp_families.append(family)
+        return self
 
     def do_cmd(self, args, **kwargs):
 
@@ -590,6 +600,201 @@ class CommandTcpTests(common.TestCase, metaclass=common.LoggableTestCase):
         self.assertEqual(expected_number - 9, len([1 for l in info if '100.00%%  [^^^^^^^^^^]  %s  open  TCP/%s' % (addr, port) in l]))
         self.assertContains('100/100 100.00%%  [^^^^^^^^^^]  %s  open  TCP/%s' % (addr, port), info[-1])
 
+'''
+Tests for IPv6 handling and address family selection.
+'''
+class IPv6Tests(common.TestCase, metaclass=common.LoggableTestCase):
+    def setUp(self):
+        self.mod, self.ctx = load_module()
+        self.mod.platform = lambda: 'Linux'
+
+    def fake_getaddrinfo(self, host, port, family=0, socktype=0):
+        '''Dual-stack host that lists IPv6 first, as a system preferring IPv6 would.'''
+        results = []
+        if host in ('dualstack', 'v6only'):
+            results.append((socket.AF_INET6, socket.SOCK_STREAM, 6, '', ('2001:db8::1', port or 0, 0, 0)))
+        if host in ('dualstack', 'v4only'):
+            results.append((socket.AF_INET, socket.SOCK_STREAM, 6, '', ('192.0.2.1', port or 0)))
+        results = [r for r in results if family in (socket.AF_UNSPEC, r[0])]
+        if not results:
+            raise socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
+        return results
+
+    def run_tcp(self, *extra):
+        with mock.patch.object(self.mod.socket, 'getaddrinfo', self.fake_getaddrinfo):
+            return self.mod.main(list(extra) + ['-c', '1', '-p', '22'])
+
+    def test_error_both_families(self):
+        exit_code = self.mod.main(['127.0.0.1', '-4', '-6'])
+        self.assertEqual(1, exit_code)
+        self.assertSingle(self.getLogs('error'), lambda l: 'Cannot use -4 and -6' in l)
+
+    def test_error_family_with_url(self):
+        exit_code = self.mod.main(['http://localhost/', '-6'])
+        self.assertEqual(1, exit_code)
+        self.assertSingle(self.getLogs('error'), lambda l: 'only apply to ICMP and TCP' in l)
+
+    def test_error_prefer_ipv6_with_url(self):
+        exit_code = self.mod.main(['http://localhost/', '--prefer-ipv6'])
+        self.assertEqual(1, exit_code)
+        self.assertSingle(self.getLogs('error'), lambda l: 'only apply to ICMP and TCP' in l)
+
+    def test_error_prefer_ipv6_with_ipv4_only(self):
+        exit_code = self.mod.main(['127.0.0.1', '-4', '--prefer-ipv6'])
+        self.assertEqual(1, exit_code)
+        self.assertSingle(self.getLogs('error'), lambda l: 'Cannot use -4 and --prefer-ipv6' in l)
+
+    def test_family_default_prefers_ipv4(self):
+        # The fake resolver lists IPv6 first, so this overrides the system order.
+        self.assertEqual(0, self.run_tcp('dualstack'))
+        self.assertEqual([socket.AF_INET], self.ctx.tcp_families)
+        self.assertEqual([('192.0.2.1', 22)], self.ctx.tcp)
+
+    def test_family_default_falls_back_to_ipv6(self):
+        self.assertEqual(0, self.run_tcp('v6only'))
+        self.assertEqual([('2001:db8::1', 22, 0, 0)], self.ctx.tcp)
+
+    def test_family_prefer_ipv6(self):
+        self.assertEqual(0, self.run_tcp('dualstack', '--prefer-ipv6'))
+        self.assertEqual([socket.AF_INET6], self.ctx.tcp_families)
+        self.assertEqual([('2001:db8::1', 22, 0, 0)], self.ctx.tcp)
+
+    def test_family_prefer_ipv6_falls_back_to_ipv4(self):
+        self.assertEqual(0, self.run_tcp('v4only', '--prefer-ipv6'))
+        self.assertEqual([('192.0.2.1', 22)], self.ctx.tcp)
+
+    def run_tcp_env(self, value, *extra):
+        with mock.patch.dict(os.environ, {'PING_PREFER_IPV6': value}):
+            return self.run_tcp(*extra)
+
+    def test_env_prefer_ipv6(self):
+        for value in ('1', 'true', 'YES', ' on '):
+            self.ctx.tcp = []
+            self.assertEqual(0, self.run_tcp_env(value, 'dualstack'), value)
+            self.assertEqual([('2001:db8::1', 22, 0, 0)], self.ctx.tcp, value)
+
+    def test_env_prefer_ipv4(self):
+        for value in ('', '0', 'false', 'No', 'off'):
+            self.ctx.tcp = []
+            self.assertEqual(0, self.run_tcp_env(value, 'dualstack'), value)
+            self.assertEqual([('192.0.2.1', 22)], self.ctx.tcp, value)
+
+    def test_env_prefer_ipv6_falls_back_to_ipv4(self):
+        self.assertEqual(0, self.run_tcp_env('1', 'v4only'))
+        self.assertEqual([('192.0.2.1', 22)], self.ctx.tcp)
+
+    def test_env_prefer_ipv6_overridden_by_ipv4_flag(self):
+        self.assertEqual(0, self.run_tcp_env('1', 'dualstack', '-4'))
+        self.assertEqual([('192.0.2.1', 22)], self.ctx.tcp)
+        self.assertEmpty(self.getLogs('error'))
+
+    def test_env_prefer_ipv6_ignored_for_url(self):
+        with mock.patch.dict(os.environ, {'PING_PREFER_IPV6': '1'}):
+            valid, args = self.mod.parse_args(['http://localhost/'])
+        self.assertTrue(valid)
+        self.assertEmpty(self.getLogs('error'))
+
+    def test_env_invalid(self):
+        self.assertEqual(1, self.run_tcp_env('maybe', 'dualstack'))
+        self.assertSingle(self.getLogs('error'), lambda l: 'Invalid PING_PREFER_IPV6 value: maybe' in l)
+        self.assertEmpty(self.ctx.tcp)
+
+    def test_family_forced_ipv4(self):
+        self.assertEqual(0, self.run_tcp('dualstack', '-4'))
+        self.assertEqual([socket.AF_INET], self.ctx.tcp_families)
+        self.assertEqual([('192.0.2.1', 22)], self.ctx.tcp)
+
+    def test_family_forced_ipv6(self):
+        self.assertEqual(0, self.run_tcp('dualstack', '-6'))
+        self.assertEqual([('2001:db8::1', 22, 0, 0)], self.ctx.tcp)
+
+    def test_family_forced_ipv6_unavailable(self):
+        self.assertEqual(1, self.run_tcp('v4only', '-6'))
+        self.assertSingle(self.getLogs('error'), lambda l: 'Unable to resolve address' in l)
+
+    def test_icmp_ipv6_literal(self):
+        self.ctx.arm_ping(line='64 bytes from ::1: icmp_seq=1 ttl=64 time=0.045 ms')
+        exit_code = self.mod.main(['::1', '-c', '1'])
+        self.assertEqual(0, exit_code)
+
+        ping_req, kwargs = self.assertSingle(self.ctx.cmd)
+        self.assertEqual(['ping', '-6', '-W1', '-c1', '::1'], ping_req)
+        self.assertSingle(self.getLogs('info'), lambda l: '::1  reply  ttl=64 t=0.04 ms' in l)
+
+    def test_icmp_ipv6_hostname_reply(self):
+        self.ctx.arm_ping(line='64 bytes from localhost (::1): icmp_seq=1 ttl=64 time=0.045 ms')
+        exit_code = self.mod.main(['::1', '-c', '1'])
+        self.assertEqual(0, exit_code)
+        self.assertSingle(self.getLogs('info'), lambda l: '::1  reply  ttl=64 t=0.04 ms' in l)
+
+    def test_icmp_ipv6_darwin(self):
+        self.mod.platform = lambda: 'Darwin'
+        self.ctx.arm_ping(line='16 bytes from ::1, icmp_seq=0 hlim=64 time=0.045 ms')
+        self.mod.main(['::1', '-c', '1'])
+        ping_req, kwargs = self.assertSingle(self.ctx.cmd)
+        self.assertEqual(['ping6', '-c1', '::1'], ping_req)
+
+    def test_icmp_ipv6_windows(self):
+        self.mod.platform = lambda: 'Windows'
+        self.ctx.arm_ping(line='Reply from ::1: time<1ms')
+        exit_code = self.mod.main(['::1', '-c', '1'])
+        self.assertEqual(0, exit_code)
+
+        ping_req, kwargs = self.assertSingle(self.ctx.cmd)
+        self.assertEqual(['ping', '-6', '-w', '1000', '-n', '1', '::1'], ping_req)
+        self.assertSingle(self.getLogs('info'), lambda l: '::1  reply  time<1ms' in l)
+
+    def test_icmp_ipv4_windows(self):
+        self.mod.platform = lambda: 'Windows'
+        self.ctx.arm_ping(line='Reply from 127.0.0.1: bytes=32 time<1ms TTL=128')
+        exit_code = self.mod.main(['127.0.0.1', '-c', '1'])
+        self.assertEqual(0, exit_code)
+
+        ping_req, kwargs = self.assertSingle(self.ctx.cmd)
+        self.assertEqual(['ping', '-w', '1000', '-n', '1', '127.0.0.1'], ping_req)
+        self.assertSingle(self.getLogs('info'), lambda l: '127.0.0.1  reply  time<1ms TTL=128' in l)
+
+    def test_strip_ipv6_prefix(self):
+        tests = [
+            ('fe80::7285:c2ff:fec2:200d/64%enp39s0', 'fe80::7285:c2ff:fec2:200d%enp39s0'),
+            ('fe80::7285:c2ff:fec2:200d%enp39s0/64', 'fe80::7285:c2ff:fec2:200d%enp39s0'),
+            ('fe80::7285:c2ff:fec2:200d/64', 'fe80::7285:c2ff:fec2:200d'),
+            ('2001:db8::1/128', '2001:db8::1'),
+            ('::/0', '::'),
+            # Left alone
+            ('fe80::7285:c2ff:fec2:200d', 'fe80::7285:c2ff:fec2:200d'),
+            ('fe80::7285:c2ff:fec2:200d%enp39s0', 'fe80::7285:c2ff:fec2:200d%enp39s0'),
+            ('2001:db8::1/129', '2001:db8::1/129'),
+            ('2001:db8::1/64/64', '2001:db8::1/64/64'),
+            ('192.0.2.1/24', '192.0.2.1/24'),
+            ('example.com/64', 'example.com/64'),
+            ('example.com', 'example.com'),
+        ]
+        for value, expected in tests:
+            self.assertEqual(expected, self.mod._strip_ipv6_prefix(value), value)
+
+    def test_icmp_ipv6_prefix_stripped(self):
+        self.ctx.arm_ping(line='64 bytes from 2001:db8::1: icmp_seq=1 ttl=64 time=0.045 ms')
+        with mock.patch.object(self.mod.socket, 'getaddrinfo', wraps=socket.getaddrinfo) as lookup:
+            exit_code = self.mod.main(['2001:db8::1/64', '-c', '1'])
+        self.assertEqual(0, exit_code)
+        self.assertEqual('2001:db8::1', lookup.call_args[0][0])
+
+        ping_req, kwargs = self.assertSingle(self.ctx.cmd)
+        self.assertEqual('2001:db8::1', ping_req[-1])
+        self.assertSingle(self.getLogs('info'), lambda l: '2001:db8::1  reply' in l)
+
+    def test_tcp_ipv6_literal(self):
+        exit_code = self.mod.main(['::1', '-c', '1', '-p', '22'])
+        self.assertEqual(0, exit_code)
+        self.assertEqual([socket.AF_INET6], self.ctx.tcp_families)
+        self.assertEqual([('::1', 22, 0, 0)], self.ctx.tcp)
+
+    def test_tcp_network_unreachable(self):
+        self.ctx.tcp_connect_replies.append(errno.ENETUNREACH)
+        self.mod.main(['::1', '-c', '1', '-p', '22'])
+        self.assertSingle(self.getLogs('info'), lambda l: '::1  unreachable  TCP/22' in l)
+
 class TimeDisplayTests(unittest.TestCase):
 
     def __test_unit(self, unit, multiplier, increment):
@@ -673,7 +878,7 @@ class UtilityTests(common.TestCase, metaclass=common.LoggableTestCase):
         ]
 
         for addr, ip, expected in tests:
-            self.assertEqual(expected, self.mod.get_target(addr=addr, ip=ip))
+            self.assertEqual(expected, self.mod.get_target_display(addr=addr, ip=ip))
 
     '''
     Confirm the behavior of the get_tcp_socket function,
