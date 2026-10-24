@@ -51,7 +51,7 @@ draft-report(){
   fi
 
   local reportFile="$tempRoot/$cacheDir/$reportPrefix$(date +%s)"
-  arp -i $iface -na | egrep -v '(incomplete|no match)' | sed -r 's/(\(|\))//g' | cut -d' ' -f 2,4 | while read -r line; do
+  arp -i $iface -na | grep -Ev '(incomplete|no match)' | sed -r 's/(\(|\))//g' | cut -d' ' -f 2,4 | while read -r line; do
     unset header
     local ip="$(cut -d' ' -f 1 <<< "$line")"
     if arping -I ${iface} -f -w1 -c1 -q "${ip}" || ping -c1 "${ip}" 2> /dev/null >&2; then

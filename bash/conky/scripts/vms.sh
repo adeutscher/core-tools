@@ -2,7 +2,7 @@
 
 # If CONKY_DISABLE_VMS evaluates to true, then exit immediately.
 # Also do this if virsh is not installed or we do not think that we will be able to use it on our local machine.
-if (( "${CONKY_DISABLE_VMS}" )) || ! type virsh 2> /dev/null >&2 || ! egrep -qwm1 '(wheel|libvirt|adm|root)' <<< "$(groups)"; then
+if (( "${CONKY_DISABLE_VMS}" )) || ! type virsh 2> /dev/null >&2 || ! grep -Eqwm1 '(wheel|libvirt|adm|root)' <<< "$(groups)"; then
   exit 0
 fi
 

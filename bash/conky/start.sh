@@ -31,21 +31,19 @@ CONKYRC_SECONDARY=".${CONKYRC_SECONDARY_TEMPLATE}"
 DEFAULT_PADDING_X=10
 DEFAULT_PADDING_Y=45
 
-if grep -q Fedora /etc/redhat-release 2> /dev/null; then
-  # As of 2020-01-04, Fedora 31 has a problem where the cairo bindings don't work.
-  #   Apparently this is a problem with conky just not being compiled with them.
-  #   For the moment, force-disabling Lua on any Fedora 31 machine until I can confirm
-  #     that this is no longer a problem.
-  version_number="$(rpm -E %fedora)"
-  if [ "${version_number:0}" -ge 31 ]; then
-    CONKY_DISABLE_LUA=1
-  fi
-fi
+# As of 2020-01-04, Fedora 31 had a problem where the cairo bindings did't work.
+#   Apparently this was a problem with conky just not being compiled with them.
+#   The 'solution' at the time was just force-disabling the Lua script
+#     on any machine running Fedora 31 or later. It was just a visual conky issue.
+#   This seems to have been resolved in a 1.22.2-pre build observed 2026-09-15
+#     on a Fedora 44 system, but leaving the CONKY_DISABLE_LUA behaviour in
+#     place in case it happens again
+CONKY_DISABLE_LUA="${CONKY_DISABLE_LUA:-0}"
 
 disable_lua(){
-    sed -r -i '/^lua_(load|draw)/d' "${1}"
-    sed -i 's/^own_window_transparent yes/own_window_transparent no/g' "${1}"
-    sed -i 's/^#own_window_colour/own_window_colour/g' "${1}"
+    sed -r -i '/^[[:space:]]*lua_(load|draw_hook_pre)[[:space:]]*=/d' "${1}"
+    sed -i 's/own_window_transparent = true/own_window_transparent = false/g' "${1}"
+    sed -i 's/-- *own_window_colour/own_window_colour/g' "${1}"
 }
 
 # Set up per-system conkyrc settings.
@@ -56,12 +54,8 @@ do_dynamic_setup(){
     fi
 
     cp -f "${CONKYRC_PRIMARY_TEMPLATE}" "${CONKYRC_PRIMARY}"
-    # Manually call convert.lua because autoconvert seems to be broken.
-    lua /usr/share/doc/conky/convert.lua "${CONKYRC_PRIMARY}" 2> /dev/null
     if (( ${CONKY_ENABLE_TASKS:-0} )); then
-        # Manually call convert.lua because autoconvert seems to be broken.
         cp -f "${CONKYRC_SECONDARY_TEMPLATE}" "${CONKYRC_SECONDARY}"
-        lua /usr/share/doc/conky/convert.lua "${CONKYRC_SECONDARY}" 2> /dev/null
     fi
 
     # * Setting own_window_type to 'desktop' on Fedora 23 (conky 1.9) makes the conky

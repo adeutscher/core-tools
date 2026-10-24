@@ -62,7 +62,7 @@ fi
 #   - /run/cmanager/fs and /run/lock, two tmpfs directories on Ubuntu systems
 #   - gvfsd file system at /run/user/${UID}/gvfs
 # This should cover all other system-specific, temporary (USB drives, SD cards), or network, network file systems, etc.
-extra_file_systems="$(cut -d' ' -f ${cut_fields} < /proc/1/mountinfo | egrep ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf|hfsplus) ' | egrep -v '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/user/\d?|/gvfs|/root/\.cache/gvfs|/run/cmanager/fs|/run/lock|/lib/live|/home/'"${USER}"'/\.gvfs|/home | / / ))' | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
+extra_file_systems="$(cut -d' ' -f ${cut_fields} < /proc/1/mountinfo | grep -E ' (ext.|tmpfs|cifs|nfs4?|vfat|iso9660|fuse\.[^\ ]*|ntfs(\-3g)?|btrfs|fuseblk|udf|hfsplus) ' | grep -Ev '^/ / |(/ ((/dev|/sys|/boot|/tmp)|/run |/run/credentials|/run/user/\d?|/gvfs|/root/\.cache/gvfs|/run/cmanager/fs|/run/lock|/lib/live|/home/'"${USER}"'/\.gvfs|/home | / / ))' 2> /dev/null | sort -t' ' -k1,2 | sed -e 's/ /\\236/g' -e 's/\$/\$\$/g')"
 
 ##########
 # Header #
@@ -103,7 +103,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
     fs_title="$(shorten_string "$(sed "s|^${HOME}|\\~|g" <<< "${fs}")" "$((34-$(expr length "${fs_type}")))")"
 
     # Special colour for network-based file systems.
-    if egrep -qm1 "cifs|nfs|fuse\.obexfs" <<< "${fs_type}"; then
+    if grep -Eqm1 "cifs|nfs|fuse\.obexfs" <<< "${fs_type}"; then
         fs_colour=${colour_network}
     else
         fs_colour=${colour_local_path}
@@ -111,7 +111,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
 
     # Apply a special bracket colour to read-only file systems.
     unset bracket_colour
-    if egrep -q -e "(^|,)ro($|,)" <<< "${fs_options}"; then
+    if grep -Eq -e "(^|,)ro($|,)" <<< "${fs_options}"; then
         bracket_colour=red
     fi
 
@@ -143,7 +143,7 @@ for raw_fs_data in ${root_file_system} ${home_file_system} ${extra_file_systems}
         # This is necessary because "fs_bind_location" will not display the entire file path.
         # For example: Say that /home is a separate file system from / and /home/user is bind-mounted to /mnt.
         #     In that example, "fs_bind_location" would only show "/user"
-        fs_bind_parent="$(findmnt -D "${fs_source}" | grep "${fs_source[^}\[]" | awk -F' ' '{ if($7 != "/"){ print $7 }}' )"
+        fs_bind_parent="$(findmnt -D "${fs_source}" | grep "${fs_source}[^\[]" | awk -F' ' '{ if($7 != "/"){ print $7 }}' )"
         printf " Bind: \${color #${fs_colour}}%s\${color}\n" "$(shorten_string "${fs_bind_parent}${fs_bind_location}" 29)"
         # Note: In cases of multiple binds (e.g. A is bound to B, and B is bound to C), mountinfo will still show the original parent.
 

@@ -1,92 +1,93 @@
-# Conky, a system monitor, based on torsmo
-#
-# Any original torsmo code is licensed under the BSD license
-#
-# All code written since the fork of torsmo is licensed under the GPL
-#
-# Please see COPYING for details
-#
-# Copyright (c) 2004, Hannu Saransaari and Lauri Hakkarainen
-# Copyright (c) 2005-2012 Brenden Matthews, Philip Kovacs, et. al. (see AUTHORS)
-# All rights reserved.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+-- Conky, a system monitor, based on torsmo
+--
+-- Any original torsmo code is licensed under the BSD license
+--
+-- All code written since the fork of torsmo is licensed under the GPL
+--
+-- Please see COPYING for details
+--
+-- Copyright (c) 2004, Hannu Saransaari and Lauri Hakkarainen
+-- Copyright (c) 2005-2012 Brenden Matthews, Philip Kovacs, et. al. (see AUTHORS)
+-- All rights reserved.
+--
+-- This program is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+--
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-- GNU General Public License for more details.
+-- You should have received a copy of the GNU General Public License
+-- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# Old alignment properties.
-# Positioning is now handled by start.sh
-#alignment bottom_left
-#gap_x 10
-#gap_y 40
+-- Old alignment properties.
+-- Positioning is now handled by start.sh
+-- alignment = 'bottom_left',
+-- gap_x = 10,
+-- gap_y = 40,
 
-# A width of 390 translates to 35 characters of writing room
-# with standard font before things start to expand.
-maximum_width 390
+conky.config = {
+    -- A width of 390 translates to 35 characters of writing room
+    -- with standard font before things start to expand.
+    maximum_width = 390,
 
-background false
-border_width 1
-cpu_avg_samples 2
-default_color white
-default_outline_color white
-default_shade_color white
-draw_borders false
-draw_graph_borders true
-draw_outline false
-draw_shades false
-use_xft true
-xftfont DejaVu Sans Mono:size=12
-net_avg_samples 2
-no_buffers false
-double_buffer true
-out_to_console false
-out_to_stderr false
-extra_newline false
-own_window true
-own_window_class Conky
-own_window_hints undecorated,below,sticky,skip_taskbar,skip_pager  
+    background = false,
+    border_width = 1,
+    cpu_avg_samples = 2,
+    default_color = 'white',
+    default_outline_color = 'white',
+    default_shade_color = 'white',
+    draw_borders = false,
+    draw_graph_borders = true,
+    draw_outline = false,
+    draw_shades = false,
+    use_xft = true,
+    font = 'DejaVu Sans Mono:size=12',
+    net_avg_samples = 2,
+    no_buffers = false,
+    double_buffer = true,
+    out_to_console = false,
+    out_to_stderr = false,
+    extra_newline = false,
+    own_window = true,
+    own_window_class = 'Conky',
+    own_window_hints = 'undecorated,below,sticky,skip_taskbar,skip_pager',
 
-stippled_borders 0
-# Using  a wacky update interval to try and de-sync refreshes from my cron job that makes the task list.
-# This will make the display 'blip' to an empty or incomplete list less often.
-# Could be solved properly with a more sophisticated task list compiler
-#     that stages things instead of writing them directly to the final tasks.csv
-update_interval __CONKY_INTERVAL_SECONDARY__
-uppercase false
-short_units true
-use_spacer none
-show_graph_scale false
-show_graph_range false
-text_buffer_size 4096
+    stippled_borders = 0,
+    -- Using a wacky update interval to try and de-sync refreshes from my cron job that makes the task list.
+    -- This will make the display 'blip' to an empty or incomplete list less often.
+    -- Could be solved properly with a more sophisticated task list compiler
+    --     that stages things instead of writing them directly to the final tasks.csv
+    update_interval = __CONKY_INTERVAL_SECONDARY__,
+    uppercase = false,
+    short_units = true,
+    use_spacer = 'none',
+    show_graph_scale = false,
+    show_graph_range = false,
+    text_buffer_size = 4096,
 
-# Draw rounded backgrounds with lua.
+    -- Draw rounded backgrounds with lua.
+    lua_load = 'lua/draw_bg.lua',
+    lua_draw_hook_pre = 'draw_bg',
+    -- If you want to disable the lua backgrounds, set own_window_transparent
+    -- to false and uncomment own_window_colour.
+    own_window_transparent = true,
+    --own_window_colour = '#1A334C',
 
-lua_load lua/draw_bg.lua
-lua_draw_hook_pre draw_bg 
-# If you want to disable the lua backgrounds, set own_window_transparent to no and uncomment own_window_color
+    -- Dynamic values
+    own_window_type = 'OWN_WINDOW_TYPE',
 
-own_window_transparent true
-#own_window_colour 1A334C
+    -- Colours used by /u/bikes-n-math
+    color1 = '#3366FF', -- Frame colours: light-blue-ish
+    color2 = '#00FF00', -- Current Day title and all clear label (t > 1.5h): light-green
+    color3 = '#7FFF00', -- Creeping up (30h <= t < 1h): Sickly-light-green-ish
+    color4 = '#FFFF00', -- Needs attention (15m <= t < 30m): Yellow
+    color5 = '#FF7700', -- Urgent (10m <= t < 15m): Orange
+    color6 = '#FF0000', -- Critical (t < 10m): Red
+}
 
-# Dynamic values
-own_window_type OWN_WINDOW_TYPE
-
-# Colours used by /u/bikes-n-math
-color1 3366FF # Frame colours: light-blue-ish
-color2 00FF00 # Current Day title and all clear label (t > 1.5h): light-green
-color3 7FFF00 # Creeping up (30h <= t < 1h): Sickly-light-green-ish
-color4 FFFF00 # Needs attention (15m <= t < 30m): Yellow
-color5 FF7700 # Urgent (10m <= t < 15m): Orange
-color6 FF0000 # Critical (t < 10m): Red
-
-TEXT
+conky.text = [[
 ${execp bash scripts/tasks.sh}
+]]

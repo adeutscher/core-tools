@@ -86,39 +86,25 @@ __get_mac_vendor(){
 translate_seconds(){
   # Translate a time given in seconds (e.g. the difference between two Unix timestamps) to more human-friendly units.
   # Stripped down version of usual with more abbreviated units.
+  # Units with a value of zero are left out. A year is treated as 365 days.
 
-  local __num=$1
-  local __c=0
-  local __i=0
+  local __num="${1}"
+  local __unit __size
+  local __parts=()
 
-  # Each "module" should be the unit and the number of that unit until the next phrasing.
-  local __modules=(s:60 m:60 h:24 d:7 w:52 y:100 c:100)
+  # Only accept non-negative integers.
+  [[ "${__num}" =~ ^[0-9]+$ ]] || return 1
+  __num=$((10#${__num}))
 
-  local __modules_count="$(wc -w <<< "${__modules[*]}")"
-  while [ "$__i" -lt "$__modules_count" ]; do
-    # Cycling through to get values for each unit.
-    local __value="$(cut -d':' -f2 <<< "${__modules[$__i]}")"
-
-    local __mod_value="$(($__num % $__value))"
-    local __num="$((__num / $__value))"
-
-    local __times[$__i]="$__mod_value"
-    local __c=$(($__c+1))
-    local __i=$(($__i+1))
-    if (( ! $__num )); then
-      break
+  # Each unit should be its abbreviation and its length in seconds, from largest to smallest.
+  for __unit in c:3153600000 y:31536000 w:604800 d:86400 h:3600 m:60 s:1; do
+    __size="${__unit#*:}"
+    if (( __num / __size )) || { (( __size == 1 )) && (( ! ${#__parts[@]} )); }; then
+      __parts+=("$((__num / __size))${__unit%%:*}")
     fi
+    __num=$((__num % __size))
   done
-  unset __module
 
-  local __i=$(($__c-1))
-  while [ "$__i" -ge "0" ]; do
-    printf "${__times[$__i]}$(cut -d':' -f1 <<< "${__modules[$__i]}")"
-
-    if (( $__i )); then
-      printf " "
-    fi
-
-    local __i=$(($__i-1))
-  done
+  printf "%s" "${__parts[0]}"
+  (( ${#__parts[@]} > 1 )) && printf " %s" "${__parts[@]:1}"
 }

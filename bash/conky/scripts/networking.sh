@@ -96,12 +96,16 @@ printf "\${color #${colour_network}}\${font Neuropolitical:size=16:bold}Networki
 # List interfaces with details
 for iface in ${interfaces}; do
 
+    if grep -q "^br-"<<< "${iface}"; then
+        continue
+    fi
+
     # Clear/reset variables for upcoming loop.
     unset member_list
     is_vpn=0
 
     address="$(ip a s ${iface} 2> /dev/null | grep -om1 inet\ [^\/]*\/[0-9]* | cut -d' ' -f2)"
-    if_aliases="$(ip a s ${iface} | grep -oP "inet .*${iface}:\d*$" | awk '{ print $2","$NF }')"
+    if_aliases="$(ip a s ${iface} | grep -oP "inet .*${iface}:\d*$" 2> /dev/null | awk '{ print $2","$NF }')"
     [[ "${iface}" =~ ^(tun|tap)[0-9]+ ]] && is_vpn=1
 
     if [[ "${exclude_list}" =~ (^|\ )"${iface}"($|\ ) ]]; then
@@ -199,12 +203,15 @@ for iface in ${interfaces}; do
     # If we're looking at a wireless interface, print extra connection information.
     if [ -d "/sys/class/net/${iface}/wireless" ]; then
         printf '\n'
-        mac="$(iwconfig ${iface} 2> /dev/null | grep -om1 "Access Point:\ [^\ ]*" | cut -d' ' -f 3)"
+
+        mac="$(iwconfig "${iface}" 2> /dev/null | grep -om1 "Access Point:\ [^\ ]*" | cut -d' ' -f 3)"
+
         # Attempt to look for a cached copy of the wireless summary to save a bit of time on label/vendor lookups.
         if [ -f "${tempRoot}/cache/wlan/${mac}.txt" ]; then
             cat "${tempRoot}/cache/wlan/${mac}.txt" | sed "s/INTERFACE/${iface}/g"
         else
-        wireless_report=$(printf "  ESSID: \${wireless_essid INTERFACE}\\n  BSSID: ${mac} (\${wireless_link_qual INTERFACE}%%%%)\n")
+            essid="$(iwconfig "${iface}" | grep -Pom1 "ESSID:\"[^\"]+" | cut -d'"' -f2)"
+            wireless_report=$(printf "  ESSID: ${essid}\\n  BSSID: ${mac}\n")
             location="$(__get_mac_specific_location "${mac}" 2> /dev/null)"
             if [ -n "${location}" ]; then
                 wireless_report="${wireless_report}\n$(printf "  AP Location: %s\n" "$(shorten_string "${location}" 24)")"
