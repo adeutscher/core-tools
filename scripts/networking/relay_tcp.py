@@ -158,6 +158,11 @@ OPT_TYPE_LONG = MASK_OPT_TYPE_LONG | MASK_OPT_TYPE_ARG
 
 TITLE_HELP = "help"
 
+# Accepted (case-insensitive) values for flags set through environment variables.
+#   Empty values are treated as unset.
+ENV_FLAG_TRUE = ("1", "true", "yes", "on")
+ENV_FLAG_FALSE = ("0", "false", "no", "off")
+
 
 class ArgHelper:
 
@@ -166,6 +171,7 @@ class ArgHelper:
     raw_args = {}
     operands = []
 
+    operand_environment = None
     operand_text = None
 
     errors = []
@@ -203,12 +209,10 @@ class ArgHelper:
 
         # Silly note: Doing a get() out of a dictionary when the stored
         #   value of the key is None will not fall back to default
+        # Environment variables are converted into self.args during validation.
         value = self.args.get(arg)
         if value is None:
-            if opt.environment:
-                value = os.environ.get(opt.environment, self.defaults.get(arg))
-            else:
-                value = self.defaults.get(arg)
+            value = self.defaults.get(arg)
 
         if value is None:
             return default
@@ -231,6 +235,7 @@ class ArgHelper:
         converter=str,
         multiple=False,
         strict_single=False,
+        action=None,
     ):
 
         if opt_type not in self.opts:
@@ -269,6 +274,8 @@ class ArgHelper:
             raise Exception(
                 "Cannot have an argument with both 'multiple' and 'strict_single' set to True."
             )
+        if action and has_arg:
+            raise Exception("Only flags can have an action: %s" % label)
         # These do not cover harmless checks on arg modifiers with flag values.
 
         obj = OptArg(self)
@@ -284,6 +291,7 @@ class ArgHelper:
         obj.converter = converter
         obj.has_arg = has_arg
         obj.strict_single = strict_single
+        obj.action = action
 
         self.opts_by_label[label] = self.opts[opt_type][arg] = obj
         if not has_arg:
@@ -305,6 +313,37 @@ class ArgHelper:
             self.opts[OPT_TYPE_LONG_FLAG].keys()
         )
         return [re.sub("^-+", "", i) for i in l]
+
+    def describe_environment(self, base, multiple=False):
+        if multiple:
+            return "%s, %s" % (colour_text(base), colour_text("%s_<n>" % base))
+        return colour_text(base)
+
+    def get_environment_names(self, base, multiple=False):
+        # Get the environment variable names to check for an option, in order.
+        # Options that can be specified multiple times accept the base name as well as
+        #   any name with a zero-or-greater integer suffix (e.g. BASE_0, BASE_1, etc).
+        #   One does not exclude the other. BASE, BASE_0, and BASE_1 are all checked.
+        if not multiple:
+            return [base]
+        # Scanning the whole environment is probably less efficient than counting up from
+        #   BASE_0 until a name is missing, but this also covers accidental gaps in numbering
+        #   (e.g. BASE_0 and BASE_2 with no BASE_1). It is a one-time argument-parsing cost.
+        pattern = re.compile(r"^%s_([0-9]+)$" % re.escape(base))
+        numbered = []
+        for key in os.environ:
+            m = pattern.match(key)
+            if m:
+                numbered.append((int(m.group(1)), key))
+        return [base] + [key for index, key in sorted(numbered)]
+
+    def get_environment_values(self, base, multiple=False):
+        # Treat empty values as unset.
+        return [
+            os.environ[n]
+            for n in self.get_environment_names(base, multiple)
+            if os.environ.get(n)
+        ]
 
     def convert_value(self, raw_value, opt):
         value = None
@@ -349,6 +388,15 @@ class ArgHelper:
 
         if self.operand_text:
             s += " %s" % self.operand_text
+            if self.operand_environment:
+                lines.append("Operands:")
+                lines.append(
+                    "  %s (Environment: %s)"
+                    % (
+                        self.operand_text,
+                        self.describe_environment(self.operand_environment, True),
+                    )
+                )
 
         _print_message(COLOUR_PURPLE, "Usage", s)
         for l in lines:
@@ -405,6 +453,11 @@ class ArgHelper:
 
         if self[TITLE_HELP]:
             self.hexit(0)
+        for obj in self.opts_by_label.values():
+            if obj.action and self.args.get(obj.label):
+                # Action flags run in place of normal processing, like the help menu.
+                obj.action(self)
+                exit(0)
 
         if validate:
             self.validate()
@@ -417,6 +470,10 @@ class ArgHelper:
             if exit_on_error:
                 exit(1)
         return not self.errors
+
+    def set_operand_environment(self, name):
+        # Operands given on the command line take priority over environment variables.
+        self.operand_environment = name
 
     def set_operand_help_text(s, text):
         s.operand_text = text
@@ -445,10 +502,44 @@ class ArgHelper:
                 value = self.convert_value(self.raw_args[obj.label][-1], obj)
                 if value is not None:
                     self.args[obj.label] = value
+        # Fall back to environment variables for options not given on the command line,
+        #   converting them the same way as command line values.
+        for label, obj in self.opts_by_label.items():
+            if not obj.environment or label in self.raw_args or label in self.args:
+                continue
+            raw_values = self.get_environment_values(obj.environment, obj.multiple)
+            if not raw_values:
+                continue
+            if not obj.has_arg:
+                if raw_values[-1].lower() in ENV_FLAG_TRUE:
+                    self.args[label] = True
+                elif raw_values[-1].lower() not in ENV_FLAG_FALSE:
+                    self.errors.append(
+                        "Unrecognized %s value for %s: %s"
+                        % (
+                            colour_text(obj.environment),
+                            colour_text(label),
+                            colour_text(raw_values[-1]),
+                        )
+                    )
+            elif obj.multiple:
+                self.args[label] = []
+                for i in raw_values:
+                    value = self.convert_value(i, obj)
+                    if value is not None:
+                        self.args[label].append(value)
+            else:
+                value = self.convert_value(raw_values[-1], obj)
+                if value is not None:
+                    self.args[label] = value
+        if self.operand_environment and not self.operands:
+            self.operands = self.get_environment_values(self.operand_environment, True)
         for m in [
             self.opts_by_label[o].label
             for o in self.opts_by_label
-            if self.opts_by_label[o].required and o not in self.raw_args
+            if self.opts_by_label[o].required
+            and o not in self.raw_args
+            and o not in self.args
         ]:
             self.errors.append("Missing %s value." % colour_text(m))
         for v in self.validators:
@@ -477,15 +568,21 @@ class OptArg:
         else:
             s = "  %s <%s>: %s" % (opt, self.label, desc)
 
-        if self.environment:
-            s += " (Environment Variable: %s)" % colour_text(self.environment)
-
+        notes = []
         if self.default_announce:
             # Manually going to defaults table allows this core module
             # to have its help display reflect retroactive changes to defaults.
-            s += " (Default: %s)" % colour_text(
-                self.args.defaults.get(self.label), self.default_colour
+            notes.append(
+                "Default: %s"
+                % colour_text(self.args.defaults.get(self.label), self.default_colour)
             )
+        if self.environment:
+            notes.append(
+                "Environment: %s"
+                % self.args.describe_environment(self.environment, self.multiple)
+            )
+        if notes:
+            s += " (%s)" % ", ".join(notes)
         return s
 
     def get_printout_usage(self, opt):
@@ -666,6 +763,12 @@ TITLE_ALLOW_FILE = "allow address/range file"
 TITLE_DENY = "deny address/range"
 TITLE_DENY_FILE = "deny address/range file"
 
+TITLE_DOCKER_SKELETON = "docker-skeleton"
+TITLE_DOCKER_SKELETON_ENV = "docker-skeleton-env"
+
+DOCKER_SCRIPT_DIR = "/opt/relay"
+DOCKER_SERVICE = "tcp-relay"
+
 
 class TcpRelayServer:
 
@@ -681,9 +784,16 @@ class TcpRelayServer:
         args = ArgHelper()
         args.add_validator(self.validate_version)
         args.set_operand_help_text('target[:port] [target-2[:port]] ...')
+        args.set_operand_environment("TCP_RELAY_TARGET")
 
         # Short flags
-        args.add_opt(OPT_TYPE_FLAG, "v", TITLE_VERBOSE, "Verbose output.")
+        args.add_opt(
+            OPT_TYPE_FLAG,
+            "v",
+            TITLE_VERBOSE,
+            "Verbose output.",
+            environment="TCP_RELAY_VERBOSE",
+        )
 
         # Short opts
 
@@ -695,6 +805,7 @@ class TcpRelayServer:
             default=self.DEFAULT_BIND,
             default_announce=True,
             default_colour=COLOUR_GREEN,
+            environment="TCP_RELAY_BIND",
         )
         args.add_opt(
             OPT_TYPE_SHORT,
@@ -704,6 +815,7 @@ class TcpRelayServer:
             converter=int,
             default=self.DEFAULT_PORT,
             default_announce=True,
+            environment="TCP_RELAY_PORT",
         )
         args.add_opt(
             OPT_TYPE_LONG,
@@ -712,18 +824,21 @@ class TcpRelayServer:
             'Specify default target port.',
             default=self.DEFAULT_TARGET_PORT,
             default_announce=True,
+            environment="TCP_RELAY_TARGET_PORT",
         )
         args.add_opt(
             OPT_TYPE_LONG_FLAG,
             TITLE_TARGET_SSL,
             TITLE_TARGET_SSL,
             'Indicate that the target is SSL-secured.',
+            environment="TCP_RELAY_TARGET_SSL",
         )
         args.add_opt(
             OPT_TYPE_LONG_FLAG,
             TITLE_TARGET_SSL_INSECURE,
             TITLE_TARGET_SSL_INSECURE,
             'Indicate that the target is SSL-secured, and that the relay should ignore certificate verification errors.',
+            environment="TCP_RELAY_TARGET_SSL_INSECURE",
         )
 
         args.add_opt(
@@ -731,12 +846,14 @@ class TcpRelayServer:
             TITLE_BALANCE_RANDOM,
             TITLE_BALANCE_RANDOM,
             'Select between multiple targets at random.',
+            environment="TCP_RELAY_RANDOM_TARGET",
         )
         args.add_opt(
             OPT_TYPE_LONG_FLAG,
             TITLE_BALANCE_ROUND_ROBIN,
             TITLE_BALANCE_ROUND_ROBIN,
             'Rotate between targets (default).',
+            environment="TCP_RELAY_ROUND_ROBIN",
         )
 
         args.add_opt(
@@ -745,6 +862,7 @@ class TcpRelayServer:
             TITLE_ALLOW,
             "Add network address or CIDR range to whitelist.",
             multiple=True,
+            environment="TCP_RELAY_ALLOW",
         )
         args.add_opt(
             OPT_TYPE_SHORT,
@@ -752,6 +870,7 @@ class TcpRelayServer:
             TITLE_ALLOW_FILE,
             "Add addresses or CIDR ranges in file to whitelist.",
             multiple=True,
+            environment="TCP_RELAY_ALLOW_FILE",
         )
         args.add_opt(
             OPT_TYPE_SHORT,
@@ -759,6 +878,7 @@ class TcpRelayServer:
             TITLE_DENY,
             "Add network address or CIDR range to blacklist.",
             multiple=True,
+            environment="TCP_RELAY_DENY",
         )
         args.add_opt(
             OPT_TYPE_SHORT,
@@ -766,6 +886,7 @@ class TcpRelayServer:
             TITLE_DENY_FILE,
             "Add addresses or CIDR ranges in file to blacklist.",
             multiple=True,
+            environment="TCP_RELAY_DENY_FILE",
         )
 
         args.add_opt(
@@ -773,9 +894,30 @@ class TcpRelayServer:
             "c",
             TITLE_SSL_CERT,
             "SSL certificate file path (PEM format). Can also contain the SSL key.",
+            environment="TCP_RELAY_SSL_CERT",
         )
         args.add_opt(
-            OPT_TYPE_SHORT, "k", TITLE_SSL_KEY, "SSL key file path (PEM format)."
+            OPT_TYPE_SHORT,
+            "k",
+            TITLE_SSL_KEY,
+            "SSL key file path (PEM format).",
+            environment="TCP_RELAY_SSL_KEY",
+        )
+
+        # Docker helpers. These intentionally have no environment variables.
+        args.add_opt(
+            OPT_TYPE_LONG_FLAG,
+            TITLE_DOCKER_SKELETON,
+            TITLE_DOCKER_SKELETON,
+            "Print a sample docker compose service definition for this relay, then exit.",
+            action=self.print_docker_skeleton,
+        )
+        args.add_opt(
+            OPT_TYPE_LONG_FLAG,
+            TITLE_DOCKER_SKELETON_ENV,
+            TITLE_DOCKER_SKELETON_ENV,
+            "Print sample env file content for the docker compose service, then exit.",
+            action=self.print_docker_skeleton_env,
         )
 
         args.add_validator(self.validate_common_arguments)
@@ -860,6 +1002,79 @@ class TcpRelayServer:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.init_socket(s)
         return s
+
+    def print_docker_skeleton(self, args):
+        script_name = os.path.basename(__file__)
+        lines = [
+            "services:",
+            "  %s:" % DOCKER_SERVICE,
+            "    image: python:3-alpine",
+            "    restart: unless-stopped",
+            '    command: ["python3", "%s/%s"]' % (DOCKER_SCRIPT_DIR, script_name),
+            "    env_file:",
+            "      # Generate with: %s --%s > %s.env"
+            % (script_name, TITLE_DOCKER_SKELETON_ENV, DOCKER_SERVICE),
+            "      - %s.env" % DOCKER_SERVICE,
+            "    environment:",
+            "      # Print output as it happens instead of buffering it.",
+            '      PYTHONUNBUFFERED: "1"',
+            "    ports:",
+            "      # The container port must match TCP_RELAY_PORT (default: %d)."
+            % self.DEFAULT_PORT,
+            '      - "%d:%d/tcp"' % (self.DEFAULT_PORT, self.DEFAULT_PORT),
+            "    volumes:",
+            "      - %s:%s/%s:ro"
+            % (os.path.realpath(__file__), DOCKER_SCRIPT_DIR, script_name),
+            "      # Mount any extra files, then refer to them by their container paths",
+            "      #   (e.g. TCP_RELAY_ALLOW_FILE=%s/files/allow.txt)."
+            % DOCKER_SCRIPT_DIR,
+            "      # - ./files:%s/files:ro" % DOCKER_SCRIPT_DIR,
+            "    # Uncomment to reach services on the docker host as 'host.docker.internal'.",
+            "    # extra_hosts:",
+            '    #   - "host.docker.internal:host-gateway"',
+        ]
+        print("\n".join(lines))
+
+    def describe_env_multiple(self, base):
+        return "All of %s, %s_0, %s_1, etc are read and combined." % (base, base, base)
+
+    def print_docker_skeleton_env(self, args):
+        target_env = args.operand_environment
+        lines = [
+            "# Environment file for %s, used by the '%s' docker compose service."
+            % (os.path.basename(__file__), DOCKER_SERVICE),
+            "# Empty values are treated as unset.",
+            "# Flags accept %s to enable, or %s to disable."
+            % ("/".join(ENV_FLAG_TRUE), "/".join(ENV_FLAG_FALSE)),
+            "# Values that can be given multiple times accept the base name as well as numbered",
+            "#   suffixes (e.g. %s, %s_0, %s_1, etc)."
+            % (target_env, target_env, target_env),
+            "#   All of them are read, so setting one does not stop the others from being used.",
+            "#   Numbered suffixes are read in numeric order after the base name, gaps are allowed.",
+            "",
+            "# Relay target, formatted as target[:port]. At least one target is required.",
+            "#   Names resolve from inside the container, so 'localhost' is the container itself.",
+            "#   %s" % self.describe_env_multiple(target_env),
+            "%s=" % target_env,
+            "#%s_0=" % target_env,
+            "#%s_1=" % target_env,
+        ]
+        for label, obj in args.opts_by_label.items():
+            if not obj.environment:
+                continue
+            lines.extend(["", "# %s" % obj.description])
+            if obj.multiple:
+                lines.append("#   %s" % self.describe_env_multiple(obj.environment))
+                lines.append("#%s=" % obj.environment)
+                lines.extend(["#%s_%d=" % (obj.environment, i) for i in range(2)])
+            elif not obj.has_arg:
+                lines.append("#%s=false" % obj.environment)
+            else:
+                default = args.defaults.get(label)
+                if default is None:
+                    default = ""
+                lines.append("#%s=%s" % (obj.environment, default))
+        print("\n".join(lines))
 
     def print_summary(s):
         # Summarize arguments
