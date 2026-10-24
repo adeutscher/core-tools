@@ -1,14 +1,18 @@
-#!/bin/sh
+#!/bin/bash
 #########################
 # rsync Rotation Script #
 # Author: /u/tidal49    #
-# Version: 3.1          #
+# Version: 4.0          #
 #########################
 #set -x
 
 # Rotate a backup of local files with rsync.
 # I originally created this script because I was not satisfied
 #  with how indicative the names of rsnapshot backups were.
+
+# Sort globbed backup names by byte value so that timestamps sort chronologically.
+LC_COLLATE=C
+shopt -s dotglob
 
 #############
 # Functions #
@@ -61,17 +65,19 @@ warning(){
 }
 
 hexit(){
-  usage "$(printf "Usage: ${GREEN}./%s${NC} input_path output_path [-c retention-count] [-f \"extra-rsync-flags\"] [-v] [-m]" "$(basename "${0}")")"
+  usage "$(printf "Usage: ${GREEN}./%s${NC} input_path output_path [-c retention-count] [-d] [-f \"extra-rsync-flags\"] [-m] [-p prefix] [-t] [-v]" "$(basename "${0}")")"
   usage "$(cat << EOF
 rsync Rotation Script switches:
            --help, -h  Print this menu
-           -c count    Count of how many backups to keep on file (default 7)
-           -d          Replace duplicate files within a backup using fdupes.
-                       Your fdupes version must support the -L/--linkhard option.
-           -f flags    Extra flags to pass to rsync
+           -c count    Count of how many backups to keep on file (default 7). Must be at least 1.
+           -d          Replace duplicate files within a backup with hard links, using
+                       the hardlink command from util-linux. Only files with identical
+                       content, mode, owner, and timestamp are linked.
+           -f flags    Extra flags to pass to rsync. Flags are split on whitespace,
+                       and quotes are not interpreted. May be given more than once.
            -m          Monochrome mode. Do not print colours. Redundant if stdout is not a terminal.
            -p prefix   Make a prefix for backups. Rotation will only consider items matching this prefix.
-           -t          Test mode. The script will go through its regular behaviour, EXCEPT for actually running rsync
+           -t          Test mode. The script will go through its regular behaviour, EXCEPT for actually running commands
            -v          Verbose mode. Print debug messages.
 EOF
 )"
@@ -92,86 +98,167 @@ set_defaults(){
   __default_count="7"
   __count="$__default_count"
 
-  # Rsync Rotation Count
+  # hardlink deduplication
   __default_dupes="0"
-  __count="$__default_dupes"
+  __dupes="$__default_dupes"
+
+  # Extra rsync arguments
+  __other_rsync_args=()
 }
 
 ## Begin script content/functions below.
 
-backup_directory (){
+strip_slashes(){
+  # Remove trailing slashes from a path, but leave "/" intact.
+  local __path="${1}"
+  while [[ "${__path}" == */ && "${__path}" != "/" ]]; do
+    __path="${__path%/}"
+  done
+  printf '%s' "${__path}"
+}
+
+list_backups(){
+  # Print the names of backup directories in the output path, oldest first.
+  # ${1} is an optional regex suffix after the timestamp (e.g. '\.partial').
+  local __entry __name __stamp
+  for __entry in "${__output_path}"/*; do
+    [ -d "${__entry}" ] || continue
+    __name="${__entry##*/}"
+    if [ -n "${__arg_prefix}" ]; then
+      [[ "${__name}" == "${__arg_prefix}-"* ]] || continue
+      __stamp="${__name#"${__arg_prefix}-"}"
+    else
+      __stamp="${__name}"
+    fi
+    [[ "${__stamp}" =~ ^[0-9]{4}(-[0-9]{2}){5}${1}$ ]] && printf '%s\n' "${__name}"
+  done
+}
+
+acquire_lock(){
+  # Prevent two runs from rotating the same set of backups at the same time.
+  # The lock is held on file descriptor 9 until the script exits.
+  local __lock_file="${__output_path}/.rsync-rotation${__arg_prefix:+-${__arg_prefix}}.lock"
+
+  if ! type flock 2> /dev/null >&2; then
+    warning "The flock command is not installed on this system. Concurrent runs will not be prevented."
+    return 0
+  fi
+
+  if [ ! -d "${__output_path}" ]; then
+    # Only reachable in test mode, where the output directory is not created.
+    debug "Output directory does not exist. Skipping lock."
+    return 0
+  fi
+
+  if ! exec 9> "${__lock_file}"; then
+    error "$(printf "Unable to open lock file: ${GREEN}%s${NC}" "${__lock_file}")"
+    exit 1
+  fi
+
+  if ! flock -n 9; then
+    error "$(printf "Another backup is already running against ${GREEN}%s${NC} (lock file: ${GREEN}%s${NC})" "${__output_path}" "${__lock_file}")"
+    exit 1
+  fi
+  debug "Acquired lock: ${__lock_file}"
+}
+
+backup_directory(){
+  local backup_date backup_name backup_dest partial_dest last_backup old_backup remove_count plural
+  local -a backups stale_backups rsync_command
 
   if [ ! -d "$__output_path" ]; then
-    notice "$(printf "Attempting to create destination directory: ${GREEN}$__output_path${NC}")"
-
-    __command="mkdir -p \"$__output_path\""
-    run_command mkdir
+    notice "$(printf "Attempting to create destination directory: ${GREEN}%s${NC}" "$__output_path")"
+    run_command mkdir mkdir -p -- "$__output_path"
   fi
+
+  acquire_lock
+
+  # Clear out incomplete backups left by interrupted runs.
+  # These are not reused, since rsync could alter the attributes of files that
+  #  are still hard linked to older backups.
+  mapfile -t stale_backups < <(list_backups '\.partial')
+  for old_backup in "${stale_backups[@]}"; do
+    warning "$(printf "Removing incomplete backup from an earlier run: '${GREEN}%s${NC}'" "$__output_path/$old_backup")"
+    run_command rm rm -rf -- "$__output_path/$old_backup"
+  done
 
   backup_date="$(date +"%Y-%m-%d-%H-%M-%S")"
-  if [ -n "${__arg_prefix}" ]; then
-    backup_dest="${__output_path}/${__arg_prefix}-${backup_date}"
-    old_pattern="^${__arg_prefix}\-[0-9]{4}(\-[0-9]{2}){5}$"
-  else
-    backup_dest="${__output_path}/${backup_date}"
-    old_pattern='^[0-9]{4}(\-[0-9]{2}){5}$'
-  fi
-    # Check for old backups.
-  last_backup="$(ls -r $__output_path/ 2> /dev/null  | egrep -m1 "${old_pattern}")"
-  # Check for a previous backup to base our content on.
-  if [ -n "$last_backup" ]; then
-    notice "$(printf "Pre-existing backup (${GREEN}$last_backup${NC}). Making a hard linked copy to base our backup off of.")"
+  backup_name="${__arg_prefix:+${__arg_prefix}-}${backup_date}"
+  backup_dest="${__output_path}/${backup_name}"
+  partial_dest="${backup_dest}.partial"
 
-    __command="cp -rl \"$__output_path/$last_backup\" \"$backup_dest\""
-    run_command cp
+  if [ -e "$backup_dest" ]; then
+    error "$(printf "Backup destination already exists: ${GREEN}%s${NC}" "$backup_dest")"
+    exit 1
   fi
+
+  rsync_command=(rsync -av --delete)
+  [ -t 1 ] && rsync_command+=(--progress)
+
+  # Check for a previous backup to base our content on.
+  mapfile -t backups < <(list_backups)
+  if [ "${#backups[@]}" -gt 0 ]; then
+    last_backup="${backups[-1]}"
+    notice "$(printf "Pre-existing backup (${GREEN}%s${NC}). Unchanged files will be hard linked from it." "$last_backup")"
+    # --link-dest is resolved relative to the destination, so give it an absolute path.
+    rsync_command+=("--link-dest=$(cd "$__output_path" && pwd)/${last_backup}")
+  fi
+
+  rsync_command+=("${__other_rsync_args[@]}" -- "${__input_path%/}/" "$partial_dest/")
 
   # Perform rsync job
-  notice "$(printf "Backing up '${GREEN}$__input_path${NC}' to '${GREEN}$backup_dest${NC}'. (Retaining ${RED}$__count${NC} copies)")"
+  notice "$(printf "Backing up '${GREEN}%s${NC}' to '${GREEN}%s${NC}'. (Retaining ${RED}%s${NC} copies)" "$__input_path" "$backup_dest" "$__count")"
+  run_command rsync "${rsync_command[@]}"
 
-  __command="rsync -av --delete --progress $__other_rsync_args \"$__input_path/\" \"$backup_dest/\""
-  run_command rsync
-
-  # If selected, attempt to use fdupes to replace duplicates with hard links.
-  if (( "${__dupes:-__dupes_default}" )); then
+  # If selected, replace duplicates with hard links.
+  # -m keeps the copy with the most links, which is usually the one already
+  #  shared with older backups.
+  if (( "${__dupes:-0}" )); then
     notice "Removing duplicates with hard links."
-    __command="fdupes -rL \"$backup_dest\""
-    run_command fdupes
+    run_command hardlink hardlink -m -- "$partial_dest"
   fi
 
-  old_backup_count="$(ls -r "$__output_path/" 2> /dev/null | egrep "${old_pattern}" | tail -n +$((1+$__count)) | wc -l)"
-  if (( "$old_backup_count" )); then
-    # Old backups existed to be found.
-    if [ "$old_backup_count" -gt 0 ]; then
+  # The backup is complete. Give it its final name.
+  run_command mv mv -- "$partial_dest" "$backup_dest"
+
+  mapfile -t backups < <(list_backups)
+  if (( "${__test:-0}" )) && [ ! -d "$backup_dest" ]; then
+    # Account for the backup that test mode did not actually create.
+    backups+=("$backup_name")
+  fi
+
+  remove_count=$(( ${#backups[@]} - __count ))
+  if [ "$remove_count" -gt 0 ]; then
+    if [ "$remove_count" -gt 1 ]; then
       plural="s"
     fi
-    notice "$(printf "Stripping out ${RED}$old_backup_count${NC} old backup$plural.")"
-    unset plural
+    notice "$(printf "Stripping out ${RED}%s${NC} old backup%s." "$remove_count" "$plural")"
 
     # Strip out old backups.
-    while read __old_backup; do
-      [ -z "${__old_backup}" ] && continue
+    for old_backup in "${backups[@]:0:remove_count}"; do
+      # Never remove the backup we just made, even if the clock went backwards.
+      [ "$old_backup" = "$backup_name" ] && continue
 
-      notice "$(printf "Removing old backup: '${GREEN}$__output_path/${__old_backup}${NC}'")"
-
-      __command="rm -rf \"$__output_path/${__old_backup}\""
-      run_command rm
-    done <<< "$(ls -r $__output_path/ 2> /dev/null | egrep "${old_pattern}" | tail -n +$((1+$__count)))"
+      notice "$(printf "Removing old backup: '${GREEN}%s${NC}'" "$__output_path/$old_backup")"
+      run_command rm rm -rf -- "$__output_path/$old_backup"
+    done
   else
     notice "No old backups to remove."
   fi
 }
 
 run_command(){
-  debug "${1} command: ${__command}"
+  # Usage: run_command label command [args...]
+  local label="${1}"
+  shift
+  debug "$(printf '%s command: %s' "${label}" "$(printf '%q ' "${@}")")"
   if (( "${__test:-0}" )); then
-    notice "$(printf "${RED}TEST MODE ENABLED! ${BLUE}%s${RED} IS NOT ACTUALLY BEING RUN!${NC}" "${1}")"
+    notice "$(printf "${RED}TEST MODE ENABLED! ${BLUE}%s${RED} IS NOT ACTUALLY BEING RUN!${NC}" "${label}")"
   else
-    # Run command, specified outside because of quoting funtimes.
-    eval $__command
+    "${@}"
     local result="$?"
     if (( "$result" )); then
-      error "$(printf "${BLUE}%s${NC} command failed (Return Code ${BOLD}%s${NC})" "${1}" "${result}")"
+      error "$(printf "${BLUE}%s${NC} command failed (Return Code ${BOLD}%s${NC})" "${label}" "${result}")"
       exit 1
     fi
   fi
@@ -179,21 +266,24 @@ run_command(){
 
 set_defaults
 
-while [ -n "${1}" ]; do
-  while getopts ":c:df:hi:mo:p:tv" OPT $@; do
+while [ "$#" -gt 0 ]; do
+  OPTIND=1
+  while getopts ":c:df:hmp:tv" OPT "$@"; do
     # Handle switches up until we encounter a non-switch option.
     case "${OPT}" in
       "c")
-        __arg_count="$(grep -P '^\d+$' <<< "${OPTARG}")"
-        if [ -z "$__arg_count" ]; then
-            error "$(printf "Invalid value ${BOLD}\"\"${NC} for \"-c\" switch. Must be an integer." "${OPTARG}")"
+        if [[ "${OPTARG}" =~ ^[1-9][0-9]*$ ]]; then
+          __arg_count="${OPTARG}"
+        else
+          error "$(printf "Invalid value ${BOLD}\"%s\"${NC} for \"-c\" switch. Must be a positive integer." "${OPTARG}")"
         fi
         ;;
       "f")
-        __other_rsync_args="${OPTARG}"
+        read -r -a __extra_flags <<< "${OPTARG}"
+        __other_rsync_args+=("${__extra_flags[@]}")
         ;;
       "d")
-        # Further deduplication through fdupes and hard links
+        # Further deduplication through hard links
         __arg_dupes="1"
         ;;
       "h")
@@ -214,22 +304,34 @@ while [ -n "${1}" ]; do
         # Enable verbose output
         __arg_verbose="1"
         ;;
-    *)
-        mark_error "Unknown argument: $1"
+      ":")
+        error "$(printf "Switch ${BOLD}-%s${NC} requires an argument." "${OPTARG}")"
+        ;;
+      *)
+        error "$(printf "Unknown switch: ${BOLD}-%s${NC}" "${OPTARG}")"
         ;;
     esac
   done # getopts loop
 
+  # If getopts stopped at "--", treat everything after it as operands.
+  if [ "$OPTIND" -gt 1 ] && [ "${@:OPTIND-1:1}" = "--" ]; then
+    __end_of_switches=1
+  fi
+
   # Set ${1} to first operand, ${2} to second operands, etc.
   shift $((OPTIND - 1))
-  while [ -n "${1}" ]; do
+  while [ "$#" -gt 0 ]; do
     # Break if the option began with a '-', going back to getopts phase.
-    grep -q "^\-" <<< "${1}" && break
+    if ! (( "${__end_of_switches:-0}" )) && [[ "${1}" == -?* ]]; then
+      break
+    fi
 
-    if [ -z "${__input_path}" ]; then
-      __input_path="$(sed 's/\/*$//' <<< "${1}")"
+    if [ -z "${1}" ]; then
+      error "Got an empty path argument."
+    elif [ -z "${__input_path}" ]; then
+      __input_path="$(strip_slashes "${1}")"
     elif [ -z "${__output_path}" ]; then
-      __output_path="$(sed 's/\/*$//' <<< "${1}")"
+      __output_path="$(strip_slashes "${1}")"
     else
       error "$(printf "Got an additional path: ${GREEN}%s${NC}" "${1}")"
     fi
@@ -252,30 +354,32 @@ __dupes="${__arg_dupes:-$__default_dupes}"
 if [ -z "$__input_path" ]; then
   error "Input path not provided"
 elif [ ! -d "$__input_path" ]; then
-  error "Source directory does not exist: ${GREEN}$__input_path${NC}"
+  error "$(printf "Source directory does not exist: ${GREEN}%s${NC}" "$__input_path")"
 fi
 
 if [ -z "$__output_path" ]; then
   error "Output path not provided."
 elif [ ! -d "$__output_path" ]; then
-  notice "$(printf "Destination directory does not exist: (${GREEN}$__output_path${NC}). Will attempt to create this directory.")"
+  notice "$(printf "Destination directory does not exist: (${GREEN}%s${NC}). Will attempt to create this directory." "$__output_path")"
 fi
 
-if (( "${__dupes:-__dupes_default}" )); then
-  # Use of fdupes is requested.
-  if ! type fdupes 2> /dev/null >&2; then
-    error "The fdupes command is not installed on this system."
-  elif ! fdupes --help 2> /dev/null | grep -q '\-\-linkhard'; then
-    # Some packagings of fdupes do not support the -L/--linkhard option to reduce duplicates with hard links.
-    # For example, Ubuntu 12.04 supports this feature, while CentOS 6.5 does not.
-    # Checking the --help menu for a listing
-    error "Your version of fdupes does not support the -L/--linkhard option."
+if [[ "${__arg_prefix}" == */* ]]; then
+  error "$(printf "Prefix may not contain a slash: ${GREEN}%s${NC}" "${__arg_prefix}")"
+fi
+
+if (( "${__dupes:-0}" )); then
+  # Use of hardlink is requested.
+  if ! type hardlink 2> /dev/null >&2; then
+    error "The hardlink command is not installed on this system. It is provided by util-linux."
+  elif ! hardlink --help 2> /dev/null | grep -q -- '--maximize'; then
+    # Older, standalone versions of hardlink predate the util-linux one and use different options.
+    error "Your version of hardlink does not support the -m/--maximize option. Use the util-linux version (2.34 or newer)."
   fi
 fi
 
 # Double-check that rsync is installed.
 if ! type rsync 2> /dev/null >&2; then
-  mark_error "The rsync command is not installed on this system."
+  error "The rsync command is not installed on this system."
 fi
 
 # Print out errors if they exist and then exit.
