@@ -4,9 +4,10 @@
 #   * https://pymotw.com/2/BaseHTTPServer/index.html#module-BaseHTTPServer
 #   * https://docs.python.org/2/library/simplehttpserver.html
 
-import datetime, getopt, os, re, socket, sys, urllib
+import datetime, errno, getopt, os, random, re, socket, sys, tempfile, urllib
 import CoreHttpServer as common
-from CoreHttpServer import args, print_notice
+from CoreHttpServer import args, display_name, print_notice, quote_path
+
 common.local_files.append(os.path.realpath(__file__))
 
 # Specific to browser sharer
@@ -24,11 +25,25 @@ else:
 DEFAULT_REVERSE = False
 DEFAULT_TIMESORT = False
 
-TITLE_NO_LINKS = "nolinks"
-TITLE_LOCAL_LINKS = "locallinks"
 TITLE_MAX_LENGTH = 'max-length'
 TITLE_UPLOAD = 'upload'
 TITLE_UPLOAD_NO_CLOBBER = 'no-clobber'
+
+# In-progress uploads are written to '.<name>.upload-<8 hex chars>' beside
+#   their destination. Listings skip anything matching this.
+UPLOAD_TEMP_SUFFIX = '.upload-'
+UPLOAD_TEMP_PATTERN = re.compile(r'\.upload-[0-9a-f]{8}\Z')
+
+# os.link() failures that mean the filesystem has no hard links (for example
+#   FAT/exFAT, some FUSE and SMB mounts), as opposed to a real conflict.
+LINK_UNSUPPORTED_ERRNOS = set(
+    getattr(errno, n)
+    for n in ('EPERM', 'EOPNOTSUPP', 'ENOTSUP', 'ENOSYS')
+    if hasattr(errno, n)
+)
+
+# os.replace() is Python 3 only. os.rename() overwrites the same way on POSIX.
+replace_file = getattr(os, 'replace', os.rename)
 
 LABEL_GET_CATEGORY = 'C'
 LABEL_GET_ORDER = 'O'
@@ -43,14 +58,137 @@ LABEL_CATEGORY_TYPE = 'T'
 
 # Define arguments
 
-# Flags
-args.add_opt(common.OPT_TYPE_FLAG, "l", TITLE_LOCAL_LINKS, "Only show local links (symbolic links that point to within the shared directory).")
-args.add_opt(common.OPT_TYPE_FLAG, "n", TITLE_NO_LINKS, "Do not allow symbolic links. Overrides local links.")
-args.add_opt(common.OPT_TYPE_FLAG, 'u', TITLE_UPLOAD, 'Enable uploading of files.')
-args.add_opt(common.OPT_TYPE_LONG_FLAG, TITLE_UPLOAD_NO_CLOBBER, TITLE_UPLOAD_NO_CLOBBER, 'Do not allow uploaded files to overwrite existing files.')
-args.add_opt(common.OPT_TYPE_LONG, TITLE_MAX_LENGTH, TITLE_MAX_LENGTH, "Maximum content length.", converter = int)
+common.add_link_arguments()
 
 args.add_validator(common.validate_common_directory)
+
+
+def add_upload_arguments():
+    # Opt-in, so that scripts reusing this handler do not inherit upload options.
+    args.add_opt(common.OPT_TYPE_FLAG, 'u', TITLE_UPLOAD, 'Enable uploading of files.')
+    args.add_opt(
+        common.OPT_TYPE_LONG_FLAG,
+        TITLE_UPLOAD_NO_CLOBBER,
+        TITLE_UPLOAD_NO_CLOBBER,
+        'Do not allow uploaded files to overwrite existing files.',
+    )
+    args.add_opt(
+        common.OPT_TYPE_LONG,
+        TITLE_MAX_LENGTH,
+        TITLE_MAX_LENGTH,
+        "Maximum content length of an upload in bytes.",
+        converter=int,
+    )
+
+
+def upload_temp_token():
+    return '%08x' % random.SystemRandom().getrandbits(32)
+
+
+def decode_part_header(line):
+    # Python 2 keeps the raw bytes, matching its byte-string paths.
+    if sys.version_info[0] >= 3:
+        return line.decode('utf-8', 'surrogateescape')
+    return line
+
+
+def fs_length(name):
+    """Length of a native-string path in bytes, as the filesystem counts it."""
+    if sys.version_info[0] >= 3:
+        return len(os.fsencode(name))
+    return len(name)
+
+
+def path_limit(path, name, default):
+    try:
+        return os.pathconf(path, name)
+    except (OSError, ValueError, AttributeError):
+        return default
+
+
+def supports_hard_links(directory):
+    """Probe whether directory supports hard links.
+
+    Returns None when it cannot tell (for example a read-only directory).
+
+    This only checks the top of the shared directory. A different filesystem
+    mounted somewhere inside it could still lack hard links, but finding
+    every such mount definitively does not seem worth the trouble, and
+    uploads fall back safely there anyway."""
+    token = upload_temp_token()
+    source = os.path.join(directory, '.link-probe%s%s' % (UPLOAD_TEMP_SUFFIX, token))
+    target = os.path.join(directory, '.link-probe-b%s%s' % (UPLOAD_TEMP_SUFFIX, token))
+    try:
+        os.close(os.open(source, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    except (IOError, OSError):
+        return None
+    try:
+        os.link(source, target)
+        os.remove(target)
+        return True
+    except (IOError, OSError) as e:
+        if e.errno in LINK_UNSUPPORTED_ERRNOS:
+            return False
+        return None
+    finally:
+        os.remove(source)
+
+
+class BoundedReader(object):
+    """Read at most a fixed number of bytes from a stream, with push-back."""
+
+    def __init__(self, src, remaining):
+        self.src = src
+        self.remaining = remaining
+        self.pending = b''
+
+    def read(self, size):
+        if self.pending:
+            data, self.pending = self.pending[:size], self.pending[size:]
+            return data
+        data = self.src.read(min(size, self.remaining)) if self.remaining else b''
+        self.remaining -= len(data)
+        return data
+
+    def readline(self, limit=65536):
+        line = b''
+        while len(line) < limit and not line.endswith(b'\n'):
+            data = self.read(1024)
+            if not data:
+                break
+            i = data.find(b'\n')
+            if i >= 0:
+                self.unread(data[i + 1 :])
+                data = data[: i + 1]
+            line += data
+        return line
+
+    def unread(self, data):
+        self.pending = data + self.pending
+
+
+def copy_until(reader, dst, marker):
+    """Copy from reader to dst (None discards) up to marker, consuming the marker.
+
+    Returns False if the stream ended before the marker was seen."""
+    keep = len(marker) - 1
+    buf = b''
+    while True:
+        data = reader.read(64 * 1024)
+        buf += data
+        i = buf.find(marker)
+        if i >= 0:
+            if dst:
+                dst.write(buf[:i])
+            reader.unread(buf[i + len(marker) :])
+            return True
+        if not data:
+            return False
+        if len(buf) > keep:
+            if dst:
+                dst.write(buf[:-keep])
+            buf = buf[-keep:]
+
 
 class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
 
@@ -58,9 +196,15 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
 
     suffixes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
 
+    # Set per request by parse_header_range() and serve_*().
+    ranges = []
+    clip = None
+
     def __init__(self, request, client_address, server):
         if sys.version_info.major < 3:
-            super(SimpleHTTPVerboseReqeustHandler, self).__init__(request, client_address, server)
+            super(SimpleHTTPVerboseReqeustHandler, self).__init__(
+                request, client_address, server
+            )
         else:
             super().__init__(request, client_address, server)
         self.ranges_enabled = True
@@ -76,75 +220,158 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         Original source is baot of StackOverflow: https://stackoverflow.com/questions/28217869/python-basehttpserver-file-upload-with-maxfile-size
         """
 
-        # Use the content-length header, though being user-defined input it's not really trustworthy.
+        # The body is never read past Content-Length, so a missing header would
+        #   otherwise mean an unbounded read that --max-length cannot police.
+        raw_length = self.headers.get('content-length', '')
+        if not raw_length:
+            return self.serve_content('Content-Length required.', 411)
         try:
-            l = int(self.headers.get('content-length', 0))
+            l = int(raw_length)
             if l < 0:
                 # Parsed properly, but some joker put in a negative number.
                 raise ValueError()
         except ValueError:
-            return self.serve_content("Illegal Content-Length header value: %s" % self.headers.get('content-length', 0), 400)
+            return self.serve_content(
+                "Illegal Content-Length header value: %s" % escape(raw_length),
+                400,
+            )
 
         m = args[TITLE_MAX_LENGTH]
         if m and l > m:
-            return self.serve_content('Maximum length: %d' % m, code = 413)
+            return self.serve_content('Maximum length: %d' % m, code=413)
 
-        import cgi
-        form = cgi.FieldStorage(
-            fp=self.rfile,
-            headers=self.headers,
-            environ={
-                'REQUEST_METHOD':'POST',
-                'CONTENT_TYPE':self.headers['Content-Type'],
-            }
-        )
+        if not (os.path.isdir(self.file_path) and common.path_allowed(self.file_path)):
+            return self.send_error(404)
 
-        if 'file' not in form:
-            return self.serve_content('No file provided.', 400)
+        match = re.search(r'boundary="?([^";]+)"?', self.headers['Content-Type'])
+        if not match:
+            return self.serve_content('Expected multipart/form-data.', 400)
 
-        filename = form['file'].filename
+        reader = BoundedReader(self.rfile, l)
+        delimiter = b'--' + match.group(1).strip().encode('latin-1')
+
+        # Skip the preamble up to the first delimiter.
+        line = reader.readline()
+        while line and line.rstrip(b'\r\n') != delimiter:
+            line = reader.readline()
+
+        while line:
+            part_headers = {}
+            line = reader.readline()
+            while line not in (b'\r\n', b'\n', b''):
+                key, _, value = decode_part_header(line).partition(':')
+                part_headers[key.strip().lower()] = value.strip()
+                line = reader.readline()
+
+            disposition = part_headers.get('content-disposition', '')
+            name = re.search(r'(?:^|;)\s*name="([^"]*)"', disposition)
+            if name and name.group(1) == 'file':
+                filename = re.search(r'(?:^|;)\s*filename="([^"]*)"', disposition)
+                return self.receive_file(
+                    reader, delimiter, filename.group(1) if filename else None
+                )
+
+            # Not the file field, discard its content.
+            if not copy_until(reader, None, b'\r\n' + delimiter):
+                break
+            line = reader.readline()
+            if line.startswith(b'--'):
+                # Closing delimiter
+                break
+
+        return self.serve_content('No file provided.', 400)
+
+    def receive_file(self, reader, delimiter, filename):
+
         if not filename:
             # No FileName provided
             return self.serve_content('No file name.', 400)
-        elif not re.match(r'^[^/\\]+$', filename) or filename in ['.', '..']:
+        elif not re.match(r'^[^/\\\0\r\n]+\Z', filename) or filename in ['.', '..']:
             # Validate filename
             return self.serve_content('Invalid file name.', 400)
 
-        if not os.path.isdir(self.file_path):
-            return self.send_error(404)
+        # The temporary name is the longest name written, so check it up front.
+        #   This keeps an over-long name a 400 instead of a 500 from open().
+        #   The upload temp name adds 17 bytes, so the usable limit is that much
+        #   lower than the filesystem's own.
+        name_temp = '.%s%s%s' % (filename, UPLOAD_TEMP_SUFFIX, upload_temp_token())
+        path_temp = os.path.join(self.file_path, name_temp)
+        if fs_length(name_temp) > path_limit(
+            self.file_path, 'PC_NAME_MAX', 255
+        ) or fs_length(path_temp) >= path_limit(self.file_path, 'PC_PATH_MAX', 4096):
+            return self.serve_content('File name too long.', 400)
 
         path_save = os.path.join(self.file_path, filename)
 
-        if os.path.exists(path_save) and not os.path.isfile(path_save):
-            return self.serve_content('Destination exists as a non-file', code = 406)
+        if os.path.islink(path_save) or (
+            os.path.exists(path_save) and not os.path.isfile(path_save)
+        ):
+            # Refuse to write through a symbolic link, wherever it points.
+            return self.serve_content('Destination exists as a non-file', code=406)
 
-        if args[TITLE_UPLOAD_NO_CLOBBER] and os.path.isfile(path_save):
-            return self.serve_content('File already exists.', code = 302)
+        if args[TITLE_UPLOAD_NO_CLOBBER] and os.path.lexists(path_save):
+            return self.serve_content('File already exists.', code=409)
 
+        if os.path.exists(path_save) and not os.access(path_save, os.W_OK):
+            return self.serve_content('Destination is not writable.', code=403)
+
+        # Write to a temporary sibling and move it into place, so that a failed
+        #   or truncated upload never damages an existing file.
         try:
-            with open(path_save, 'wb') as output_file:
-                # TODO: How to handle a user lying in their Content-Length header?
-                self.copyobj(form['file'].file, output_file, False)
-        except IOError:
-            if os.path.isfile(path_save):
+            fd = os.open(path_temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+            with os.fdopen(fd, 'wb') as output_file:
+                complete = copy_until(reader, output_file, b'\r\n' + delimiter)
+            if not complete:
+                os.remove(path_temp)
+                return self.serve_content('Upload was truncated.', code=400)
+            if args[TITLE_UPLOAD_NO_CLOBBER]:
+                self.publish_no_clobber(path_temp, path_save)
+            else:
+                replace_file(path_temp, path_save)
+        except (IOError, OSError) as e:
+            if os.path.lexists(path_temp):
+                os.remove(path_temp)
+            if getattr(e, 'errno', None) == errno.EEXIST:
+                return self.serve_content('File already exists.', code=409)
+            return self.serve_content('Failed to save file.', code=500)
+
+        return self.serve_content(self.render_file_table(self.file_path), code=200)
+
+    def publish_no_clobber(self, path_temp, path_save):
+        """Move a finished upload into place only if the name is still free.
+
+        Raises OSError with EEXIST if the name was claimed since it was checked."""
+        try:
+            # link() refuses an existing name, and the content is already complete.
+            os.link(path_temp, path_save)
+        except OSError as e:
+            if e.errno not in LINK_UNSUPPORTED_ERRNOS:
+                raise
+            # No hard links here. Claim the name with an empty placeholder
+            #   (O_EXCL is atomic everywhere), then move the upload over it.
+            #   Only our own placeholder is ever replaced.
+            os.close(os.open(path_save, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666))
+            try:
+                replace_file(path_temp, path_save)
+            except (IOError, OSError):
                 os.remove(path_save)
-            return self.serve_content('Failed to save file.', code = 500)
+                raise
+        else:
+            os.remove(path_temp)
 
-        return self.serve_content(self.render_file_table(self.file_path), code = 200)
-
-    def copyobj(self, src, dst, outgoing = True):
+    def copyobj(self, src, dst, outgoing=True):
         if not src:
             return
 
         start, end, remaining = (0, 0, -1)
-        if getattr(self, 'clip', False):
-            start, end = self.ranges[0]
-            remaining = end - start + 1 # Account for zero-indexing
+        if outgoing and getattr(self, 'clip', None):
+            start, end = self.clip
+            remaining = end - start + 1  # Account for zero-indexing
         if start:
             src.seek(start)
 
         while self.alive and remaining:
-            buflen = 16*1024
+            buflen = 16 * 1024
             if remaining > 0:
                 buflen = min(remaining, buflen)
 
@@ -171,31 +398,26 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
 
         path = self.file_path
 
-        if os.path.exists(path):
-            # Symbolic link judgement.
-            # Paths with denied symbolic links will pretend to be 404 errors.
-            if args[TITLE_LOCAL_LINKS] and not ("%s/" % os.path.realpath(path)).startswith(os.getcwd() + "/"):
-                return self.send_error(404, "File not found")
-            elif args[TITLE_NO_LINKS]:
-                # If all symbolic links are banned, then we must trace our
-                #   way down an existing path to make sure that no symbolic link exists
-                curr = path
-                while True:
-                    if os.path.islink(curr):
-                        return self.send_error(404, "File not found")
-                    if curr == path:
-                        break
-                    curr = os.path.dirname(path);
+        # Symbolic link judgement.
+        # Paths with denied symbolic links will pretend to be 404 errors.
+        if os.path.exists(path) and not common.path_allowed(path):
+            return self.send_error(404, "File not found")
 
         f = None
         if os.path.isdir(path):
 
             if not getattr(self, common.ATTR_PATH, "").endswith("/"):
-                return self.send_redirect("%s/" % getattr(self, common.ATTR_PATH, ""))
+                # Quote so that the Location header is ASCII and cannot carry CR/LF,
+                #   and keep the query so that sort order survives the redirect.
+                target = quote_path("%s/" % getattr(self, common.ATTR_PATH, ""))
+                query = self.raw_query()
+                if query:
+                    target += '?' + query
+                return self.send_redirect(target)
 
             for index in ["index.html", "index.htm"]:
                 index = os.path.join(path, index)
-                if os.path.exists(index):
+                if os.path.isfile(index) and common.path_allowed(index):
                     path = index
                     break
             if path == self.file_path:
@@ -203,11 +425,26 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
 
         return self.serve_file(path)
 
+    def do_HEAD(self):
+        """Same headers as GET, no body."""
+        f = self.do_GET()
+        if f:
+            f.close()
+        return None
+
+    def raw_query(self):
+        """Query string exactly as the client sent it."""
+        words = self.requestline.split()
+        if len(words) < 2 or '?' not in words[1]:
+            return ''
+        return words[1].split('?', 1)[1].split('#', 1)[0]
+
     def humansize(self, nbytes):
-        if nbytes == 0: return '0B'
+        if nbytes == 0:
+            return '0B'
         i = 0
-        while nbytes >= 1000 and i < len(self.suffixes)-1:
-            nbytes /= 1000.
+        while nbytes >= 1000 and i < len(self.suffixes) - 1:
+            nbytes /= 1000.0
             i += 1
         f = ('%.2f' % nbytes).rstrip('0').rstrip('.')
         return '%s%s' % (f, self.suffixes[i])
@@ -226,7 +463,9 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
             self.send_error(404, "Unable to list directory")
             return None
 
-        displaypath = escape(unquote(getattr(self, common.ATTR_PATH, "/")))
+        # self.path is already unquoted by parse_path().
+        rawpath = getattr(self, common.ATTR_PATH, "/")
+        displaypath = escape(display_name(rawpath))
 
         uploadContent = ''
         if args[TITLE_UPLOAD]:
@@ -290,7 +529,7 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         setStatus("Directory not found: " + window.location.pathname);
       } else if(code == 400) {
         setStatus("BAD REQUEST: " + event.target.responseText);
-      } else if(code == 302) {
+      } else if(code == 409) {
         setStatus("File already exists.")
       } else if(code == 200) {
         setStatus("Upload Complete");
@@ -371,11 +610,13 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
     </div>
   </body>
 </html>
-""" % (displaypath, self.base_directory, # Title
-        self.render_breadcrumbs(displaypath),
-        uploadContent,
-        table_content
-    )
+""" % (
+            displaypath,
+            escape(self.base_directory),  # Title
+            self.render_breadcrumbs(rawpath),
+            uploadContent,
+            table_content,
+        )
 
         return self.serve_content(htmlContent)
 
@@ -389,8 +630,13 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         items = []
         for name in fileNames:
 
+            if UPLOAD_TEMP_PATTERN.search(name):
+                # In-progress (or abandoned) upload
+                continue
+
             fullname = os.path.join(path, name)
-            displayname = linkname = name
+            displayname = display_name(name)
+            linkname = name
             extrainfo = ''
             reachable = True
             size = 0
@@ -402,13 +648,13 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
             if os.path.islink(fullname):
 
                 # Note: a link to a directory displays with @ and links with /
-                displayname = name + "@"
-                reachable = not (args[TITLE_NO_LINKS] or (args[TITLE_LOCAL_LINKS] and not os.path.realpath(fullname).startswith(os.getcwd() + "/")))
+                displayname += "@"
+                reachable = common.link_allowed(fullname)
                 obj_type = 'Sym'
 
                 if not reachable:
                     # Symbolic link is inaccessible. Override extra info to plainly say 'symlink'.
-                    if args[TITLE_NO_LINKS]:
+                    if args[common.TITLE_NO_LINKS]:
                         extrainfo = "(Symlink)"
                     else:
                         # Implies local links only, meaning an unreachable link is external.
@@ -416,22 +662,30 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                 elif os.path.isdir(os.path.realpath(fullname)):
                     # Directory via Symlink
                     # Append / for directories or @ for symbolic links
-                    displayname = name + "/@"
+                    displayname = display_name(name) + "/@"
                     linkname = name + "/"
 
-                    extrainfo = "Symlink to directory <span class='path'>%s</span>" % escape(os.path.realpath(fullname))
+                    extrainfo = (
+                        "Symlink to directory <span class='path'>%s</span>"
+                        % escape(display_name(os.path.realpath(fullname)))
+                    )
                 elif os.path.isfile(os.path.realpath(fullname)):
                     # File via Symlink
-                    extrainfo = "Symlink to %s file <span class='path'>%s</span>" % (self.humansize(os.stat(fullname).st_size), escape(os.path.realpath(fullname)))
+                    extrainfo = "Symlink to %s file <span class='path'>%s</span>" % (
+                        self.humansize(os.stat(fullname).st_size),
+                        escape(display_name(os.path.realpath(fullname))),
+                    )
                     is_file = True
                 else:
                     # Dead symlink
                     linkname = None
-                    extrainfo = "Dead symlink to <span class='path'>%s</span>" % os.readlink(fullname)
+                    extrainfo = "Dead symlink to <span class='path'>%s</span>" % escape(
+                        display_name(os.readlink(fullname))
+                    )
 
             elif os.path.isdir(fullname):
                 # Directory
-                displayname = name + "/"
+                displayname += "/"
                 linkname = name + "/"
                 obj_type += 'Dir'
             else:
@@ -439,9 +693,14 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                 is_file = True
 
             if reachable and is_file:
-                size = os.stat(fullname).st_size
-                size_display = self.humansize(size)
-                mtime = os.path.getmtime(os.path.join(path, name))
+                try:
+                    st = os.stat(fullname)
+                    size = st.st_size
+                    size_display = self.humansize(size)
+                    mtime = st.st_mtime
+                except OSError:
+                    # Removed or made inaccessible since listdir().
+                    pass
 
             obj = {}
             obj['rawname'] = name
@@ -459,52 +718,93 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         default_category_label = LABEL_CATEGORY_NAME
         default_order_label = LABEL_ORDER_ASCENDING
 
-        category_label = next(iter(reversed(self.get.get(LABEL_GET_CATEGORY, []))), default_category_label).upper()
-        if category_label not in (LABEL_CATEGORY_NAME, LABEL_CATEGORY_MTIME, LABEL_CATEGORY_SIZE, LABEL_CATEGORY_TYPE):
-            category = default_category_label
+        category_label = next(
+            iter(reversed(self.get.get(LABEL_GET_CATEGORY, []))), default_category_label
+        ).upper()
+        if category_label not in (
+            LABEL_CATEGORY_NAME,
+            LABEL_CATEGORY_MTIME,
+            LABEL_CATEGORY_SIZE,
+            LABEL_CATEGORY_TYPE,
+        ):
+            category_label = default_category_label
 
-        order_label = next(iter(reversed(self.get.get(LABEL_GET_ORDER, []))), default_order_label).upper()
+        order_label = next(
+            iter(reversed(self.get.get(LABEL_GET_ORDER, []))), default_order_label
+        ).upper()
         if order_label not in (LABEL_ORDER_ASCENDING, LABEL_ORDER_DESCENDING):
-            order = default_order_label
+            order_label = default_order_label
 
         reverse = False
         if order_label == LABEL_ORDER_DESCENDING:
             reverse = True
 
         if category_label == LABEL_CATEGORY_MTIME:
-            items.sort(key=lambda a: (a['mtime'], a['rawname'].lower()), reverse = reverse)
+            items.sort(
+                key=lambda a: (a['mtime'], a['rawname'].lower()), reverse=reverse
+            )
         elif category_label == LABEL_CATEGORY_SIZE:
-            items.sort(key=lambda a: (a['size'], a['rawname'].lower()), reverse = reverse)
+            items.sort(key=lambda a: (a['size'], a['rawname'].lower()), reverse=reverse)
         elif category_label == LABEL_CATEGORY_TYPE:
-            items.sort(key=lambda a: (a['type'], a['rawname'].lower()), reverse = reverse)
+            items.sort(key=lambda a: (a['type'], a['rawname'].lower()), reverse=reverse)
         else:
-            items.sort(key=lambda a: a['rawname'].lower(), reverse = reverse)
+            items.sort(key=lambda a: a['rawname'].lower(), reverse=reverse)
 
         content = """<table>
         <tr><th class="c_name">%s</th><th class="c_size">%s</th><th class="c_mod">%s</th><th class="c_info">%s</th></tr>
         """ % (
-            self.render_header("Name", LABEL_CATEGORY_NAME, reverse, category_label, path),
-            self.render_header("Size", LABEL_CATEGORY_SIZE, reverse, category_label, path),
-            self.render_header("Last Modified", LABEL_CATEGORY_MTIME, reverse, category_label, path),
-            self.render_header("Description", LABEL_CATEGORY_TYPE, reverse, category_label, path)
+            self.render_header(
+                "Name", LABEL_CATEGORY_NAME, reverse, category_label, path
+            ),
+            self.render_header(
+                "Size", LABEL_CATEGORY_SIZE, reverse, category_label, path
+            ),
+            self.render_header(
+                "Last Modified", LABEL_CATEGORY_MTIME, reverse, category_label, path
+            ),
+            self.render_header(
+                "Description", LABEL_CATEGORY_TYPE, reverse, category_label, path
+            ),
         )
 
         if getattr(self, common.ATTR_PATH, "/") != "/":
-            content += '      <tr class="hover-row"><td class="c_name"><a href="..">%s</a></td><td class="c_size">-</td><td class="c_mod">&nbsp;</td><td class="c_info">&nbsp;</td></tr>\n' % escape("<UP ONE LEVEL>")
+            content += (
+                '      <tr class="hover-row"><td class="c_name"><a href="..">%s</a></td><td class="c_size">-</td><td class="c_mod">&nbsp;</td><td class="c_info">&nbsp;</td></tr>\n'
+                % escape("<UP ONE LEVEL>")
+            )
 
         for item in items:
 
             mtime_display = '&nbsp;'
             if item.get('mtime'):
-                mtime_display = datetime.datetime.fromtimestamp(item.get('mtime')).strftime('%Y-%m-%d %H:%M:%S')
+                mtime_display = datetime.datetime.fromtimestamp(
+                    item.get('mtime')
+                ).strftime('%Y-%m-%d %H:%M:%S')
 
             if item.get('linkname') and item.get('reachable', False):
-                parts = (quote(item.get('linkname')), escape(item.get('displayname')), item.get('size_display'), mtime_display, item.get('extrainfo'))
-                content += '      <tr class="hover-row"><td class="c_name"><a href="%s">%s</a></td><td class="c_size">%s</td><td class="c_mod">%s</td><td class="c_info">%s</td></tr>\n' % parts
+                parts = (
+                    quote_path(item.get('linkname')),
+                    escape(item.get('displayname')),
+                    item.get('size_display'),
+                    mtime_display,
+                    item.get('extrainfo'),
+                )
+                content += (
+                    '      <tr class="hover-row"><td class="c_name"><a href="%s">%s</a></td><td class="c_size">%s</td><td class="c_mod">%s</td><td class="c_info">%s</td></tr>\n'
+                    % parts
+                )
             else:
                 # Not reachable - dead symlink
-                parts = (escape(item.get('displayname')), item.get('size_display'), mtime_display, item.get('extrainfo'))
-                content += '      <tr class="hover-row"><td class="c_name s_dead">%s</td><td class="c_size">%s</td><td class="c_mod">%s</td><td class="c_info">%s</td></tr>\n' % parts
+                parts = (
+                    escape(item.get('displayname')),
+                    item.get('size_display'),
+                    mtime_display,
+                    item.get('extrainfo'),
+                )
+                content += (
+                    '      <tr class="hover-row"><td class="c_name s_dead">%s</td><td class="c_size">%s</td><td class="c_mod">%s</td><td class="c_info">%s</td></tr>\n'
+                    % parts
+                )
 
         content += """
         <tr><td colspan="5"></td></table>
@@ -513,73 +813,67 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
         return content
 
     def parse_header_range(self):
+        """Read a single byte range from the Range header into self.ranges.
+
+        Entries are (first, last) with None for an omitted value, so that
+        open-ended ("500-") and suffix ("-500") forms can be resolved against
+        the content length later. Anything this script does not handle
+        (other units, syntax errors, multiple ranges) is ignored, which
+        RFC 9110 allows: the full content is served with a 200.
+        """
 
         self.ranges = []
+        self.clip = None
 
         header_range = self.headers['Range']
         if not header_range:
             # No range provided, no need to parse further
             return True
 
-        # Store bad-range response in a central place
-        response_bad = lambda : self.send_error(400, 'Bad Request Range Header')
+        unit, _, spec = header_range.partition('=')
+        if unit.strip().lower() != 'bytes':
+            return True
 
-        p1 = r'^bytes=(\d+\-\d*|\d*-\d+)(, (\d+\-\d*|\d*-\d+))?$'
-        p2 = r'^(\d+\-\d*|\d*-\d+)$'
+        specs = [s.strip() for s in spec.split(',') if s.strip()]
+        if len(specs) != 1:
+            # Multiple ranges are not supported, fall back to the full content.
+            return True
 
-        match = re.match(p1, header_range)
-        if not match:
-            return response_bad()
+        match = re.match(r'^(\d*)-(\d*)$', specs[0])
+        if not match or not (match.group(1) or match.group(2)):
+            return True
 
-        groupings = [g for g in match.groups() if re.match(p2, str(g))]
+        first = int(match.group(1)) if match.group(1) else None
+        last = int(match.group(2)) if match.group(2) else None
+        if first is not None and last is not None and last < first:
+            # Invalid range-spec, ignore the header.
+            return True
 
-        conv = lambda v, i: int(v.split('-')[i] or 0)
-        ranges = sorted([[conv(g, 0), conv(g, 1)] for g in groupings], key=lambda a: a[0])
-
-        for r in ranges:
-            start = r[0]
-            end = r[1]
-
-            if not end and not start:
-                # Request for '0-0' (that is to say, the entire thing)
-                # Chrome does this for video files, for instance
-                continue
-
-            if end == start or end and end < start:
-                return response_bad()
-
-        ranges_b = [ranges[0]]
-
-        for r in ranges[1:]:
-            start = r[0]
-            end = r[1]
-
-            if not start:
-                # No non-first range may start at 0.
-                return response_bad()
-
-            if not ranges_b[-1][1]:
-                # No non-last ranges may end at 0.
-                return response_bad()
-
-            if start - 1 == ranges_b[-1][1]:
-                # If multiple neighboring ranges are given, then merge them together
-                ranges_b[-1][1] = end
-                continue
-
-            if start <= ranges_b[-1][1]:
-                # Ranges may not overlap
-                return response_bad()
-
-            ranges_b.append([start, end])
-
-        self.ranges = [(r[0], r[1]) for r in ranges_b]
-
-        if len(self.ranges) >= 2:
-            # The script currently does not support handling multiple ranges
-            return self.send_error(501, "Multiple ranges not supported" % self.command)
-
+        self.ranges = [(first, last)]
         return True
+
+    def resolve_range(self, length):
+        """Turn self.ranges[0] into absolute (start, end) for content of length bytes.
+
+        Returns None when the range cannot be satisfied."""
+        first, last = self.ranges[0]
+        if first is None:
+            # Suffix range: the final <last> bytes.
+            if not last or not length:
+                return None
+            return (max(0, length - last), length - 1)
+        if first >= length:
+            return None
+        if last is None or last >= length:
+            last = length - 1
+        return (first, last)
+
+    def send_range_unsatisfiable(self, length):
+        self.send_response(416)
+        self.send_header('Content-Range', 'bytes */%d' % length)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+        return None
 
     def render_header(self, label, target, reverse, current, path):
 
@@ -591,39 +885,32 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
                 flip_order = LABEL_ORDER_ASCENDING
             get = '%s&%s=%s' % (get, LABEL_GET_ORDER, flip_order)
 
-        return '<a href="%s%s">%s</a>' % (quote(self.path), get, label)
+        return '<a href="%s%s">%s</a>' % (
+            quote_path(self.path),
+            get,
+            label,
+        )
 
-    def serve_content(self, content = None, code = 200, mimetype = "text/html"):
+    def serve_content(self, content=None, code=200, mimetype="text/html"):
 
         f, length = self.serve_content_prepare(content)
 
-        if self.ranges:
-
-            start, end = self.ranges[0]
-            if end >= length:
-                return self.send_error(416)
-
-            if code == 200:
-                # Clip 200 content, not error content
-                code = 206
-                self.clip = True
-                length_total = length
-                length = end - start + 1 # Account for zero-indexing
+        length_total = length
+        if self.ranges and code == 200:
+            # Clip 200 content, not error content
+            self.clip = self.resolve_range(length)
+            if not self.clip:
+                return self.send_range_unsatisfiable(length)
+            code = 206
+            length = self.clip[1] - self.clip[0] + 1  # Account for zero-indexing
 
         self.send_response(code)
         self.send_common_headers(mimetype, length)
         self.send_header('Accept-Ranges', 'bytes')
-        if getattr(self, 'clip', False):
-
-            display_values = {
-                'start': start,
-                'end': length-1,
-                'total': length_total
-            }
-            if end:
-                display_values['end'] = end
-
-            self.send_header('Content-Range', 'bytes %(start)d-%(end)d/%(total)d' % display_values)
+        if self.clip:
+            self.send_header(
+                'Content-Range', 'bytes %d-%d/%d' % (self.clip + (length_total,))
+            )
 
         self.end_headers()
         return f
@@ -639,58 +926,59 @@ class SimpleHTTPVerboseReqeustHandler(common.CoreHttpServer):
             # newline translations, making the actual size of the content
             # transmitted *less* than the content-length!
             f = open(path, 'rb')
-            fs = os.fstat(f.fileno())
-            length = fs[6]
-            if self.ranges:
-                start, end = self.ranges[0]
-
-                if end >= length:
-                    return self.send_error(416)
-
-                self.clip = True
-                length_total = length
-                length = end - start + 1 # Account for zero-indexing
         except IOError:
             return self.send_error(404, 'Not Found')
 
-        self.send_response(200)
+        fs = os.fstat(f.fileno())
+        length_total = length = fs.st_size
+        code = 200
+        if self.ranges:
+            self.clip = self.resolve_range(length)
+            if not self.clip:
+                f.close()
+                return self.send_range_unsatisfiable(length)
+            code = 206
+            length = self.clip[1] - self.clip[0] + 1  # Account for zero-indexing
+
+        self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(length))
-
-        if getattr(self, 'clip', False):
-
-            display_values = {
-                'start': start,
-                'end': length-1,
-                'total': length_total
-            }
-            if end:
-                display_values['end'] = end
-
-            self.send_header('Content-Range', 'bytes %(start)d-%(end)d/%(total)d' % display_values)
+        self.send_header('Accept-Ranges', 'bytes')
+        if self.clip:
+            self.send_header(
+                'Content-Range', 'bytes %d-%d/%d' % (self.clip + (length_total,))
+            )
         self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
         self.end_headers()
         return f
 
+
 if __name__ == '__main__':
+    add_upload_arguments()
     args.process(sys.argv)
 
     common.announce_common_arguments("Serving files")
-
-    if args[TITLE_NO_LINKS]:
-        print_notice("Ignoring all symbolic links.")
-
-    if args[TITLE_LOCAL_LINKS]:
-        print_notice("Serving only local symbolic links.")
+    common.announce_link_arguments()
 
     if args[TITLE_UPLOAD]:
         common.print_warning('Uploading is enabled.')
 
         if args[TITLE_MAX_LENGTH]:
-            print_notice('Maximum content length: %s' % common.colour_text('%sB' % args[TITLE_MAX_LENGTH]))
+            print_notice(
+                'Maximum content length: %s'
+                % common.colour_text('%sB' % args[TITLE_MAX_LENGTH])
+            )
 
         if args[TITLE_UPLOAD_NO_CLOBBER]:
-            print_notice('Uploads will %s be able to overwrite each other.' % common.colour_text('NOT'))
+            print_notice(
+                'Uploads will %s be able to overwrite each other.'
+                % common.colour_text('NOT')
+            )
+            if supports_hard_links(common.get_target()) is False:
+                common.print_warning(
+                    'Shared directory does not support hard links. Uploads will '
+                    'briefly show an empty placeholder file while being moved into place.'
+                )
         else:
             common.print_warning('Uploads will be able to overwrite each other.')
 

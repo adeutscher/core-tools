@@ -5,50 +5,60 @@
 #   * https://docs.python.org/2/library/simplehttpserver.html
 
 # Basic includes
-import base64, getopt, getpass, os, mimetypes, posixpath, re, shutil, ssl, socket, struct, sys, time, urllib
+import base64, getopt, getpass, hashlib, os, mimetypes, posixpath, re, shutil, ssl, socket, struct, subprocess, sys, tempfile, time, urllib
+from email.utils import formatdate
+from io import BytesIO
 from random import randint
 
 if sys.version_info[0] == 2:
-    from BaseHTTPServer import HTTPServer
-    from BaseHTTPServer import BaseHTTPRequestHandler
+    import httplib
+    from mimetools import Message as HTTPMessage
 
-    from SocketServer import ThreadingMixIn
+    from SocketServer import StreamRequestHandler, TCPServer, ThreadingMixIn
 
-    from urllib import unquote
+    from urllib import quote, unquote
     from urlparse import parse_qs
 
-    try:
-        from cStringIO import StringIO
-    except ImportError:
-        from StringIO import StringIO
-
     FileNotFoundError = OSError
+
+    # Python 2 only has short reason phrases, so the phrase doubles as the explanation.
+    HTTP_RESPONSES = dict((c, (p, p)) for c, p in httplib.responses.items())
 else:
     import http.client
-    from http.server import HTTPServer
-    from http.server import BaseHTTPRequestHandler
+    from http import HTTPStatus
+    from http.client import HTTPMessage
 
-    from socketserver import ThreadingMixIn
+    from socketserver import StreamRequestHandler, TCPServer, ThreadingMixIn
 
-    from urllib.parse import unquote
+    from urllib.parse import quote, unquote
     from urllib.parse import parse_qs
 
-    from io import StringIO
+    HTTP_RESPONSES = dict((s.value, (s.phrase, s.description)) for s in HTTPStatus)
 
 #
 # Common Colours and Message Functions
 ###
 
-def _print_message(header_colour, header_text, message):
-    print("%s[%s]: %s" % (colour_text(header_text, header_colour), colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN), message))
 
-def colour_text(text, colour = None):
+def _print_message(header_colour, header_text, message):
+    print(
+        "%s[%s]: %s"
+        % (
+            colour_text(header_text, header_colour),
+            colour_text(os.path.basename(sys.argv[0]), COLOUR_GREEN),
+            message,
+        )
+    )
+
+
+def colour_text(text, colour=None):
     if not colour:
         colour = COLOUR_BOLD
     # A useful shorthand for applying a colour to a string.
     return "%s%s%s" % (colour, text, COLOUR_OFF)
 
-def enable_colours(force = False):
+
+def enable_colours(force=False):
     global COLOUR_PURPLE
     global COLOUR_RED
     global COLOUR_GREEN
@@ -74,15 +84,22 @@ def enable_colours(force = False):
         COLOUR_BLUE = ''
         COLOUR_BOLD = ''
         COLOUR_OFF = ''
+
+
 enable_colours()
 
 error_count = 0
+
+
 def print_error(message):
     global error_count
     error_count += 1
     _print_message(COLOUR_RED, "Error", message)
 
+
 local_files = [re.sub(r'\.pyc', ".py", __file__)]
+
+
 def print_exception(e, msg=None):
     # Shorthand wrapper to handle an exception.
     # msg: Used to provide more context.
@@ -100,16 +117,31 @@ def print_exception(e, msg=None):
         exc_tb = exc_tb.tb_next
 
     # Get the deepest local file.
-    fname, lineno = next((t for t in reversed(stack) if os.path.realpath(t[0]) in local_files), (stack[-1]))
+    fname, lineno = next(
+        (t for t in reversed(stack) if os.path.realpath(t[0]) in local_files),
+        (stack[-1]),
+    )
 
     fname = os.path.split(fname)[1]
-    print_error("Unexpected %s(%s%s, Line %s): %s" % (colour_text(type(e).__name__, COLOUR_RED), sub_msg, colour_text(fname, COLOUR_GREEN), lineno, str(e)))
+    print_error(
+        "Unexpected %s(%s%s, Line %s): %s"
+        % (
+            colour_text(type(e).__name__, COLOUR_RED),
+            sub_msg,
+            colour_text(fname, COLOUR_GREEN),
+            lineno,
+            str(e),
+        )
+    )
+
 
 def print_notice(message):
     _print_message(COLOUR_BLUE, "Notice", message)
 
+
 def print_warning(message):
     _print_message(COLOUR_YELLOW, "Warning", message)
+
 
 # Variables
 
@@ -127,7 +159,7 @@ REGEX_INET4 = r'^(([0-9]){1,3}\.){3}([0-9]{1,3})$'
 TITLE_BIND = "bind"
 TITLE_PORT = "port"
 TITLE_TIMEOUT = "timeout"
-TITLE_VERBOSE="verbose"
+TITLE_VERBOSE = "verbose"
 
 TITLE_AUTH_LIMIT = "attempt limit"
 TITLE_AUTH_PROMPT = "prompt"
@@ -137,6 +169,7 @@ TITLE_USER = "user"
 
 TITLE_SSL_CERT = "SSL certfile"
 TITLE_SSL_KEY = "SSL keyfile"
+TITLE_SSL_SELF_SIGNED = "self-signed"
 
 TITLE_ALLOW = "allow address/range"
 TITLE_ALLOW_FILE = "allow address/range file"
@@ -173,6 +206,12 @@ OPT_TYPE_LONG = MASK_OPT_TYPE_LONG | MASK_OPT_TYPE_ARG
 
 TITLE_HELP = "help"
 
+# Accepted (case-insensitive) values for flags set through environment variables.
+#   Empty values are treated as unset.
+ENV_FLAG_TRUE = ("1", "true", "yes", "on")
+ENV_FLAG_FALSE = ("0", "false", "no", "off")
+
+
 class ArgHelper:
 
     args = {}
@@ -180,21 +219,32 @@ class ArgHelper:
     raw_args = {}
     operands = []
 
+    operand_environment = None
     operand_text = None
 
     errors = []
     validators = []
 
-    opts = {OPT_TYPE_FLAG: {}, OPT_TYPE_SHORT: {}, OPT_TYPE_LONG: {}, OPT_TYPE_LONG_FLAG: {}}
+    opts = {
+        OPT_TYPE_FLAG: {},
+        OPT_TYPE_SHORT: {},
+        OPT_TYPE_LONG: {},
+        OPT_TYPE_LONG_FLAG: {},
+    }
     opts_by_label = {}
 
     def __init__(self):
-        self.add_opt(OPT_TYPE_FLAG, "h", TITLE_HELP, description="Display a help menu and then exit.")
+        self.add_opt(
+            OPT_TYPE_FLAG,
+            "h",
+            TITLE_HELP,
+            description="Display a help menu and then exit.",
+        )
 
     def __contains__(self, arg):
         return arg in self.args
 
-    def __getitem__(self, arg, default = None):
+    def __getitem__(self, arg, default=None):
         opt = self.opts_by_label.get(arg)
 
         if not opt:
@@ -207,12 +257,10 @@ class ArgHelper:
 
         # Silly note: Doing a get() out of a dictionary when the stored
         #   value of the key is None will not fall back to default
+        # Environment variables are converted into self.args during validation.
         value = self.args.get(arg)
         if value is None:
-            if opt.environment:
-                value = os.environ.get(opt.environment, self.defaults.get(arg))
-            else:
-                value = self.defaults.get(arg)
+            value = self.defaults.get(arg)
 
         if value is None:
             return default
@@ -221,7 +269,22 @@ class ArgHelper:
     def __setitem__(self, key, value):
         self.args[key] = value
 
-    def add_opt(self, opt_type, flag, label, description = None, required = False, default = None, default_colour = None, default_announce = False, environment = None, converter=str, multiple = False, strict_single = False):
+    def add_opt(
+        self,
+        opt_type,
+        flag,
+        label,
+        description=None,
+        required=False,
+        default=None,
+        default_colour=None,
+        default_announce=False,
+        environment=None,
+        converter=str,
+        multiple=False,
+        strict_single=False,
+        action=None,
+    ):
 
         if opt_type not in self.opts:
             raise Exception("Bad option type: %s" % opt_type)
@@ -232,7 +295,7 @@ class ArgHelper:
         match_pattern = "^[a-z0-9]$"
         if opt_type & MASK_OPT_TYPE_LONG:
             prefix = "--"
-            match_pattern = r"^[a-z0-9\-]+$" # ToDo: Improve on this regex?
+            match_pattern = r"^[a-z0-9\-]+$"  # ToDo: Improve on this regex?
 
         arg = prefix + flag
 
@@ -242,16 +305,25 @@ class ArgHelper:
         if not flag:
             raise Exception("No flag defined for label: %s" % label)
         if not opt_type & MASK_OPT_TYPE_LONG and len(flag) - 1:
-            raise Exception("Short options must be 1-character long.") # A bit redundant, but more informative
+            raise Exception(
+                "Short options must be 1-character long."
+            )  # A bit redundant, but more informative
         if not re.match(match_pattern, flag, re.IGNORECASE):
-            raise Exception("Invalid flag value: %s" % flag) # General format check
+            raise Exception("Invalid flag value: %s" % flag)  # General format check
         for g in self.opts:
-            if opt_type & MASK_OPT_TYPE_LONG == g & MASK_OPT_TYPE_LONG and arg in self.opts[g]:
+            if (
+                opt_type & MASK_OPT_TYPE_LONG == g & MASK_OPT_TYPE_LONG
+                and arg in self.opts[g]
+            ):
                 raise Exception("Flag already defined: %s" % label)
         if label in self.opts_by_label:
             raise Exception("Duplicate label (new: %s): %s" % (arg, label))
         if multiple and strict_single:
-            raise Exception("Cannot have an argument with both 'multiple' and 'strict_single' set to True.")
+            raise Exception(
+                "Cannot have an argument with both 'multiple' and 'strict_single' set to True."
+            )
+        if action and has_arg:
+            raise Exception("Only flags can have an action: %s" % label)
         # These do not cover harmless checks on arg modifiers with flag values.
 
         obj = OptArg(self)
@@ -267,6 +339,7 @@ class ArgHelper:
         obj.converter = converter
         obj.has_arg = has_arg
         obj.strict_single = strict_single
+        obj.action = action
 
         self.opts_by_label[label] = self.opts[opt_type][arg] = obj
         if not has_arg:
@@ -284,8 +357,41 @@ class ArgHelper:
         return s.replace('-', '')
 
     def _get_opts_long(self):
-        l = ["%s=" % key for key in sorted(self.opts[OPT_TYPE_LONG].keys())] + sorted(self.opts[OPT_TYPE_LONG_FLAG].keys())
+        l = ["%s=" % key for key in sorted(self.opts[OPT_TYPE_LONG].keys())] + sorted(
+            self.opts[OPT_TYPE_LONG_FLAG].keys()
+        )
         return [re.sub("^-+", "", i) for i in l]
+
+    def describe_environment(self, base, multiple=False):
+        if multiple:
+            return "%s, %s" % (colour_text(base), colour_text("%s_<n>" % base))
+        return colour_text(base)
+
+    def get_environment_names(self, base, multiple=False):
+        # Get the environment variable names to check for an option, in order.
+        # Options that can be specified multiple times accept the base name as well as
+        #   any name with a zero-or-greater integer suffix (e.g. BASE_0, BASE_1, etc).
+        #   One does not exclude the other. BASE, BASE_0, and BASE_1 are all checked.
+        if not multiple:
+            return [base]
+        # Scanning the whole environment is probably less efficient than counting up from
+        #   BASE_0 until a name is missing, but this also covers accidental gaps in numbering
+        #   (e.g. BASE_0 and BASE_2 with no BASE_1). It is a one-time argument-parsing cost.
+        pattern = re.compile(r"^%s_([0-9]+)$" % re.escape(base))
+        numbered = []
+        for key in os.environ:
+            m = pattern.match(key)
+            if m:
+                numbered.append((int(m.group(1)), key))
+        return [base] + [key for index, key in sorted(numbered)]
+
+    def get_environment_values(self, base, multiple=False):
+        # Treat empty values as unset.
+        return [
+            os.environ[n]
+            for n in self.get_environment_names(base, multiple)
+            if os.environ.get(n)
+        ]
 
     def convert_value(self, raw_value, opt):
         value = None
@@ -296,28 +402,49 @@ class ArgHelper:
             pass
 
         if value is None:
-            self.errors.append("Unable to convert %s to %s: %s" % (colour_text(opt.label), opt.converter.__name__, colour_text(raw_value)))
+            self.errors.append(
+                "Unable to convert %s to %s: %s"
+                % (
+                    colour_text(opt.label),
+                    opt.converter.__name__,
+                    colour_text(raw_value),
+                )
+            )
 
         return value
 
     get = __getitem__
 
-    def hexit(self, exit_code = 0):
+    def hexit(self, exit_code=0):
 
         s = "./%s" % os.path.basename(sys.argv[0])
         lines = []
-        for label, section in [("Flags", OPT_TYPE_FLAG), ("Options", OPT_TYPE_SHORT), ("Long Flags", OPT_TYPE_LONG_FLAG), ("Long Options", OPT_TYPE_LONG)]:
+        for label, section in [
+            ("Flags", OPT_TYPE_FLAG),
+            ("Options", OPT_TYPE_SHORT),
+            ("Long Flags", OPT_TYPE_LONG_FLAG),
+            ("Long Options", OPT_TYPE_LONG),
+        ]:
             if not self.opts[section]:
                 continue
 
             lines.append("%s:" % label)
             for f in sorted(self.opts[section].keys()):
                 obj = self.opts[section][f]
-                s+= obj.get_printout_usage(f)
+                s += obj.get_printout_usage(f)
                 lines.append(obj.get_printout_help(f))
 
         if self.operand_text:
             s += " %s" % self.operand_text
+            if self.operand_environment:
+                lines.append("Operands:")
+                lines.append(
+                    "  %s (Environment: %s)"
+                    % (
+                        self.operand_text,
+                        self.describe_environment(self.operand_environment, True),
+                    )
+                )
 
         _print_message(COLOUR_PURPLE, "Usage", s)
         for l in lines:
@@ -326,12 +453,12 @@ class ArgHelper:
         if exit_code >= 0:
             exit(exit_code)
 
-    def last_operand(self, default = None):
+    def last_operand(self, default=None):
         if not len(self.operands):
             return default
         return self.operands[-1]
 
-    def load_args(self, cli_args = []):
+    def load_args(self, cli_args=[]):
         if cli_args == sys.argv:
             cli_args = cli_args[1:]
 
@@ -339,14 +466,19 @@ class ArgHelper:
             return True
 
         try:
-            output_options, self.operands = getopt.gnu_getopt(cli_args, self._get_opts(), self._get_opts_long())
+            output_options, self.operands = getopt.gnu_getopt(
+                cli_args, self._get_opts(), self._get_opts_long()
+            )
         except Exception as e:
             self.errors.append("Error parsing arguments: %s" % str(e))
             return False
 
         for opt, optarg in output_options:
             found = False
-            for has_arg, opt_type_tuple in [(True, (OPT_TYPE_SHORT, OPT_TYPE_LONG)), (False, (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG))]:
+            for has_arg, opt_type_tuple in [
+                (True, (OPT_TYPE_SHORT, OPT_TYPE_LONG)),
+                (False, (OPT_TYPE_FLAG, OPT_TYPE_LONG_FLAG)),
+            ]:
                 if found:
                     break
                 for opt_key in opt_type_tuple:
@@ -362,13 +494,18 @@ class ArgHelper:
                             self.args[obj.label] = True
         return True
 
-    def process(self, args = [], exit_on_error = True, print_errors = True):
+    def process(self, args=[], exit_on_error=True, print_errors=True):
         validate = True
         if not self.load_args(args):
             validate = False
 
         if self[TITLE_HELP]:
             self.hexit(0)
+        for obj in self.opts_by_label.values():
+            if obj.action and self.args.get(obj.label):
+                # Action flags run in place of normal processing, like the help menu.
+                obj.action(self)
+                exit(0)
 
         if validate:
             self.validate()
@@ -382,6 +519,10 @@ class ArgHelper:
                 exit(1)
         return not self.errors
 
+    def set_operand_environment(self, name):
+        # Operands given on the command line take priority over environment variables.
+        self.operand_environment = name
+
     def set_operand_help_text(self, text):
         self.operand_text = text
 
@@ -392,7 +533,9 @@ class ArgHelper:
                 self.args[obj.label] = True
             if not obj.multiple:
                 if obj.strict_single and len(self.raw_args[obj.label]) > 1:
-                    self.errors.append("Cannot have multiple %s values." % colour_text(obj.label))
+                    self.errors.append(
+                        "Cannot have multiple %s values." % colour_text(obj.label)
+                    )
                 else:
                     value = self.convert_value(self.raw_args[obj.label][-1], obj)
                     if value is not None:
@@ -407,15 +550,54 @@ class ArgHelper:
                 value = self.convert_value(self.raw_args[obj.label][-1], obj)
                 if value is not None:
                     self.args[obj.label] = value
-        for m in [self.opts_by_label[o].label for o in self.opts_by_label if self.opts_by_label[o].required and o not in self.raw_args]:
+        # Fall back to environment variables for options not given on the command line,
+        #   converting them the same way as command line values.
+        for label, obj in self.opts_by_label.items():
+            if not obj.environment or label in self.raw_args or label in self.args:
+                continue
+            raw_values = self.get_environment_values(obj.environment, obj.multiple)
+            if not raw_values:
+                continue
+            if not obj.has_arg:
+                if raw_values[-1].lower() in ENV_FLAG_TRUE:
+                    self.args[label] = True
+                elif raw_values[-1].lower() not in ENV_FLAG_FALSE:
+                    self.errors.append(
+                        "Unrecognized %s value for %s: %s"
+                        % (
+                            colour_text(obj.environment),
+                            colour_text(label),
+                            colour_text(raw_values[-1]),
+                        )
+                    )
+            elif obj.multiple:
+                self.args[label] = []
+                for i in raw_values:
+                    value = self.convert_value(i, obj)
+                    if value is not None:
+                        self.args[label].append(value)
+            else:
+                value = self.convert_value(raw_values[-1], obj)
+                if value is not None:
+                    self.args[label] = value
+        if self.operand_environment and not self.operands:
+            self.operands = self.get_environment_values(self.operand_environment, True)
+        for m in [
+            self.opts_by_label[o].label
+            for o in self.opts_by_label
+            if self.opts_by_label[o].required
+            and o not in self.raw_args
+            and o not in self.args
+        ]:
             self.errors.append("Missing %s value." % colour_text(m))
         for v in self.validators:
             r = v(self)
             if r:
                 if isinstance(r, list):
-                    self.errors.extend(r) # Append all list items
+                    self.errors.extend(r)  # Append all list items
                 else:
-                    self.errors.append(r) # Assume that this is a string.
+                    self.errors.append(r)  # Assume that this is a string.
+
 
 class OptArg:
 
@@ -435,13 +617,21 @@ class OptArg:
         else:
             s = "  %s <%s>: %s" % (opt, self.label, desc)
 
-        if self.environment:
-            s += " (Environment Variable: %s)" % colour_text(self.environment)
-
+        notes = []
         if self.default_announce:
             # Manually going to defaults table allows this core module
             # to have its help display reflect retroactive changes to defaults.
-            s += " (Default: %s)" % colour_text(self.args.defaults.get(self.label), self.default_colour)
+            notes.append(
+                "Default: %s"
+                % colour_text(self.args.defaults.get(self.label), self.default_colour)
+            )
+        if self.environment:
+            notes.append(
+                "Environment: %s"
+                % self.args.describe_environment(self.environment, self.multiple)
+            )
+        if notes:
+            s += " (%s)" % ", ".join(notes)
         return s
 
     def get_printout_usage(self, opt):
@@ -455,28 +645,117 @@ class OptArg:
         else:
             return " [%s]" % s
 
+
 args = ArgHelper()
 
 # Short opts
 args.add_opt(OPT_TYPE_FLAG, "v", TITLE_VERBOSE, "Verbose output.")
 # Short flags
-args.add_opt(OPT_TYPE_SHORT, "T", TITLE_TIMEOUT, "Read socket timeout (default: %s)." % colour_text(DEFAULT_TIMEOUT), converter = int, default = DEFAULT_TIMEOUT)
-args.add_opt(OPT_TYPE_SHORT, "a", TITLE_ALLOW, "Add network address or CIDR range to whitelist.", multiple = True)
-args.add_opt(OPT_TYPE_SHORT, "A", TITLE_ALLOW_FILE, "Add addresses or CIDR ranges in file to whitelist.", multiple = True)
-args.add_opt(OPT_TYPE_SHORT, "b", TITLE_BIND, "Address to bind to (Default: %s)." % colour_text(DEFAULT_BIND, COLOUR_GREEN), default = DEFAULT_BIND)
-args.add_opt(OPT_TYPE_SHORT, "d", TITLE_DENY, "Add network address or CIDR range to blacklist.", multiple = True)
-args.add_opt(OPT_TYPE_SHORT, "D", TITLE_DENY_FILE, "Add addresses or CIDR ranges in file to blacklist.", multiple = True)
-args.add_opt(OPT_TYPE_SHORT, "p", TITLE_PORT, "Specify server bind port (Default: %s)." % colour_text(DEFAULT_PORT), converter = int, default = DEFAULT_PORT)
+args.add_opt(
+    OPT_TYPE_SHORT,
+    "T",
+    TITLE_TIMEOUT,
+    "Read socket timeout (default: %s)." % colour_text(DEFAULT_TIMEOUT),
+    converter=int,
+    default=DEFAULT_TIMEOUT,
+)
+args.add_opt(
+    OPT_TYPE_SHORT,
+    "a",
+    TITLE_ALLOW,
+    "Add network address or CIDR range to whitelist.",
+    multiple=True,
+)
+args.add_opt(
+    OPT_TYPE_SHORT,
+    "A",
+    TITLE_ALLOW_FILE,
+    "Add addresses or CIDR ranges in file to whitelist.",
+    multiple=True,
+)
+args.add_opt(
+    OPT_TYPE_SHORT,
+    "b",
+    TITLE_BIND,
+    "Address to bind to (Default: %s)." % colour_text(DEFAULT_BIND, COLOUR_GREEN),
+    default=DEFAULT_BIND,
+)
+args.add_opt(
+    OPT_TYPE_SHORT,
+    "d",
+    TITLE_DENY,
+    "Add network address or CIDR range to blacklist.",
+    multiple=True,
+)
+args.add_opt(
+    OPT_TYPE_SHORT,
+    "D",
+    TITLE_DENY_FILE,
+    "Add addresses or CIDR ranges in file to blacklist.",
+    multiple=True,
+)
+args.add_opt(
+    OPT_TYPE_SHORT,
+    "p",
+    TITLE_PORT,
+    "Specify server bind port (Default: %s)." % colour_text(DEFAULT_PORT),
+    converter=int,
+    default=DEFAULT_PORT,
+)
 
-args.add_opt(OPT_TYPE_SHORT, "c", TITLE_SSL_CERT, "SSL certificate file path (PEM format). Can also contain the SSL key.")
+args.add_opt(
+    OPT_TYPE_SHORT,
+    "c",
+    TITLE_SSL_CERT,
+    "SSL certificate file path (PEM format). Can also contain the SSL key.",
+)
 args.add_opt(OPT_TYPE_SHORT, "k", TITLE_SSL_KEY, "SSL key file path (PEM format).")
+args.add_opt(
+    OPT_TYPE_LONG_FLAG,
+    "self-signed",
+    TITLE_SSL_SELF_SIGNED,
+    "Serve over SSL using a self-signed certificate generated at startup.",
+)
 
 # Long flags
-args.add_opt(OPT_TYPE_LONG, "user-agent", TITLE_USER_AGENT, "Regular expression to match user agents. When this option is in use, the client must match at least one provided pattern.", multiple = True)
-args.add_opt(OPT_TYPE_LONG, "auth-limit", TITLE_AUTH_LIMIT, "Number of attempts allowed within lockout period (0 for unlimited attempts).", converter = int, default = DEFAULT_AUTH_LIMIT, default_announce = True)
-args.add_opt(OPT_TYPE_LONG, "auth-timeout", TITLE_AUTH_TIMEOUT, "Login attempts timeout in seconds (0 for unlimited).", converter = int, default = DEFAULT_AUTH_TIMEOUT, default_announce = True)
-for default, title in [(DEFAULT_AUTH_PROMPT, TITLE_AUTH_PROMPT), ("", TITLE_USER), ("", TITLE_PASSWORD)]:
-    args.add_opt(OPT_TYPE_LONG, title, title, "Specify authentication %s." % title, default = default)
+args.add_opt(
+    OPT_TYPE_LONG,
+    "user-agent",
+    TITLE_USER_AGENT,
+    "Regular expression to match user agents. When this option is in use, the client must match at least one provided pattern.",
+    multiple=True,
+)
+args.add_opt(
+    OPT_TYPE_LONG,
+    "auth-limit",
+    TITLE_AUTH_LIMIT,
+    "Number of attempts allowed within lockout period (0 for unlimited attempts).",
+    converter=int,
+    default=DEFAULT_AUTH_LIMIT,
+    default_announce=True,
+)
+args.add_opt(
+    OPT_TYPE_LONG,
+    "auth-timeout",
+    TITLE_AUTH_TIMEOUT,
+    "Login attempts timeout in seconds (0 for unlimited).",
+    converter=int,
+    default=DEFAULT_AUTH_TIMEOUT,
+    default_announce=True,
+)
+for default, title in [
+    (DEFAULT_AUTH_PROMPT, TITLE_AUTH_PROMPT),
+    ("", TITLE_USER),
+    ("", TITLE_PASSWORD),
+]:
+    args.add_opt(
+        OPT_TYPE_LONG,
+        title,
+        title,
+        "Specify authentication %s." % title,
+        default=default,
+    )
+
 
 def validate_common_arguments(self):
     errors = []
@@ -486,7 +765,10 @@ def validate_common_arguments(self):
         errors.append("Port must be 0-65535. Given: %s" % colour_text(port))
 
     if self[TITLE_TIMEOUT] <= 0:
-        errors.append("Timeout must be a positive value. Given: %s" % colour_text(self.args[TITLE_PORT]))
+        errors.append(
+            "Timeout must be a positive value. Given: %s"
+            % colour_text(self.args[TITLE_PORT])
+        )
 
     for label in [TITLE_SSL_CERT, TITLE_SSL_KEY]:
         path = self[label]
@@ -494,7 +776,16 @@ def validate_common_arguments(self):
             errors.append("%s not found: %s" % (label, colour_text(path, COLOUR_GREEN)))
 
     if TITLE_SSL_KEY in self.args and not TITLE_SSL_CERT in self.args:
-        errors.append("%s path provided, but no %s path was provided." % (TITLE_SSL_KEY, TITLE_SSL_CERT))
+        errors.append(
+            "%s path provided, but no %s path was provided."
+            % (TITLE_SSL_KEY, TITLE_SSL_CERT)
+        )
+
+    if self[TITLE_SSL_SELF_SIGNED] and TITLE_SSL_CERT in self.args:
+        errors.append(
+            "Cannot use both a %s path and a %s certificate."
+            % (TITLE_SSL_CERT, TITLE_SSL_SELF_SIGNED)
+        )
 
     if self[TITLE_AUTH_LIMIT] < 0:
         errors.append('Auth limit must be greater than or equal to 0.')
@@ -502,16 +793,24 @@ def validate_common_arguments(self):
         errors.append('Auth timeout must be greater than or equal to 0.')
 
     if TITLE_USER in self or TITLE_PASSWORD in self:
-        authentication_stores.append(SimpleAuthStore(self[TITLE_USER], self[TITLE_PASSWORD]))
+        authentication_stores.append(
+            SimpleAuthStore(self[TITLE_USER], self[TITLE_PASSWORD])
+        )
     else:
         if TITLE_AUTH_LIMIT in self.args:
-            print_warning("Auth limit specified, but no authentication credentials were specified.")
+            print_warning(
+                "Auth limit specified, but no authentication credentials were specified."
+            )
         if TITLE_AUTH_TIMEOUT in self.args:
-            print_warning("Auth timeout specified, but no authentication credentials were specified.")
+            print_warning(
+                "Auth timeout specified, but no authentication credentials were specified."
+            )
 
     return errors
 
+
 args.add_validator(validate_common_arguments)
+
 
 def validate_blacklists(self):
     for i in self[TITLE_ALLOW]:
@@ -521,25 +820,117 @@ def validate_blacklists(self):
     for i in self[TITLE_DENY]:
         access.add_blacklist(i)
     for i in self[TITLE_DENY_FILE]:
-        access.load_whitelist_file(i)
+        access.load_blacklist_file(i)
 
     return access.errors
+
+
 args.add_validator(validate_blacklists)
+
 
 def validate_common_directory(self):
     directory = get_target()
     if not os.path.isdir(directory):
-        return "Path %s does not seem to exist." % colour_text(os.path.realpath(directory), COLOUR_GREEN)
+        return "Path %s does not seem to exist." % colour_text(
+            os.path.realpath(directory), COLOUR_GREEN
+        )
+
+
+# Symbolic link restrictions.
+# Opt-in for scripts that serve content out of the target directory.
+
+TITLE_LOCAL_LINKS = "locallinks"
+TITLE_NO_LINKS = "nolinks"
+
+# Target directory as given and as resolved, recorded during argument
+#   validation in case a script changes directories before serving.
+link_roots = []
+
+
+def add_link_arguments():
+    args.add_opt(
+        OPT_TYPE_FLAG,
+        "l",
+        TITLE_LOCAL_LINKS,
+        "Only show local links (symbolic links that point to within the shared directory).",
+    )
+    args.add_opt(
+        OPT_TYPE_FLAG,
+        "n",
+        TITLE_NO_LINKS,
+        "Do not allow symbolic links. Overrides local links.",
+    )
+    args.add_validator(validate_link_roots)
+
+
+def validate_link_roots(self):
+    directory = get_target()
+    link_roots[:] = [os.path.abspath(directory), os.path.realpath(directory)]
+
+
+def announce_link_arguments():
+    if args[TITLE_NO_LINKS]:
+        print_notice("Ignoring all symbolic links.")
+    elif args[TITLE_LOCAL_LINKS]:
+        print_notice("Serving only local symbolic links.")
+
+
+def is_within_target(path):
+    root = os.path.realpath(get_target()) if not link_roots else link_roots[1]
+    real_path = os.path.realpath(path)
+    return real_path == root or real_path.startswith(root.rstrip('/') + '/')
+
+
+def link_allowed(path):
+    """Judge whether the symbolic link at path may be followed."""
+    if args[TITLE_NO_LINKS]:
+        return False
+    if args[TITLE_LOCAL_LINKS]:
+        return is_within_target(path)
+    return True
+
+
+def path_allowed(path):
+    """Judge whether a path within the target directory may be served,
+    considering every symbolic link between the target directory and the path."""
+    if args[TITLE_NO_LINKS]:
+        roots = link_roots or [
+            os.path.abspath(get_target()),
+            os.path.realpath(get_target()),
+        ]
+        current = os.path.normpath(os.path.abspath(path))
+        # Walk upwards until reaching the target directory, which may itself be a link.
+        while current not in roots:
+            if os.path.islink(current):
+                return False
+            parent = os.path.dirname(current)
+            if parent == current:
+                # Reached the filesystem root without passing through the target directory.
+                return False
+            current = parent
+        return True
+    if args[TITLE_LOCAL_LINKS]:
+        return is_within_target(path)
+    return True
+
 
 # End option definitions
 
-def announce_common_arguments(verb = "Hosting content"):
+
+def announce_common_arguments(verb="Hosting content"):
 
     bind_address, bind_port, directory = get_target_information()
     directory = os.path.realpath(directory)
 
     if verb:
-        print_notice("%s in %s on %s" % (verb, colour_text(directory, COLOUR_GREEN), colour_text("%s:%d" % (bind_address, bind_port), COLOUR_GREEN)))
+        print_notice(
+            "%s in %s on %s"
+            % (
+                verb,
+                colour_text(directory, COLOUR_GREEN),
+                colour_text("%s:%d" % (bind_address, bind_port), COLOUR_GREEN),
+            )
+        )
 
     if args[TITLE_VERBOSE]:
         print_notice("Extra information shall also be printed.")
@@ -550,10 +941,21 @@ def announce_common_arguments(verb = "Hosting content"):
     for label, title in [("certificate", TITLE_SSL_CERT), ("key", TITLE_SSL_KEY)]:
         path = args[title]
         if path:
-            print_notice("SSL %s file: %s" % (label, colour_text(os.path.realpath(path), COLOUR_GREEN)))
+            print_notice(
+                "SSL %s file: %s"
+                % (label, colour_text(os.path.realpath(path), COLOUR_GREEN))
+            )
+
+    if args[TITLE_SSL_SELF_SIGNED]:
+        print_notice(
+            "SSL enabled with a self-signed certificate. Browsers will warn that it is not trusted."
+        )
 
     if args[TITLE_USER]:
-        print_notice("Basic authentication enabled (User: %s)" % colour_text(args.get(TITLE_USER, "<EMPTY>")))
+        print_notice(
+            "Basic authentication enabled (User: %s)"
+            % colour_text(args.get(TITLE_USER, "<EMPTY>"))
+        )
 
         timeout_wording = "infinite"
         if args[TITLE_AUTH_TIMEOUT]:
@@ -565,12 +967,14 @@ def announce_common_arguments(verb = "Hosting content"):
     for ua in args[TITLE_USER_AGENT]:
         print_notice("Whitelisted user agent pattern: %s" % colour_text(ua))
 
+
 ENCODING = 'utf-8'
+
 
 def convert_bytes(string_data):
 
     if isinstance(string_data, bytes):
-        return string_data # Already bytes
+        return string_data  # Already bytes
     if isinstance(string_data, list):
         return [convert_bytes(i) for i in data]
 
@@ -578,10 +982,50 @@ def convert_bytes(string_data):
         return bytes(string_data, ENCODING)
     return bytes(string_data)
 
+
+# Paths are kept as native strings. In Python 3, os.listdir() and friends
+#   carry non-UTF-8 bytes as surrogate escapes, and these helpers keep those
+#   bytes intact through URL quoting. Python 2 paths are byte strings that
+#   quote()/unquote() already round-trip.
+if sys.version_info[0] >= 3:
+
+    def quote_path(path):
+        return quote(path, errors='surrogateescape')
+
+    def unquote_path(path):
+        return unquote(path, errors='surrogateescape')
+
+    def display_name(name):
+        """Make a filesystem name printable, replacing undecodable bytes."""
+        return name.encode(ENCODING, 'surrogateescape').decode(ENCODING, 'replace')
+
+else:
+
+    def quote_path(path):
+        return quote(path)
+
+    def unquote_path(path):
+        return unquote(path)
+
+    def display_name(name):
+        """Make a filesystem name printable, replacing undecodable bytes."""
+        return name.decode(ENCODING, 'replace').encode(ENCODING)
+
+
+def header_list_from_text(src):
+    """Header (name, value) pairs in order, repeated names kept."""
+    items = []
+    for l in [l for l in re.split("\r?\n", str(src)) if l]:
+        key, sep, value = l.partition(":")
+        if sep:
+            items.append((key, value.strip()))
+    return items
+
+
 def convert_str(data):
 
     if isinstance(data, str):
-        return data # Already a string
+        return data  # Already a string
     if isinstance(data, list):
         return [convert_str(i) for i in data]
 
@@ -589,14 +1033,164 @@ def convert_str(data):
         return str(data, ENCODING)
     return str(data)
 
-DEFAULT_TARGET = os.getcwd() # Most implementations consider the target to be the current directory. Override if this is not the case.
+
+DEFAULT_TARGET = (
+    os.getcwd()
+)  # Most implementations consider the target to be the current directory. Override if this is not the case.
+
+
 def get_target():
     return args.last_operand(DEFAULT_TARGET)
+
 
 def get_target_information():
     return (args[TITLE_BIND], args[TITLE_PORT], get_target())
 
-def serve(handler, change_directory = False, data = None):
+
+def create_ssl_context(certfile, keyfile=None):
+    # ssl.wrap_socket() was removed in Python 3.12, so always go through an SSLContext.
+    context = ssl.SSLContext(getattr(ssl, "PROTOCOL_TLS_SERVER", ssl.PROTOCOL_SSLv23))
+    context.load_cert_chain(certfile, keyfile)
+    return context
+
+
+def create_self_signed_ssl_context(bind_address):
+    # Names that the certificate is valid for.
+    names = []
+    for name in [
+        socket.gethostname(),
+        socket.getfqdn(),
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        bind_address,
+    ]:
+        if name and name not in names and name not in ("0.0.0.0", "::"):
+            names.append(name)
+
+    # The certificate only needs to exist on disk long enough to be loaded.
+    temp_dir = tempfile.mkdtemp(prefix="ssl-self-signed-")
+    try:
+        os.chmod(temp_dir, 0o700)
+        certfile = os.path.join(temp_dir, "cert.pem")
+        keyfile = os.path.join(temp_dir, "key.pem")
+        generate_self_signed_certificate(certfile, keyfile, names)
+
+        with open(certfile) as f:
+            fingerprint = (
+                hashlib.sha256(ssl.PEM_cert_to_DER_cert(f.read())).hexdigest().upper()
+            )
+        print_notice(
+            "Self-signed certificate names: %s"
+            % ", ".join([colour_text(n, COLOUR_GREEN) for n in names])
+        )
+        print_notice(
+            "Self-signed certificate SHA-256 fingerprint: %s"
+            % colour_text(
+                ":".join(
+                    [fingerprint[i : i + 2] for i in range(0, len(fingerprint), 2)]
+                )
+            )
+        )
+
+        return create_ssl_context(certfile, keyfile)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def generate_self_signed_certificate(certfile, keyfile, names, days=365):
+    # Prefer the 'cryptography' package, falling back to the openssl command if it is not installed.
+    try:
+        import datetime, ipaddress
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.x509.oid import NameOID
+    except ImportError:
+        generate_self_signed_certificate_openssl(certfile, keyfile, names, days)
+        return
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, names[0])])
+    alt_names = [
+        x509.IPAddress(ipaddress.ip_address(n)) if is_ip_address(n) else x509.DNSName(n)
+        for n in names
+    ]
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=5))
+        .not_valid_after(now + datetime.timedelta(days=days))
+        .add_extension(x509.SubjectAlternativeName(alt_names), critical=False)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+
+    with open(keyfile, "wb") as f:
+        f.write(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
+    with open(certfile, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+
+def generate_self_signed_certificate_openssl(certfile, keyfile, names, days):
+    alt_names = ",".join(
+        [("IP:%s" if is_ip_address(n) else "DNS:%s") % n for n in names]
+    )
+    command = [
+        "openssl",
+        "req",
+        "-x509",
+        "-newkey",
+        "ec",
+        "-pkeyopt",
+        "ec_paramgen_curve:prime256v1",
+        "-nodes",
+        "-sha256",
+        "-days",
+        str(days),
+        "-subj",
+        "/CN=%s" % names[0],
+        "-addext",
+        "subjectAltName=%s" % alt_names,
+        "-keyout",
+        keyfile,
+        "-out",
+        certfile,
+    ]
+    try:
+        subprocess.check_output(command, stderr=subprocess.STDOUT)
+    except OSError:
+        raise Exception(
+            "Unable to generate a self-signed certificate: Install either the 'cryptography' Python package or the openssl command."
+        )
+    except subprocess.CalledProcessError as e:
+        raise Exception(
+            "Unable to generate a self-signed certificate with openssl: %s"
+            % e.output.decode(errors="replace").strip()
+        )
+
+
+def is_ip_address(value):
+    for family in (socket.AF_INET, socket.AF_INET6):
+        try:
+            socket.inet_pton(family, value)
+            return True
+        except (socket.error, ValueError):
+            pass
+    return False
+
+
+def serve(handler, change_directory=False, data=None):
     bind_address, bind_port, directory = get_target_information()
     server = None
     try:
@@ -605,9 +1199,13 @@ def serve(handler, change_directory = False, data = None):
         server.data = data
 
         if args[TITLE_SSL_CERT]:
-            keyfile = os.path.realpath(args[TITLE_SSL_KEY])
-            certfile = os.path.realpath(args[TITLE_SSL_CERT])
-            server.socket = ssl.wrap_socket(server.socket, server_side=True, keyfile=args[TITLE_SSL_KEY], certfile=args[TITLE_SSL_CERT])
+            server.socket = create_ssl_context(
+                args[TITLE_SSL_CERT], args[TITLE_SSL_KEY]
+            ).wrap_socket(server.socket, server_side=True)
+        elif args[TITLE_SSL_SELF_SIGNED]:
+            server.socket = create_self_signed_ssl_context(bind_address).wrap_socket(
+                server.socket, server_side=True
+            )
 
         if change_directory:
             os.chdir(directory)
@@ -624,7 +1222,7 @@ def serve(handler, change_directory = False, data = None):
         if re.match(r'^\[SSL\] PEM lib', str(e)):
             # '[SSL] PEM lib (_ssl.c:2798)' is super-unhelpful, so we will provide our own error message.
             # Unconfirmed: Is a missing key the only that can cause this?
-            m+= "Must specify a key file or a cert file that also contains a key."
+            m += "Must specify a key file or a cert file that also contains a key."
         else:
             # Append regular error message
             m += str(e)
@@ -632,6 +1230,7 @@ def serve(handler, change_directory = False, data = None):
     except Exception as e:
         print_exception(e)
         exit(1)
+
 
 # Default error message template
 DEFAULT_ERROR_MESSAGE = """<html>
@@ -655,22 +1254,35 @@ ATTR_FILE_PATH = 'file_path'
 ATTR_HEADERS = 'headers'
 ATTR_COMMAND = 'command'
 
-class CoreHttpServer(BaseHTTPRequestHandler, object):
+
+class CoreHttpServer(StreamRequestHandler, object):
 
     server_version = "CoreHttpServer"
+    sys_version = "Python/" + sys.version.split()[0]
+    protocol_version = "HTTP/1.0"
+    default_request_version = "HTTP/0.9"
     alive = True
+
+    # Placeholder until parse_request() reads the real request line.
+    requestline = ""
 
     # (Kludgy) responses to specific problems without overriding an entire method.
     log_on_send_error = False
 
     error_message_format = DEFAULT_ERROR_MESSAGE
+    error_content_type = "text/html;charset=%s" % ENCODING
+    MessageClass = HTTPMessage
+    responses = HTTP_RESPONSES
 
     def __init__(self, request, client_address, server):
         self.request = request
         self.client_address = client_address
         self.server = server
+        # StreamRequestHandler.setup() applies this to the connection.
+        self.timeout = args[TITLE_TIMEOUT]
         self.setup()
         self.request_sane = False
+        self._headers_buffer = []
 
     def check_authentication(self):
 
@@ -692,7 +1304,9 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         if auth_limit and auth_timeout and have_record:
             # Clean expired attempts from storage.
             t = time.time()
-            trimmed_attempts = [x for x in self.server.attempts[client] if x + auth_timeout >= t]
+            trimmed_attempts = [
+                x for x in self.server.attempts[client] if x + auth_timeout >= t
+            ]
             if trimmed_attempts:
                 self.server.attempts[client] = trimmed_attempts
             else:
@@ -724,12 +1338,12 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
                 self.server.attempts[client] = [time.time()]
         return success
 
-    def copyobj(self, src, dst, outgoing = True):
+    def copyobj(self, src, dst, outgoing=True):
         if not src:
             return
 
         while self.alive:
-            buf = src.read(16*1024)
+            buf = src.read(16 * 1024)
             if not (buf and self.alive):
                 break
             dst.write(convert_bytes(buf))
@@ -739,6 +1353,17 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
 
         self.alive = False
         src.close()
+
+    def date_time_string(self, timestamp=None):
+        """Return the current (or given) time formatted for a message header."""
+        return formatdate(timestamp, usegmt=True)
+
+    def end_headers(self):
+        """Send the blank line ending the MIME headers, then flush buffered headers."""
+        if self.headers_enabled():
+            self._headers_buffer.append(b"\r\n")
+        self.wfile.write(b"".join(self._headers_buffer))
+        self._headers_buffer = []
 
     def invoke(self, method):
         """Serve a request."""
@@ -753,25 +1378,26 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
                 self.send_error(500)
 
     extensions_map = mimetypes.types_map.copy()
-    extensions_map.update({
-        '': 'application/octet-stream', # Default
-        '.py': 'text/plain',
-        '.c': 'text/plain',
-        '.h': 'text/plain',
-        })
+    extensions_map.update(
+        {
+            '': 'application/octet-stream',  # Default
+            '.py': 'text/plain',
+            '.c': 'text/plain',
+            '.h': 'text/plain',
+        }
+    )
 
     def get_command(self):
         return getattr(self, ATTR_COMMAND, "GET")
 
     def get_header_dict(self, src):
         d = CaselessDict()
-
-        for l in [l for l in re.split("\r?\n", str(src)) if l]:
-            items = l.split(":")
-            if items[1:]:
-                d[items[0]] = ":".join(items[1:]).strip()
-
+        for key, value in self.get_header_list(src):
+            d[key] = value
         return d
+
+    def get_header_list(self, src):
+        return header_list_from_text(src)
 
     def guess_type(self, path):
         """Guess the type of a file.
@@ -787,7 +1413,14 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         base, ext = posixpath.splitext(path)
         if ext in self.extensions_map:
             return self.extensions_map[ext]
-        return self.extensions_map.get(ext.lower(), '')
+        return self.extensions_map.get(ext.lower(), self.extensions_map[''])
+
+    def headers_enabled(self):
+        """HTTP/0.9 responses carry no status line or headers.
+
+        An unknown version (request line not parsed yet) still gets headers.
+        """
+        return getattr(self, ATTR_REQUEST_VERSION, None) != "HTTP/0.9"
 
     def handle_one_request(self):
         """Handle a single HTTP request.
@@ -814,7 +1447,11 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
             # Implementation-specific header parsing
             # Check for high-priority information that is necessary before we
             #   potentially slam the door in the client's face.
-            for m in [getattr(self, m) for m in dir(self) if m.startswith('parse_preauth_header_')]:
+            for m in [
+                getattr(self, m)
+                for m in dir(self)
+                if m.startswith('parse_preauth_header_')
+            ]:
                 if not m():
                     return
 
@@ -822,7 +1459,9 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
                 return self.send_error(401, args[TITLE_AUTH_PROMPT])
 
             # Implementation-specific header parsing
-            for m in [getattr(self, m) for m in dir(self) if m.startswith('parse_header_')]:
+            for m in [
+                getattr(self, m) for m in dir(self) if m.startswith('parse_header_')
+            ]:
                 if not m():
                     return
 
@@ -839,14 +1478,15 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         except socket.timeout:
             # a read or a write timed out.  Discard this connection
             self.close_connection = 1
-            return self.send_error(408, "Data timeout (%s seconds)" % args[TITLE_TIMEOUT])
+            return self.send_error(
+                408, "Data timeout (%s seconds)" % args[TITLE_TIMEOUT]
+            )
 
     def log_date_time_string(self):
         """Return the current time formatted for logging."""
         now = time.time()
         year, month, day, hh, mm, ss, x, y, z = time.localtime(now)
-        return "%04d-%02d-%02d %02d:%02d:%02d" % (
-                year, month, day, hh, mm, ss)
+        return "%04d-%02d-%02d %02d:%02d:%02d" % (year, month, day, hh, mm, ss)
 
     def log_message(self, fmt, *values):
         """Log an arbitrary message.
@@ -863,15 +1503,14 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         Modified to have a bit more colour, as Apache-style logging was not deemed a requirement for this script.
         """
 
-        if type(values[0]) == int:
-            # Errors may be presented as tuples starting with error code as int.
-            # Do not bother printing extra information on error codes in a new line.
+        words = values[0].split()
+        if (
+            values[1] == '404'
+            and len(words) > 1
+            and words[1].lower().endswith("favicon.ico")
+        ):
+            # Do not bother printing not-found information on favicon.ico.
             return
-        else:
-            words = values[0].split()
-            if values[1] == '404' and len(words) > 1 and words[1].lower().endswith("favicon.ico"):
-                # Do not bother printing not-found information on favicon.ico.
-                return
 
         http_code_colour = COLOUR_RED
         extra_info = ''
@@ -895,32 +1534,45 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         if user:
             extra_info = "[User: %s]%s" % (colour_text(user), extra_info)
 
-        # Does address string match the client address? If not, print both.
-        s = self.address_string()
         footer = ""
+        request_items = values[0].split(" ")
 
         # A 400 (bad request) error is more likely to contain corrupted information.
         # A likely cause of a bad request is a non-HTTP protocol being used (e.g. HTTPS, SSH).
         # We do not want to print this information, so we will be overwriting our values tuple.
         if response_code == 400 and not self.request_sane:
             values = (colour_text("BAD REQUEST", COLOUR_RED), response_code, values[2])
-        else:
-            # Non-400 response.
-            # ToDo: account for possible index error here...
-            request_items = values[0].split(" ")
-            original_values = values
-            values = (" ".join([request_items[0], colour_text(request_items[1], COLOUR_GREEN), request_items[2]]), values[1], values[2])
+        elif len(request_items) == 3:
+            # Full "<command> <path> <version>" request line.
+            # Anything shorter (HTTP/0.9, or an error before the request line
+            #   was read) is printed as-is.
+            values = (
+                " ".join(
+                    [
+                        request_items[0],
+                        colour_text(request_items[1], COLOUR_GREEN),
+                        request_items[2],
+                    ]
+                ),
+                values[1],
+                values[2],
+            )
 
             if args[TITLE_VERBOSE]:
-                user_agent = self.headers.get("User-Agent")
+                user_agent = getattr(self, ATTR_HEADERS, CaselessDict()).get(
+                    "User-Agent"
+                )
                 if user_agent:
-                    footer=" (User Agent: %s)" % colour_text(user_agent.strip())
+                    footer = " (User Agent: %s)" % colour_text(user_agent.strip())
 
-        trailer = "[%s][%s]%s: %s%s\n" % (colour_text(self.log_date_time_string(), COLOUR_BOLD), colour_text(values[1], http_code_colour), extra_info, values[0], footer)
+        trailer = "[%s][%s]%s: %s%s\n" % (
+            colour_text(self.log_date_time_string(), COLOUR_BOLD),
+            colour_text(values[1], http_code_colour),
+            extra_info,
+            values[0],
+            footer,
+        )
         src = "%s " % colour_text(self.client_address[0], COLOUR_GREEN)
-
-        if s != self.client_address[0]:
-            src += "(%s)" % colour_text(s, COLOUR_GREEN)
 
         # When a a proxy such as Squid or Apache forwards information,
         # (ProxyPass/ProxyPassReverse directives for Apache),
@@ -928,7 +1580,9 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         # Trust this value as the true client address if it regexes to an IPv4 address.
         proxy_src = None
         proxy_steps = []
-        forward_spec = getattr(self, ATTR_HEADERS, CaselessDict()).get("X-Forwarded-For")
+        forward_spec = getattr(self, ATTR_HEADERS, CaselessDict()).get(
+            "X-Forwarded-For"
+        )
 
         if forward_spec:
             forward_components = [c.strip() for c in forward_spec.split(",")]
@@ -940,7 +1594,9 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
             # As a fallback, try the 'Forwarded' header put forward by RFC 7239.
 
             try:
-                forward_spec = getattr(self, ATTR_HEADERS, CaselessDict()).get("Forwarded")
+                forward_spec = getattr(self, ATTR_HEADERS, CaselessDict()).get(
+                    "Forwarded"
+                )
                 forward_addr = forward_spec.split(";")[2].split("=")[1]
                 if forward_addr and re.match(REGEX_INET4, forward_addr):
                     proxy_src = forward_addr
@@ -973,6 +1629,12 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         sys.stdout.write("%s%s" % (src, trailer))
         sys.stdout.flush()
 
+    def log_request(self, code='-', size='-'):
+        """Log an accepted request.
+        This is called by send_response().
+        """
+        self.log_message('"%s" %s %s', self.requestline, str(code), str(size))
+
     def quote_html(self, html):
         return html.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -984,19 +1646,20 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         """
         # abandon query parameters
 
-        items = raw_path.split('?',1)
+        items = raw_path.split('?', 1)
 
         get = {}
         if len(items) > 1:
             get = parse_qs(items[1])
 
-        items = items[0].split('#',1)
+        items = items[0].split('#', 1)
 
         section = ''
         if len(items) > 1:
             section = items[1]
 
-        path = posixpath.normpath(unquote(items[0]))
+        # surrogateescape keeps non-UTF-8 bytes, so that such names on disk stay reachable.
+        path = posixpath.normpath(unquote_path(items[0]))
 
         words = [_f for _f in path.split('/') if _f]
         self.base_directory = file_path = os.getcwd()
@@ -1005,7 +1668,8 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         for word in words:
             drive, word = os.path.splitdrive(word)
             head, word = os.path.split(word)
-            if word in (os.curdir, os.pardir): continue
+            if word in (os.curdir, os.pardir):
+                continue
 
             file_path = os.path.join(file_path, word)
             path = os.path.join(path, word)
@@ -1020,48 +1684,65 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         self.file_path = file_path
         self.get = get
 
+    def parse_preauth_header_access(self):
+        # Sorts first among parse_preauth_header_* methods, so filtered
+        #   clients are turned away before anything else is considered.
+        if not access.is_allowed(self.client_address[0]):
+            return self.send_error(403, "Access Denied")
+        return True
+
     def parse_preauth_header_agent(self):
         if not args[TITLE_USER_AGENT]:
             return True
         # At least one match is present
         user_agent = self.headers.get('User-Agent')
         if not user_agent:
-            return send_error(403)
+            return self.send_error(403)
 
         for p in args[TITLE_USER_AGENT]:
             user_agent_match = re.search(p, user_agent)
             if user_agent_match:
                 return True
         # Was not able to find a match
-        return send_error(403)
+        return self.send_error(403)
 
     def parse_preauth_header_connection(self):
         # Examine the headers and look for a Connection directive
         conntype = self.headers.get('Connection', '')
         if conntype.lower() == 'close':
             self.close_connection = 1
-        elif (conntype.lower() == 'keep-alive' and self.protocol_version >= "HTTP/1.1"):
+        elif conntype.lower() == 'keep-alive' and self.protocol_version >= "HTTP/1.1":
             self.close_connection = 0
         return True
 
     def parse_preauth_header_user_authorization(self):
+
+        if not authentication_stores:
+            # Not ours to judge. A proxied upstream may expect any scheme.
+            return True
 
         value = getattr(self, ATTR_HEADERS, CaselessDict())["Authorization"]
         if not value:
             return True
 
         # Store bad-header response in a central place
-        response_bad = lambda : self.send_error(400, 'Bad Authorization Header')
+        response_bad = lambda: self.send_error(400, 'Bad Authorization Header')
 
         raw_creds = value.split()
+        if raw_creds and raw_creds[0].lower() != 'basic':
+            # Another scheme carries no credentials for us, which fails as 401.
+            return True
         if not raw_creds or len(raw_creds) < 2:
             # Incorrect credential format.
             return response_bad()
 
         # Decode
         try:
-            creds_list = convert_str(convert_bytes(base64.b64decode(raw_creds[1])).split(convert_bytes(":")))
-        except TypeError as e:
+            creds_list = convert_str(
+                convert_bytes(base64.b64decode(raw_creds[1])).split(convert_bytes(":"))
+            )
+        except (TypeError, ValueError):
+            # binascii.Error (bad padding or characters) is a ValueError.
             return response_bad()
 
         if len(creds_list) < 2:
@@ -1081,7 +1762,13 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         error is sent back.
         """
 
-        self.requestline = convert_str((getattr(self, ATTR_RAW_RLINE, None) or "").rstrip(convert_bytes('\r\n')))
+        raw_line = (getattr(self, ATTR_RAW_RLINE, None) or "").rstrip(convert_bytes('\r\n'))
+        try:
+            self.requestline = convert_str(raw_line)
+        except UnicodeDecodeError:
+            # A request line must be ASCII. Keep a printable copy for logging.
+            self.requestline = raw_line.decode('latin-1')
+            return self.send_error(400, "Bad request line encoding")
         words = self.requestline.split()
 
         if len(words) == 3:
@@ -1111,11 +1798,12 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
             if version_number >= (1, 1) and self.protocol_version >= "HTTP/1.1":
                 self.close_connection = 0
             if version_number >= (2, 0):
-                return self.send_error(505,
-                          "Invalid HTTP Version (%s)" % base_version_number)
+                return self.send_error(
+                    505, "Invalid HTTP Version (%s)" % base_version_number
+                )
         elif len(words) == 2:
             command, path = words
-            version = "HTTP/0.9" # Assume 0.9
+            version = "HTTP/0.9"  # Assume 0.9
             self.close_connection = 1
             if command != 'GET':
                 return self.send_error(400, "Bad HTTP/0.9 request type (%s)" % command)
@@ -1132,12 +1820,26 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         except FileNotFoundError:
             return self.send_error(404)
 
+        if '\0' in self.file_path:
+            # Python 2 os.path functions raise on NUL rather than returning False.
+            return self.send_error(400, "Bad request path")
+
         # Parsing into a case-insensitive dictionary for simplicity.
-        if sys.version_info[0] == 2:
-            self.headers = self.get_header_dict(self.MessageClass(self.rfile, 0))
+        if version == "HTTP/0.9":
+            # HTTP/0.9 requests have no headers, do not wait for any.
+            mc = ""
+        elif sys.version_info[0] == 2:
+            mc = self.MessageClass(self.rfile, 0)
         else:
-            mc = http.client.parse_headers(self.rfile, _class=self.MessageClass).__str__()
-            self.headers = self.get_header_dict(mc)
+            mc = http.client.parse_headers(
+                self.rfile, _class=self.MessageClass
+            ).__str__()
+        # Ordered list with repeats for scripts that relay headers (proxy.py),
+        #   case-insensitive dictionary for everything else.
+        self.header_list = self.get_header_list(mc)
+        self.headers = CaselessDict()
+        for key, value in self.header_list:
+            self.headers[key] = value
 
         return True
 
@@ -1172,8 +1874,9 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
 
         content = ""
         for text, link in base_parts + path_parts:
+            text = self.quote_html(display_name(text))
             if link:
-                content += "/<a href='%s'>%s</a>" % (link, text)
+                content += "/<a href='%s'>%s</a>" % (quote_path(link), text)
             else:
                 content += "/%s" % text
         return content
@@ -1183,13 +1886,17 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         Separation of tasks in standard __init__
         """
         try:
-            self.handle()
+            # Handle requests until one of them marks the connection for closing.
+            self.close_connection = 1
+            self.handle_one_request()
+            while not self.close_connection:
+                self.handle_one_request()
         finally:
             self.finish()
 
     def send_common_headers(self, mimetype, length):
-        encoding = sys.getfilesystemencoding()
-        self.send_header("Content-Type", "%s; charset=%s" % (mimetype, encoding))
+        # Match the encoding used by convert_bytes() in serve_content_prepare().
+        self.send_header("Content-Type", "%s; charset=%s" % (mimetype, ENCODING))
         self.send_header("Content-Length", str(length))
 
     def send_error(self, code, message=None):
@@ -1208,19 +1915,16 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         if message is None:
             message = short_msg
 
-        self.log_error("code %d, message %s", code, message)
-
         f = None
         length = 0
 
         try:
             # using _quote_html to prevent Cross Site Scripting attacks (see bug #1100201)
-            if(code >= 200 and
-                code not in (
-                    204, # No Content
-                    205, # Reset Content
-                    304  # Not Modified
-                )):
+            if code >= 200 and code not in (
+                204,  # No Content
+                205,  # Reset Content
+                304,  # Not Modified
+            ):
 
                 self.send_response(code, message)
                 self.send_header('Connection', 'close')
@@ -1229,7 +1933,11 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
 
                 self.send_header("Content-Type", self.error_content_type)
 
-                content = self.error_message_format % {'code': code, 'message': self.quote_html(message), 'explain': long_msg}
+                content = self.error_message_format % {
+                    'code': code,
+                    'message': self.quote_html(message),
+                    'explain': long_msg,
+                }
                 f, length = self.serve_content_prepare(content)
                 self.send_header('Content-Length', str(length))
 
@@ -1242,9 +1950,27 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
             pass
 
         if self.log_on_send_error:
-            self.log_message('"%s" %s %s', getattr(self, 'requestline', '???'), code, message)
+            self.log_message(
+                '"%s" %s %s', getattr(self, 'requestline', '???'), code, message
+            )
 
         return False
+
+    def send_header(self, keyword, value):
+        """Buffer a MIME header, to be written out by end_headers()."""
+        if self.headers_enabled():
+            self.buffer_header_line("%s: %s\r\n" % (keyword, value))
+
+        if keyword.lower() == 'connection':
+            if value.lower() == 'close':
+                self.close_connection = 1
+            elif value.lower() == 'keep-alive':
+                self.close_connection = 0
+
+    def buffer_header_line(self, line):
+        if not isinstance(line, bytes):
+            line = line.encode('latin-1', 'strict')
+        self._headers_buffer.append(line)
 
     def send_redirect(self, target):
         # redirect browser - doing basically what apache does
@@ -1253,7 +1979,19 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         self.end_headers()
         return None
 
-    def serve_content(self, content = None, code = 200, mimetype = "text/html"):
+    def send_response(self, code, message=None):
+        """Log the response, then buffer the status line and the Server/Date headers."""
+        self.log_request(code)
+        if self.headers_enabled():
+            if message is None:
+                message = self.responses.get(code, ('',))[0]
+            self.buffer_header_line(
+                "%s %d %s\r\n" % (self.protocol_version, code, message)
+            )
+        self.send_header('Server', "%s %s" % (self.server_version, self.sys_version))
+        self.send_header('Date', self.date_time_string())
+
+    def serve_content(self, content=None, code=200, mimetype="text/html"):
 
         f, length = self.serve_content_prepare(content)
         self.send_response(code)
@@ -1266,12 +2004,10 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         if not content:
             return None, 0
 
-        f = StringIO()
-        f.write(content)
-        length = f.tell()
-        f.seek(0)
-
-        return f, length
+        # Measure content in bytes rather than characters, so that
+        #   Content-Length and Range requests are correct for non-ASCII content.
+        data = convert_bytes(content)
+        return BytesIO(data), len(data)
 
     def serve_file(self, path):
 
@@ -1294,7 +2030,7 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         self.end_headers()
         return f
 
-    def translate_path(self, path, include_cwd = True):
+    def translate_path(self, path, include_cwd=True):
         """Translate a /-separated PATH to the local filename syntax.
         Components that mean special things to the local file system
         (e.g. drive or directory names) are ignored.  (XXX They should
@@ -1303,8 +2039,8 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         SimpleHttpServer implementation.
         """
         # abandon query parameters
-        path = path.split('?',1)[0]
-        path = path.split('#',1)[0]
+        path = path.split('?', 1)[0]
+        path = path.split('#', 1)[0]
         # Reminder: The use of posixpath.normpath accounts for
         # potential malicious crafted request paths.
         path = posixpath.normpath(unquote(path))
@@ -1320,9 +2056,11 @@ class CoreHttpServer(BaseHTTPRequestHandler, object):
         for word in words:
             drive, word = os.path.splitdrive(word)
             head, word = os.path.split(word)
-            if word in (os.curdir, os.pardir): continue
+            if word in (os.curdir, os.pardir):
+                continue
             path = os.path.join(path, word)
         return path
+
 
 class CaselessDict(dict):
     # Case-insensitive dictionary.
@@ -1330,7 +2068,7 @@ class CaselessDict(dict):
     # Made some extra adjustments to the original concept because I wanted to
     #   have my cake and eat it too by not modifying any stored keys.
     # This particular version also makes the assumption all stored values will be strings.
-    def __init__(s, src = None):
+    def __init__(s, src=None):
         if src:
             for k in list(src.keys()):
                 s[k] = src[k]
@@ -1346,7 +2084,7 @@ class CaselessDict(dict):
                 del s[old]
         super(CaselessDict, s).__setitem__(key, val.strip())
 
-    def get(s, key, default = ""):
+    def get(s, key, default=""):
         # Get the first (and hopefully only) key match.
         keys = [k for k in list(s.keys()) if k.lower() == key.lower()]
         if not keys:
@@ -1355,9 +2093,10 @@ class CaselessDict(dict):
 
     __getitem__ = get
 
+
 class NetAccess:
     # Basic IPv4 CIDR syntax check
-    REGEX_INET4_CIDR= r'^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
+    REGEX_INET4_CIDR = r'^(([0-9]){1,3}\.){3}([0-9]{1,3})\/[0-9]{1,2}$'
 
     def __init__(self):
         self.errors = []
@@ -1387,22 +2126,36 @@ class NetAccess:
         return self.add_access(self.allowed_addresses, self.allowed_networks, candidate)
 
     def announce_filter_actions(self):
-        for action, address_list, network_list in [("Allowing", self.allowed_addresses, self.allowed_networks), ("Denying", self.denied_addresses, self.denied_networks)]:
+        for action, address_list, network_list in [
+            ("Allowing", self.allowed_addresses, self.allowed_networks),
+            ("Denying", self.denied_addresses, self.denied_networks),
+        ]:
             l = []
             l.extend([("address", s, i) for n, s, i in address_list])
-            l.extend([("network", s, s) for n, s in network_list])
+            l.extend([("network", s, s) for s, n, b in network_list])
 
             for title, ip, address in l:
                 if ip == address:
-                    print_notice("%s %s: %s" % (action, title, colour_text(address, COLOUR_GREEN)))
+                    print_notice(
+                        "%s %s: %s"
+                        % (action, title, colour_text(address, COLOUR_GREEN))
+                    )
                 else:
-                    print_notice("%s %s: %s (%s)" % (action, title, colour_text(address, COLOUR_GREEN), colour_text(ip, COLOUR_GREEN)))
+                    print_notice(
+                        "%s %s: %s (%s)"
+                        % (
+                            action,
+                            title,
+                            colour_text(address, COLOUR_GREEN),
+                            colour_text(ip, COLOUR_GREEN),
+                        )
+                    )
 
     # Credit for initial IP functions: http://code.activestate.com/recipes/66517/
 
     def ip_strton(self, ip):
         # Convert decimal dotted quad string integer
-        a,b,c,d = struct.unpack('BBBB', socket.inet_aton(ip))
+        a, b, c, d = struct.unpack('BBBB', socket.inet_aton(ip))
         return (a << 24) + (b << 16) + (c << 8) + d
 
     def ip_validate_address(self, candidate):
@@ -1410,7 +2163,9 @@ class NetAccess:
             ip = socket.gethostbyname(candidate)
             return (True, self.ip_strton(ip), ip)
         except socket.gaierror:
-            self.errors.append("Unable to resolve: %s" % colour_text(candidate, COLOUR_GREEN))
+            self.errors.append(
+                "Unable to resolve: %s" % colour_text(candidate, COLOUR_GREEN)
+            )
             return (False, None, None)
 
     def ip_validate_cidr(self, candidate):
@@ -1424,7 +2179,9 @@ class NetAccess:
                 return (True, ip, 32 - m)
         except socket.gaierror:
             pass
-        self.errors.append("Invalid CIDR address: %s" % colour_text(candidate, COLOUR_GREEN))
+        self.errors.append(
+            "Invalid CIDR address: %s" % colour_text(candidate, COLOUR_GREEN)
+        )
         return (False, None, None)
 
     def is_allowed(self, address):
@@ -1462,7 +2219,10 @@ class NetAccess:
 
     def load_access_file(self, fn, path, header):
         if not os.path.isfile(path):
-            self.errors.append("Path to %s file does not exist: %s" % (header, colour_text(path, COLOUR_GREEN)))
+            self.errors.append(
+                "Path to %s file does not exist: %s"
+                % (header, colour_text(path, COLOUR_GREEN))
+            )
             return False
         with open(path) as f:
             for l in f.readlines():
@@ -1473,6 +2233,7 @@ class NetAccess:
 
     def load_whitelist_file(self, path):
         return self.load_access_file(self.add_whitelist, path, "whitelist")
+
 
 class SimpleAuthStore:
     def __init__(self, user, password):
@@ -1486,9 +2247,11 @@ class SimpleAuthStore:
             return AUTH_BAD_PASSWORD
         return AUTH_BAD_NOT_FOUND
 
-class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+
+class ThreadedHTTPServer(ThreadingMixIn, TCPServer):
     """Handle requests in a separate thread."""
 
+    allow_reuse_address = True
     attempts = {}
     requests = {}
     alive = True
@@ -1500,8 +2263,6 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
             return
 
         req = self.RequestHandlerClass(request, client_address, self)
-        if sys.version_info[0] == 2:
-            req.rfile._sock.settimeout(args[TITLE_TIMEOUT])
 
         self.requests[client_address] = req
         req.run()
@@ -1511,6 +2272,7 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
         self.alive = False
         for client_address in list(self.requests.keys()):
             self.requests[client_address].alive = False
+
 
 access = NetAccess()
 authentication_stores = []
