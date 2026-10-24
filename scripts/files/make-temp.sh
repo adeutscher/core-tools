@@ -1,21 +1,7 @@
 #!/bin/bash
 
-#set -x
-
-# Commands
-readonly DATE=/bin/date
-readonly EGREP=/bin/egrep
-readonly LN="/bin/ln -s"
-readonly LS=/bin/ls
-readonly MKDIR="/bin/mkdir -p"
-readonly MV=/bin/mv
-readonly READLINK="/bin/readlink -f"
-readonly RM=/bin/rm
-readonly RMDIR=/bin/rmdir
-readonly SED=/bin/sed
-readonly TAIL=/usr/bin/tail
-readonly TOUCH=/bin/touch
-readonly TR=/usr/bin/tr
+# Pattern for daily temp directory names (e.g. 2026-10-19-monday).
+readonly DATE_DIR_REGEX='^[0-9]{4}(-[0-9]{2}){2}(-[a-z]+day)?$'
 
 # Common message functions.
 
@@ -25,30 +11,31 @@ if [ -t 1 ]; then
     GREEN='\033[1;32m'
     RED='\033[1;31m'
     YELLOW='\033[1;93m'
-    BOLD='\033[1m'
     NC='\033[0m' # No Color
 fi
 
 error(){
-    printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+    printf "$RED"'Error'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "$0")" "$@" >&2
 }
 
 notice(){
-    printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+    [ -n "$QUIET" ] && return 0
+    printf "$BLUE"'Notice'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "$0")" "$@"
 }
 
 success(){
-    printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+    printf "$GREEN"'Success'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "$0")" "$@"
 }
 
 warning(){
-    printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename $0)" "$@"
+    printf "$YELLOW"'Warning'"$NC"'['"$GREEN"'%s'"$NC"']: %s\n' "$(basename "$0")" "$@" >&2
 }
 
 # Script functions
 
 usage(){
-    notice "$(printf "Usage: ./$GREEN%s$NC [-h] [-d temp-dir] [-l last-temp-link] [-c temp-link] [-w working-directory]" "$(basename $0)")"
+    # Printed directly so that usage is still shown in quiet mode.
+    printf "Usage: ./$GREEN%s$NC [-h] [-q] [-d temp-dir] [-l last-temp-link] [-c temp-link] [-w working-directory]\n" "$(basename "$0")"
 }
 
 options(){
@@ -61,15 +48,14 @@ options(){
     LASTTEMPLINK=./last-temp
     WORKINGDIRECTORY=$HOME
 
-    while [ -n "$1" ]; do
-        local opt=$1
-        case "$opt" in
+    while [ $# -gt 0 ]; do
+        case "$1" in
         "-d")
             shift
             if [ -z "$1" ]; then
                 usage
                 exit 1
-            elif grep -q '^-' <<< "$1"; then
+            elif [[ $1 == -* ]]; then
                 error "$(printf "Invalid directory name: $GREEN%s$NC" "$1")"
                 exit 2
             fi
@@ -80,13 +66,10 @@ options(){
             if [ -z "$1" ]; then
                 usage
                 exit 1
-            elif [ ! -d "$(dirname $1)" ]; then
-                error "$(printf "Parent directory for current temp link does not exist: $GREEN%s$NC" "$(dirname $1)")"
-                exit 2
-            elif grep -q '^-' <<< "$1"; then
+            elif [[ $1 == -* ]]; then
                 error "$(printf "Invalid directory name: $GREEN%s$NC" "$1")"
                 exit 3
-            elif grep -q '^/' <<< "$1"; then
+            elif [[ $1 == /* ]]; then
                 warning "$(printf "Setting the current temp link to the absolute path of $GREEN%s$NC." "$1")"
                 warning "This means that this link will not work properly if the filesystem is mounted remotely."
             fi
@@ -97,13 +80,10 @@ options(){
             if [ -z "$1" ]; then
                 usage
                 exit 1
-            elif [ ! -d "$(dirname $1)" ]; then
-                error "$(printf "Parent directory for current temp link does not exist: $GREEN%s$NC" "$(dirname $1)")"
-                exit 2
-            elif grep -q '^-' <<< "$1"; then
+            elif [[ $1 == -* ]]; then
                 error "$(printf "Invalid directory name: $GREEN%s$NC" "$1")"
                 exit 3
-            elif grep -q '^/' <<< "$1"; then
+            elif [[ $1 == /* ]]; then
                 warning "$(printf "Setting the previous non-empty temp link to the absolute path of $GREEN%s$NC." "$1")"
                 warning "This means that this link will not work properly if the filesystem is mounted remotely."
             fi
@@ -111,15 +91,26 @@ options(){
             ;;
         "-w")
             shift
-            if [ ! -d "$1" ]; then
+            if [ -z "$1" ]; then
+                usage
+                exit 1
+            elif [ ! -d "$1" ]; then
                 error "$(printf "Working directory not found: $GREEN%s$NC" "$1")"
                 exit 1
             fi
             _WORKINGDIRECTORY=$1
             ;;
+        "-q")
+            QUIET=1
+            ;;
         "-h")
             usage
             exit 0
+            ;;
+        *)
+            error "$(printf "Unknown option: $GREEN%s$NC" "$1")"
+            usage
+            exit 1
             ;;
         esac
         shift
@@ -154,13 +145,33 @@ options(){
     fi
 }
 
+# Confirm that the parent directory of a link location exists.
+# Must be run from the working directory, since link paths are relative to it.
+check_link_parent(){
+    local label="$1"
+    local path="$2"
+    if [ ! -d "$(dirname "$path")" ]; then
+        error "$(printf "Parent directory for the %s does not exist: $GREEN%s$NC" "$label" "$(dirname "$path")")"
+        exit 2
+    fi
+}
+
 function make_temp {
 
-    cd "$WORKINGDIRECTORY"
+    if ! cd "$WORKINGDIRECTORY"; then
+        error "$(printf "Unable to enter working directory: $GREEN%s$NC" "$WORKINGDIRECTORY")"
+        exit 1
+    fi
 
-    CURRENT_DATE=$($DATE +"%F-%A" | $TR '[:upper:]' '[:lower:]')
+    check_link_parent "current temp link" "$TEMPLINK"
+    check_link_parent "previous temp link" "$LASTTEMPLINK"
+
+    # Use the C locale so that day names always match DATE_DIR_REGEX.
+    CURRENT_DATE=$(LC_ALL=C date +"%F-%A" | tr '[:upper:]' '[:lower:]')
 
     DAILYTEMPDIR="$TEMPDIR/$CURRENT_DATE"
+
+    local lastDir
 
     # Step 1: Clear out empty directories from the temporary directory.
     ## Empty folders just add to the confusion.
@@ -170,103 +181,103 @@ function make_temp {
 
     # Apply lock to guard current day's directory (if such a directory exists)
     if [ -d "$DAILYTEMPDIR/" ]; then
-        $TOUCH "$DAILYTEMPDIR/.rotate-lock"
+        touch "$DAILYTEMPDIR/.rotate-lock"
     fi
 
     # Step 1.5: Remove next/previous navigation links
-    while read __link; do
-        [ -n "${__link}" ] && ${RM} "${__link}"
-    done <<< "$(find "${TEMPDIR}" -type l -name next -o -type l -name previous 2> /dev/null | sort)"
+    ## Only look directly inside of each daily directory,
+    ##   so that links with the same names inside of temp content are left alone.
+    while IFS= read -r __link; do
+        [ -n "${__link}" ] && rm "${__link}"
+    done <<< "$(find "${TEMPDIR}" -mindepth 2 -maxdepth 2 -type l \( -name next -o -name previous \) 2> /dev/null | sort)"
 
     # Remove directories.
     # Soft delete. Will fail as intended if the directory has any contents.
-    $RMDIR "$TEMPDIR/"* 2> /dev/null
+    rmdir "$TEMPDIR/"* 2> /dev/null
 
     # Make sure that the temporary directory for the current day exists.
 
     if [ -d "$DAILYTEMPDIR/" ]; then
         # Remove lock, if it was placed.
         if [ -f "$DAILYTEMPDIR/.rotate-lock" ]; then
-            $RM "$DAILYTEMPDIR/.rotate-lock"
+            rm "$DAILYTEMPDIR/.rotate-lock"
         fi
     else # End 'directory exists' block.
         # Directory does not currently exist. Create directory.
-        $MKDIR -p "$DAILYTEMPDIR" 2> /dev/null
+        mkdir -p "$DAILYTEMPDIR" 2> /dev/null
 
         # If we have just created the daily temp dir, then this is a proper rotation
         #    (as opposed to a re-do on the same day.
 
         # Get the most recent temp folder that is NOT the current daily temp directory.
-        local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}(\-[a-z]{3,}day)?' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
+        lastDir="$(__last_dir)"
         # If static resources exist, carry them forward from the last directory to today.
-        if [ -d "$TEMPDIR/$lastDir/static/" ]; then
+        if [ -n "$lastDir" ] && [ -d "$TEMPDIR/$lastDir/static/" ]; then
 
             # Weak rmdir to make sure that the static directory isn't empty.
-            if ! $RMDIR "$TEMPDIR/$lastDir/static" 2> /dev/null; then
-                $MV "$TEMPDIR/$lastDir/static/" "$DAILYTEMPDIR/static/"
+            if ! rmdir "$TEMPDIR/$lastDir/static" 2> /dev/null; then
+                mv "$TEMPDIR/$lastDir/static/" "$DAILYTEMPDIR/static/"
                 # In case static/ was the only directory in the last temp/
                 # Weakly try to remove the last temp directory again.
-                $RMDIR "$TEMPDIR/$lastDir" 2> /dev/null
+                rmdir "$TEMPDIR/$lastDir" 2> /dev/null
             fi # End weak rmdir check
 
         fi # End static check
     fi # End 'temp directory did not exist' block
 
-    # If static resources exist, carry them forward from the last directory to today.
-    [ -d "$lastDir/static/" ] && $MV "$lastDir/static/" "$DAILYTEMPDIR/static/"
-
     ## Step 2: Update the link to the current temporary directory if necessary.
-    if [ ! -L "$TEMPLINK" ] || [[ $(__abs_path "$DAILYTEMPDIR") != "$($READLINK $TEMPLINK)" ]]; then
+    if [ ! -L "$TEMPLINK" ] || [[ "$(__abs_path "$DAILYTEMPDIR")" != "$(readlink -f "$TEMPLINK")" ]]; then
         # Temporary link doesn't exist
         # OR
         # Points to a different location.
-        $RM "$TEMPLINK" 2> /dev/null
+        rm "$TEMPLINK" 2> /dev/null
 
         # Make new temp link.
-        $LN "$DAILYTEMPDIR" "$TEMPLINK"
+        ln -s "$DAILYTEMPDIR" "$TEMPLINK"
     fi # End check to see if updating the current temporary directory link is necessary.
 
     # Step 3: Manage the link to our most recent temporary directory (other than the current day's directory).
     if [ -d "$TEMPDIR" ]; then
-        local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}(\-[a-z]{3,}day)?' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
+        lastDir="$(__last_dir)"
 
         # Make sure that the last dir doesn't only contain empty directories.
         # Very much doubt that I'll regret getting rid of a temp directory for its name alone.
         # Keep re-assigning lastDir until we find one with content.
-        while [ -n "$lastDir" ] && $RMDIR "$TEMPDIR/$lastDir/"* 2> /dev/null && $RMDIR "$TEMPDIR/$lastDir" 2> /dev/null; do
-            local lastDir=$($LS "$TEMPDIR" | $EGREP '[0-9]{4}(\-[0-9]{2}){2}(\-[a-z]{3,}day)?' | $SED '/^'$CURRENT_DATE'$/d' | $TAIL -n 1)
+        while [ -n "$lastDir" ] && rmdir "$TEMPDIR/$lastDir/"* 2> /dev/null && rmdir "$TEMPDIR/$lastDir" 2> /dev/null; do
+            lastDir="$(__last_dir)"
         done
 
         # Make sure that we aren't removing and re-adding the very same link.
-        if [ -n "$lastDir" ] && ([ ! -L "$LASTTEMPLINK" ] || [[ "$TEMPDIR/$lastDir" != "$($READLINK $LASTTEMPLINK)" ]]); then
-            $RM "$LASTTEMPLINK" 2> /dev/null
+        if [ -n "$lastDir" ] && { [ ! -L "$LASTTEMPLINK" ] || [[ "$(__abs_path "$TEMPDIR/$lastDir")" != "$(readlink -f "$LASTTEMPLINK")" ]]; }; then
+            rm "$LASTTEMPLINK" 2> /dev/null
             # Create link to previous directory if such a thing exists.
-            [ -d "$TEMPDIR/$lastDir" ] && $LN "$TEMPDIR/$lastDir" "$LASTTEMPLINK"
+            [ -d "$TEMPDIR/$lastDir" ] && ln -s "$TEMPDIR/$lastDir" "$LASTTEMPLINK"
         # End check to see if updating the previous temporary directory link is necessary.
-        elif [ -L "$LASTTEMPLINK" ] && [ ! -d "$(readlink "$LASTTEMPLINK")" ]; then
+        elif [ -L "$LASTTEMPLINK" ] && [ ! -e "$LASTTEMPLINK" ]; then
             # If there is NO candidate for a last temp link and the link currently exists as a dead link, then axe the link.
             rm "$LASTTEMPLINK"
             # The likely cause of this is that you've cleaned out the contents all of the non-current days, leaving empty directories.
         fi
     fi # End double-check to check if the container folder exists.
 
-    local __directories="$(find "${TEMPDIR}" -mindepth 1 -maxdepth 1 | grep -P "\/\d{4}(\-\d{2}){2}(-(mon|tues|wednes|thurs|fri|sat|sun)day)?$" | sort)"
+    local __directories
+    __directories="$(__date_dirs)"
 
     # Step 4: Create links to the next/previous directory.
     unset __previous_monitored
-    while read __current_directory; do
+    while IFS= read -r __current_directory; do
       [ -z "${__current_directory}" ] && continue
       if [ -n "${__previous_monitored}" ]; then
-        ${LN} "../$(basename "${__previous_monitored}")" "${__current_directory}/previous"
+        __nav_link "${__previous_monitored}" "${TEMPDIR}/${__current_directory}/previous"
       fi
       __previous_monitored="${__current_directory}"
     done <<< "${__directories}"
 
     unset __previous_monitored
-    while read __current_directory; do
+    while IFS= read -r __current_directory; do
       [ -z "${__current_directory}" ] && continue
       if [ -n "${__previous_monitored}" ]; then
-        ${LN} "../$(basename "${__previous_monitored}")" "${__current_directory}/next"
+        __nav_link "${__previous_monitored}" "${TEMPDIR}/${__current_directory}/next"
       fi
       __previous_monitored="${__current_directory}"
     done <<< "$(tac <<< "${__directories}")"
@@ -274,10 +285,29 @@ function make_temp {
 
 # Function to get absolute path without realpath command.
 __abs_path(){
-    cd "$1"
+    cd "$1" || return 1
     pwd -P
 }
 
-options $@
-make_temp
+# List the names of daily temp directories, oldest first.
+__date_dirs(){
+    find "$TEMPDIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2> /dev/null | grep -E "$DATE_DIR_REGEX" | sort
+}
 
+# Get the most recent daily temp directory that is NOT the current daily temp directory.
+__last_dir(){
+    __date_dirs | grep -vxF "$CURRENT_DATE" | tail -n 1
+}
+
+# Create a navigation link to a sibling daily directory.
+# Real content that already uses the link's name is left alone.
+__nav_link(){
+    if [ -e "$2" ] && [ ! -L "$2" ]; then
+        notice "$(printf "Not replacing existing content with a navigation link: $GREEN%s$NC" "$2")"
+        return 1
+    fi
+    ln -sfn "../$1" "$2"
+}
+
+options "$@"
+make_temp
