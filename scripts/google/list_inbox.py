@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
-import common,os,re,sys
+import common,os,sys
 common.local_files.append(os.path.realpath(__file__))
 
 ####################################################

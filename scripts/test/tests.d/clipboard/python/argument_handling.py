@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import common
+import common, os
 
 class ArgumentHandlingTests(common.TestCase):
 
@@ -280,3 +280,94 @@ class ArgumentHandlingTests(common.TestCase):
 
                     self.assertEmpty(self.errors)
                     self.assertEmpty(self.lines)
+
+    def setEnv(self, **values):
+        # Set environment variables for a single test, restoring old values afterwards.
+        for key, value in values.items():
+            self.addCleanup(self.restoreEnv, key, os.environ.get(key))
+            os.environ[key] = value
+
+    def restoreEnv(self, key, value):
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+    def test_env_flag(self):
+        for value, expected in [('1', True), ('YES', True), ('on', True), ('0', False), ('false', False), ('', False)]:
+            self.setEnv(TEST_ARG_FLAG=value)
+            args = self.mod.ArgHelper()
+            args.add_opt(self.mod.OPT_TYPE_FLAG, 'b', 'bool', 'A boolean flag.', environment='TEST_ARG_FLAG')
+
+            args.process([])
+            self.assertEqual(expected, args['bool'])
+            self.assertEmpty(self.errors)
+
+    def test_env_flag_bad(self):
+        self.setEnv(TEST_ARG_FLAG='maybe')
+        args = self.mod.ArgHelper()
+        args.add_opt(self.mod.OPT_TYPE_FLAG, 'b', 'bool', 'A boolean flag.', environment='TEST_ARG_FLAG')
+
+        with self.assertRaises(SystemExit) as ex:
+            args.process([])
+        self.assertEqual(1, ex.exception.code)
+        e = self.assertSingle(self.errors)
+        self.assertEqual('Unrecognized TEST_ARG_FLAG value for bool: maybe', e)
+
+    def test_env_multiple_numbered(self):
+        # Base name and numbered suffixes are all collected, in numeric order and despite gaps.
+        self.setEnv(TEST_ARG_MULTI='1', TEST_ARG_MULTI_10='5', TEST_ARG_MULTI_0='2', TEST_ARG_MULTI_02='4', TEST_ARG_MULTI_1='3', TEST_ARG_MULTI_X='99', TEST_ARG_MULTI_4='')
+        args = self.mod.ArgHelper()
+        args.add_opt(self.mod.OPT_TYPE_SHORT, 'i', 'int', 'An int.', converter=int, multiple=True, environment='TEST_ARG_MULTI')
+
+        args.process([])
+        self.assertEqual([1, 2, 3, 4, 5], args['int'])
+        self.assertEmpty(self.errors)
+
+    def test_env_multiple_numbered_only(self):
+        self.setEnv(TEST_ARG_MULTI_3='b', TEST_ARG_MULTI_0='a')
+        args = self.mod.ArgHelper()
+        args.add_opt(self.mod.OPT_TYPE_SHORT, 's', 'str', 'A string.', multiple=True, environment='TEST_ARG_MULTI')
+
+        args.process([])
+        self.assertEqual(['a', 'b'], args['str'])
+
+        # Command line values take priority.
+        args = self.mod.ArgHelper()
+        args.add_opt(self.mod.OPT_TYPE_SHORT, 's', 'str', 'A string.', multiple=True, environment='TEST_ARG_MULTI')
+        args.process(['-s', 'c'])
+        self.assertEqual(['c'], args['str'])
+        self.assertEmpty(self.errors)
+
+    def test_env_operands(self):
+        self.setEnv(TEST_ARG_OPERAND='a', TEST_ARG_OPERAND_1='c', TEST_ARG_OPERAND_0='b')
+        args = self.mod.ArgHelper()
+        args.set_operand_environment('TEST_ARG_OPERAND')
+
+        args.process([])
+        self.assertEqual(['a', 'b', 'c'], args.operands)
+
+        # Command line operands take priority.
+        args = self.mod.ArgHelper()
+        args.set_operand_environment('TEST_ARG_OPERAND')
+        args.process(['d'])
+        self.assertEqual(['d'], args.operands)
+        self.assertEmpty(self.errors)
+
+    def test_action_flag(self):
+        calls = []
+        args = self.mod.ArgHelper()
+        args.add_opt(self.mod.OPT_TYPE_LONG_FLAG, 'act', 'act', 'An action.', action=calls.append)
+        args.add_opt(self.mod.OPT_TYPE_SHORT, 'r', 'req', 'Required value.', required=True)
+
+        # Actions run before validation, so missing required values are not reported.
+        with self.assertRaises(SystemExit) as ex:
+            args.process(['--act'])
+        self.assertEqual(0, ex.exception.code)
+        self.assertEqual([args], calls)
+        self.assertEmpty(self.errors)
+
+    def test_action_flag_with_arg(self):
+        args = self.mod.ArgHelper()
+        with self.assertRaises(Exception):
+            args.add_opt(self.mod.OPT_TYPE_SHORT, 'a', 'act', 'An action.', action=lambda a: None)

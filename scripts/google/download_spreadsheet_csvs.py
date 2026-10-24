@@ -31,7 +31,7 @@ def export_csv(service, docid, filename_template='%(title)s - %(sheet)s.csv'):
 
     error_count = common.error_count # Note original error count
 
-    if docid and re.match("^https://docs.google.com/spreadsheets/d/", docid, re.IGNORECASE):
+    if docid and re.match(r"^https://docs.google.com/spreadsheets/d/", docid, re.IGNORECASE):
         docid = docid.split("/")[5]
 
     try:
