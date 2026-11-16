@@ -3,11 +3,12 @@
 from __future__ import print_function
 
 # General
-import getopt, os, random, re, sys, time
+import errno, getopt, os, random, re, sys, time
+from collections import deque
 
 # Networking
 import fcntl, select, socket, struct
-from select import EPOLLIN, EPOLLET, EPOLLONESHOT, EPOLLOUT
+from select import EPOLLERR, EPOLLHUP, EPOLLIN, EPOLLOUT
 
 #
 # Common Colours and Message Functions
@@ -723,6 +724,11 @@ TITLE_BALANCE_ROUND_ROBIN = "round-robin"
 TITLE_NO_RESPONSE = 'no-reply'
 TITLE_TARGET_PORT = 'target-port'
 
+TITLE_TUNNEL_SERVER = 'tunnel-server'
+TITLE_TUNNEL_PORT = 'tunnel-port'
+TITLE_TUNNEL_INTAKE = 'tunnel-intake'
+TITLE_LAZY_RECONNECT = 'lazy-reconnect'
+
 TITLE_ALLOW = 'allow address/range'
 TITLE_ALLOW_FILE = 'allow address/range file'
 TITLE_DENY = 'deny address/range'
@@ -734,14 +740,74 @@ TITLE_DOCKER_SKELETON_ENV = "docker-skeleton-env"
 DOCKER_SCRIPT_DIR = "/opt/relay"
 DOCKER_SERVICE = "udp-relay"
 
+# Largest datagram that will be read or relayed.
+BUFFER_SIZE = 65535
+# Datagrams waiting on a busy UDP socket. Anything past this is dropped.
+BACKLOG_LIMIT = 1024
+# Sessions with no traffic in either direction for this many seconds are closed.
+SESSION_TIMEOUT = 60
+
+# TCP Tunnel Protocol
+#
+# Each end of a tunnel connection opens by sending TUNNEL_HELLO. After that, each
+#   datagram is sent as a frame: a TUNNEL_HEADER (frame type, session ID, payload length)
+#   followed by the payload.
+# Session IDs are chosen by the intake end, one per UDP client. The tunnel server keeps
+#   a separate socket to its targets for each session ID on each connection.
+###
+
+TUNNEL_HELLO = b"UDPRELAY\x01"
+TUNNEL_HEADER = struct.Struct("!BIH")
+TUNNEL_FRAME_DATA = 1
+TUNNEL_FRAME_CLOSE = 2
+
+# Unsent tunnel data allowed to build up on a slow connection. Datagrams that would
+#   go past this are dropped, the same as they would be on a congested UDP path.
+TUNNEL_BUFFER_LIMIT = 4 * 1024 * 1024
+TUNNEL_READ_SIZE = 256 * 1024
+# Seconds allowed to connect and exchange TUNNEL_HELLO.
+TUNNEL_CONNECT_TIMEOUT = 10
+# Delay range in seconds between failed connection attempts. The delay doubles
+#   with each failure in a row.
+TUNNEL_RECONNECT_MIN = 1
+TUNNEL_RECONNECT_MAX = 30
+# Keepalive settings to notice a dead tunnel (e.g. a dropped NAT mapping) between
+#   datagrams. Options missing on this platform are skipped.
+TUNNEL_SOCKET_OPTIONS = [
+    ("TCP_KEEPIDLE", 30),
+    ("TCP_KEEPINTVL", 10),
+    ("TCP_KEEPCNT", 3),
+    ("TCP_USER_TIMEOUT", 60000),
+]
+
+
+def drain_backlog(sock, backlog):
+    # Send queued (data, addr) datagrams. Returns True once the backlog is empty.
+    while backlog:
+        try:
+            sock.sendto(*backlog[0])
+        except BlockingIOError:
+            return False
+        except OSError:
+            pass  # Undeliverable. Drop it like any other lost datagram.
+        backlog.popleft()
+    return True
+
+
+def send_datagram(sock, backlog, data, addr):
+    # Send a datagram, queueing it if the socket is busy.
+    # Returns True if the backlog needs to wait for the socket to be writable.
+    if len(backlog) < BACKLOG_LIMIT:
+        backlog.append((data, addr))
+    return not drain_backlog(sock, backlog)
+
 
 class UdpRelayServer:
 
     DEFAULT_BIND = "0.0.0.0"
     DEFAULT_PORT = 4444
     DEFAULT_TARGET_PORT = 4444
-
-    FLAGS = EPOLLET | EPOLLIN | EPOLLONESHOT
+    DEFAULT_TUNNEL_PORT = 4444
 
     def __init__(self):
 
@@ -778,7 +844,8 @@ class UdpRelayServer:
             OPT_TYPE_SHORT,
             "p",
             TITLE_PORT,
-            "Specify server bind port.",
+            "Specify UDP bind port. With --%s, UDP datagrams are only accepted if this is set."
+            % TITLE_TUNNEL_SERVER,
             converter=int,
             default=self.DEFAULT_PORT,
             default_announce=True,
@@ -788,7 +855,8 @@ class UdpRelayServer:
             OPT_TYPE_LONG,
             TITLE_TARGET_PORT,
             TITLE_TARGET_PORT,
-            'Specify default target port.',
+            'Specify default target port. With --%s, this is the default tunnel server port.'
+            % TITLE_TUNNEL_INTAKE,
             default=self.DEFAULT_TARGET_PORT,
             default_announce=True,
             environment="UDP_RELAY_TARGET_PORT",
@@ -822,6 +890,41 @@ class UdpRelayServer:
             TITLE_NO_RESPONSE,
             'Do not listen for any response from the target servers.',
             environment="UDP_RELAY_NO_REPLY",
+        )
+
+        # TCP tunnel options
+        args.add_opt(
+            OPT_TYPE_LONG_FLAG,
+            TITLE_TUNNEL_SERVER,
+            TITLE_TUNNEL_SERVER,
+            'Host the outbound end of a TCP tunnel, relaying datagrams from instances running with --%s to the targets.'
+            % TITLE_TUNNEL_INTAKE,
+            environment="UDP_RELAY_TUNNEL_SERVER",
+        )
+        args.add_opt(
+            OPT_TYPE_LONG,
+            TITLE_TUNNEL_PORT,
+            TITLE_TUNNEL_PORT,
+            'Specify TCP bind port for --%s.' % TITLE_TUNNEL_SERVER,
+            converter=int,
+            default=self.DEFAULT_TUNNEL_PORT,
+            default_announce=True,
+            environment="UDP_RELAY_TUNNEL_PORT",
+        )
+        args.add_opt(
+            OPT_TYPE_LONG_FLAG,
+            TITLE_TUNNEL_INTAKE,
+            TITLE_TUNNEL_INTAKE,
+            'Relay datagrams through TCP tunnels. Targets are instances running with --%s.'
+            % TITLE_TUNNEL_SERVER,
+            environment="UDP_RELAY_TUNNEL_INTAKE",
+        )
+        args.add_opt(
+            OPT_TYPE_LONG_FLAG,
+            TITLE_LAZY_RECONNECT,
+            TITLE_LAZY_RECONNECT,
+            'Do not reconnect a dropped tunnel until a datagram needs it. Tunnels still connect at startup. By default, tunnels are reconnected right away.',
+            environment="UDP_RELAY_LAZY_RECONNECT",
         )
 
         args.add_opt(
@@ -878,23 +981,61 @@ class UdpRelayServer:
 
         self.args = args
 
-        self.active_fds = set()
+        # Socket handlers by file descriptor. Each has a socket and a handle_event() method.
+        self.handlers = {}
         self.sessions = {}
+        self.sessions_by_sid = {}
+        self.tunnel_connections = set()
         self.targets = []
+        self._last_sid = 0
+
+    def close_session(s, session):
+        if s.verbose:
+            print_notice('Closing session: %s' % session)
+        del s.sessions[session.key]
+        session.close()
+
+    def get_target_random(s):
+        # Prefer targets that are not waiting out a failed tunnel connection.
+        return [random.choice([t for t in s.targets if t.is_available()] or s.targets)]
 
     def get_target_round_robin(s):
-        s._round_robin_index = (getattr(s, '_round_robin_index', -1) + 1) % len(
-            s.targets
-        )
-        return [s.targets[s._round_robin_index]]
+        for i in range(len(s.targets)):
+            s._round_robin_index = (getattr(s, '_round_robin_index', -1) + 1) % len(
+                s.targets
+            )
+            target = s.targets[s._round_robin_index]
+            if target.is_available():
+                break
+        # If nothing is available, settle for the next target in the rotation.
+        return [target]
 
     def init_server(self):
-        self.server_socket = self.new_socket()
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind((self.args[TITLE_BIND], self.port))
-
         self.epoll_socket = select.epoll()
-        self.epoll_socket.register(self.server_socket, EPOLLET | EPOLLIN | EPOLLONESHOT)
+        bind = self.args[TITLE_BIND]
+
+        try:
+            if self.udp_enabled:
+                sock = self.new_socket()
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind((bind, self.port))
+                self.watch(UdpListener(self, sock))
+
+            if self.tunnel_server:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind((bind, self.tunnel_port))
+                sock.listen(socket.SOMAXCONN)
+                sock.setblocking(False)
+                self.watch(TunnelListener(self, sock))
+        except OSError as e:
+            print_exception(e, 'binding to %s' % colour_blue(bind))
+            return False
+
+        # Tunnels connect at startup, even with lazy reconnection.
+        if self.tunnel_intake:
+            for t in self.targets:
+                t.connect()
 
         return True
 
@@ -925,6 +1066,19 @@ class UdpRelayServer:
         # Run through all options, not a loop.
         return False
 
+    def new_session(s, key, reply, label):
+        session = UdpRelaySession(s, key, reply, label)
+        s.sessions[key] = session
+        if session.sid is not None:
+            s.sessions_by_sid[session.sid] = session
+        if s.verbose:
+            print_notice('New session: %s' % session)
+        return session
+
+    def new_sid(s):
+        s._last_sid = (s._last_sid + 1) & 0xFFFFFFFF
+        return s._last_sid
+
     def new_socket(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -954,7 +1108,12 @@ class UdpRelayServer:
             "    ports:",
             "      # The container port must match UDP_RELAY_PORT (default: %d)."
             % self.DEFAULT_PORT,
+            "      # With UDP_RELAY_TUNNEL_SERVER, this is only used if UDP_RELAY_PORT is set.",
             '      - "%d:%d/udp"' % (self.DEFAULT_PORT, self.DEFAULT_PORT),
+            "      # For UDP_RELAY_TUNNEL_SERVER, the container port must match UDP_RELAY_TUNNEL_PORT (default: %d)."
+            % self.DEFAULT_TUNNEL_PORT,
+            '      # - "%d:%d/tcp"'
+            % (self.DEFAULT_TUNNEL_PORT, self.DEFAULT_TUNNEL_PORT),
             "    volumes:",
             "      - %s:%s/%s:ro"
             % (os.path.realpath(__file__), DOCKER_SCRIPT_DIR, script_name),
@@ -986,6 +1145,7 @@ class UdpRelayServer:
             "#   Numbered suffixes are read in numeric order after the base name, gaps are allowed.",
             "",
             "# Relay target, formatted as target[:port]. At least one target is required.",
+            "#   With UDP_RELAY_TUNNEL_INTAKE, targets are tunnel servers instead.",
             "#   Names resolve from inside the container, so 'localhost' is the container itself.",
             "#   %s" % self.describe_env_multiple(target_env),
             "%s=" % target_env,
@@ -1017,27 +1177,39 @@ class UdpRelayServer:
         if s.no_reply:
             print_notice('Not expecting or relaying any replies from target server(s).')
 
+        if s.tunnel_intake and s.lazy_reconnect:
+            print_notice(
+                'Dropped tunnels will only be reconnected when a datagram needs them.'
+            )
+
+        sources = []
+        if s.udp_enabled:
+            sources.append(
+                'UDP datagrams on %s' % colour_addr(s.args[TITLE_BIND], s.port)
+            )
+        if s.tunnel_server:
+            sources.append(
+                'tunnelled datagrams on TCP %s'
+                % colour_addr(s.args[TITLE_BIND], s.tunnel_port)
+            )
+        source = ' and '.join(sources)
+
         # Kick off initialization with target-seeking being 'All'-mode.
         # Will be adjusted later in this method if this is not the case.
         s.get_targets = lambda: s.targets
 
         if len(s.targets) == 1:
-            print_notice(
-                'Relaying UDP datagrams on %s to %s'
-                % (colour_addr(s.args[TITLE_BIND], s.port), s.get_targets()[0])
-            )
+            via = 'through the TCP tunnel at' if s.tunnel_intake else 'to'
+            print_notice('Relaying %s %s %s' % (source, via, s.get_targets()[0]))
 
         else:
+            hosts = 'TCP tunnels' if s.tunnel_intake else 'hosts'
             if s.args[TITLE_BALANCE_ALL]:
                 print_notice(
-                    'Relaying UDP datagrams on %s to all of the following hosts:'
-                    % colour_addr(s.args[TITLE_BIND], s.port)
+                    'Relaying %s to all of the following %s:' % (source, hosts)
                 )
             else:
-                print_notice(
-                    'Relaying UDP datagrams on %s to the following hosts:'
-                    % colour_addr(s.args[TITLE_BIND], s.port)
-                )
+                print_notice('Relaying %s to the following %s:' % (source, hosts))
 
             for t in s.targets:
                 print_notice('  * %s' % t)
@@ -1046,9 +1218,7 @@ class UdpRelayServer:
                 # Already initialized
                 pass
             elif s.args[TITLE_BALANCE_RANDOM]:
-                s.get_targets = lambda: [
-                    s.targets[random.randint(0, len(s.targets) - 1)]
-                ]
+                s.get_targets = s.get_target_random
             else:
                 # Default to round-robin
                 s.get_targets = s.get_target_round_robin
@@ -1063,7 +1233,7 @@ class UdpRelayServer:
                 )
             return port, None
         except ValueError:
-            return None, '%s is invalid. Given: ' % (label, colour_text(port))
+            return None, '%s is invalid. Given: %s' % (label, colour_text(value))
 
     def resolve_target_address(s, value):
         try:
@@ -1082,152 +1252,46 @@ class UdpRelayServer:
         if not self.init_server():
             return 1
 
-        sessions_by_addr = {}
-        sessions_by_fd = {}
-
-        active_sockets = []
-        backlog_server = []
-        server_fd = self.server_socket.fileno()
-
         try:
             while True:
-                events = self.epoll_socket.poll(1)
-
-                write_fds = set()
-
-                for fd, event in events:
-
-                    if fd == server_fd:
-                        if event & EPOLLIN:
-                            # New data from the client.
-                            try:
-                                while True:
-                                    data, addr = self.server_socket.recvfrom(10240)
-                                    if not self.access.is_allowed(addr[0]):
-                                        continue
-
-                                    # Get session by source tuple
-                                    session = sessions_by_addr.get(addr)
-                                    if not session:
-                                        # If a session does not exist, then create one
-                                        session = UdpRelaySession(self, addr)
-                                        sessions_by_addr[addr] = session
-                                        sessions_by_fd[session.socket.fileno()] = (
-                                            session
-                                        )
-
-                                        if not self.no_reply:
-                                            self.epoll_socket.register(
-                                                session.socket.fileno(), self.FLAGS
-                                            )
-                                            active_sockets.append(
-                                                session.socket.fileno()
-                                            )
-
-                                        if self.verbose:
-                                            print_notice('New session: %s' % session)
-
-                                    session.time = time.time()
-
-                                    for t in session.targets_addr:
-                                        try:
-                                            session.socket.sendto(data, t)
-                                        except BlockingIOError:
-                                            # Error writing a message from the relay to the target
-                                            write_fds.add(session.socket.fileno())
-                                            session.backlog.append((data, t))
-
-                                    session.running = not self.no_reply
-
-                            except BlockingIOError:
-                                pass
-
-                        if event & EPOLLOUT:
-                            # The server is able to write after previously running into troubles.
-                            try:
-                                while backlog_server:
-                                    self.server_socket.sendto(
-                                        backlog_server[0][0], backlog_server[0][1]
-                                    )
-                                    del backlog_server[0]
-                            # Error handling backlog from server to client
-                            except BlockingIOError:
-                                write_fds.add(fd)
-                    else:
-                        # Data from a target server
-                        session = sessions_by_fd.get(fd)
-                        session.time = time.time()
-
-                        if event & EPOLLIN:
-                            try:
-                                while True:
-                                    data, addr = session.socket.recvfrom(10240)
-
-                                    valid_sources = session.targets_addr
-
-                                    if addr not in valid_sources:
-                                        continue
-
-                                    if len(session.targets_addr) > 1:
-                                        session.target_addr = addr
-
-                                    try:
-                                        self.server_socket.sendto(data, session.addr)
-                                    except BlockingIOError:
-                                        # Error writing a reply from the relay to the client
-                                        backlog_server.append((data, session.addr))
-                                        write_fds.add(server_fd)
-
-                            except BlockingIOError:
-                                pass
-
-                        if event & EPOLLOUT:
-                            try:
-                                while session.backlog:
-                                    session.socket.sendto(
-                                        session.backlog[0][0], session.backlog[0][1]
-                                    )
-                                    del session.backlog[0]
-                            # Error handling session backlog
-                            except BlockingIOError:
-                                write_fds.add(fd)
-
-                    # Re-arm socket
-                    self.epoll_socket.modify(fd, self.FLAGS)
-
-                # Cleanup
-
-                # Specifically arm anything that ran into a send error to also listen for EPOLLOUT
-                for fd in write_fds:
-                    if fd in active_sockets:
-                        self.epoll_socket.modify(fd, self.FLAGS | EPOLLOUT)
-                    else:
-                        self.epoll_socket.register(fd, self.FLAGS | EPOLLOUT)
-
-                # Look for expired sessions and clean them up.
-                for session in [
-                    s
-                    for s in [sessions_by_fd[_fd] for _fd in sessions_by_fd.keys()]
-                    if s.is_closing()
-                ]:
-                    if self.verbose:
-                        print_notice('Closing session: %s' % session)
-                    del sessions_by_addr[session.addr]
-                    del sessions_by_fd[session.socket.fileno()]
-
-                    if session.socket.fileno() in active_sockets:
-                        self.epoll_socket.unregister(session.socket.fileno())
-                        active_sockets.remove(session.socket.fileno())
-
-                    session.socket.close()
+                for fd, event in self.epoll_socket.poll(1):
+                    # A handler may have been closed by an earlier event in the same batch.
+                    handler = self.handlers.get(fd)
+                    if handler:
+                        handler.handle_event(event)
+                self.tick()
 
         finally:
             self.shutdown()
         return 0
 
+    def set_events(s, handler, events):
+        s.epoll_socket.modify(handler.socket.fileno(), events)
+
     def shutdown(s):
+        for handler in list(s.handlers.values()):
+            handler.socket.close()
+        s.handlers.clear()
         s.epoll_socket.close()
-        s.server_socket.close()
+
+    def tick(s):
+        # Housekeeping, run on every pass of the main loop.
+        now = time.time()
+        for t in s.targets:
+            t.tick(now)
+        for c in list(s.tunnel_connections):
+            c.check(now)
+
+        # Look for expired sessions and clean them up.
+        for session in [x for x in s.sessions.values() if x.is_closing()]:
+            s.close_session(session)
+
+    def unwatch(s, handler):
+        # Must be called before closing the handler's socket.
+        fd = handler.socket.fileno()
+        if s.handlers.get(fd) is handler:
+            del s.handlers[fd]
+            s.epoll_socket.unregister(fd)
 
     def validate_access(self, args):
         a = self.access
@@ -1238,7 +1302,7 @@ class UdpRelayServer:
         for i in args[TITLE_DENY]:
             a.add_blacklist(i)
         for i in args[TITLE_DENY_FILE]:
-            a.load_whitelist_file(i)
+            a.load_blacklist_file(i)
         return a.errors
 
     def validate_common_arguments(self, args):
@@ -1246,10 +1310,45 @@ class UdpRelayServer:
         self.all = args[TITLE_BALANCE_ALL]
         self.verbose = args[TITLE_VERBOSE]
         self.no_reply = args[TITLE_NO_RESPONSE]
+        self.tunnel_server = args[TITLE_TUNNEL_SERVER]
+        self.tunnel_intake = args[TITLE_TUNNEL_INTAKE]
+        self.lazy_reconnect = args[TITLE_LAZY_RECONNECT]
+
+        # A plain relay always listens for UDP datagrams.
+        # A tunnel server only does so as well if a UDP port was explicitly given.
+        self.udp_enabled = not self.tunnel_server or TITLE_PORT in args
 
         self.port, port_error = self.resolve_port(args[TITLE_PORT], 'Bind port')
         if port_error:
             errors.append(port_error)
+
+        if self.tunnel_server:
+            self.tunnel_port, port_error = self.resolve_port(
+                args[TITLE_TUNNEL_PORT], 'Tunnel port'
+            )
+            if port_error:
+                errors.append(port_error)
+        elif TITLE_TUNNEL_PORT in args:
+            print_warning(
+                'Tunnel port given, but not hosting a tunnel server (--%s).'
+                % TITLE_TUNNEL_SERVER
+            )
+
+        if self.lazy_reconnect and not self.tunnel_intake:
+            print_warning(
+                'Lazy reconnection only applies to tunnel intakes (--%s).'
+                % TITLE_TUNNEL_INTAKE
+            )
+
+        # Local address that targets must not point back to.
+        local_addr = None
+        if self.tunnel_intake:
+            if self.tunnel_server:
+                local_addr = (args[TITLE_BIND], self.tunnel_port)
+        elif self.udp_enabled:
+            local_addr = (args[TITLE_BIND], self.port)
+
+        target_class = TunnelTarget if self.tunnel_intake else UdpRelayTarget
 
         for target_items in [t.split(':') for t in self.args.operands]:
 
@@ -1267,17 +1366,16 @@ class UdpRelayServer:
                     args[TITLE_TARGET_PORT], port_label
                 )
             if port_err:
-                errors.append(target_err)
+                errors.append(port_err)
 
             # Check for obvious loops
             # If there is a problem with the IP/port information from up above,
             # then we will not bother with this check because loop checking might give false positives.
             if (
-                not target_err
+                local_addr
+                and not target_err
                 and not port_err
-                and self.is_loop(
-                    (target_ip, target_port), (args[TITLE_BIND], args[TITLE_PORT])
-                )
+                and self.is_loop((target_ip, target_port), local_addr)
             ):
                 errors.append(
                     "Bad target (avoiding a potential loop): %s"
@@ -1286,7 +1384,7 @@ class UdpRelayServer:
 
             # Always append target, even if it's generated a number of errors.
             # On account of the errors, this instance of the script won't survive past argument handling.
-            self.targets.append(UdpRelayTarget(target_ip, target_port, target_addr))
+            self.targets.append(target_class(self, target_ip, target_port, target_addr))
 
         if not self.targets:
             errors.append('No relay target specified.')
@@ -1326,18 +1424,365 @@ class UdpRelayServer:
         if sys.version_info.major == 2:
             return 'This script currently only supports Python 3.'
 
+    def watch(s, handler, events=EPOLLIN):
+        fd = handler.socket.fileno()
+        s.handlers[fd] = handler
+        s.epoll_socket.register(fd, events)
+
+
+class UdpListener:
+    # Receives datagrams from UDP clients, and sends replies back to them.
+
+    def __init__(s, srv, sock):
+        s.srv = srv
+        s.socket = sock
+        s.backlog = deque()
+
+    def handle_event(s, event):
+        if event & EPOLLIN:
+            try:
+                while True:
+                    data, addr = s.socket.recvfrom(BUFFER_SIZE)
+                    if not s.srv.access.is_allowed(addr[0]):
+                        continue
+
+                    key = ('udp', addr)
+                    session = s.srv.sessions.get(key) or s.srv.new_session(
+                        key,
+                        lambda reply, addr=addr: s.send_to(reply, addr),
+                        colour_addr(addr[0], addr[1]),
+                    )
+                    session.send(data)
+            except BlockingIOError:
+                pass
+
+        if event & EPOLLOUT and drain_backlog(s.socket, s.backlog):
+            s.srv.set_events(s, EPOLLIN)
+
+    def send_to(s, data, addr):
+        if send_datagram(s.socket, s.backlog, data, addr):
+            s.srv.set_events(s, EPOLLIN | EPOLLOUT)
+
+
+class TunnelListener:
+    # Accepts connections from tunnel intakes.
+
+    def __init__(s, srv, sock):
+        s.srv = srv
+        s.socket = sock
+
+    def handle_event(s, event):
+        while True:
+            try:
+                sock, addr = s.socket.accept()
+            except BlockingIOError:
+                return
+            except OSError as e:
+                print_exception(e, 'accepting a tunnel connection')
+                return
+
+            if not s.srv.access.is_allowed(addr[0]):
+                if s.srv.verbose:
+                    print_notice(
+                        'Denied tunnel connection from %s'
+                        % colour_addr(addr[0], addr[1])
+                    )
+                sock.close()
+                continue
+
+            TunnelServerConnection(s.srv, sock, addr)
+
+
+class TunnelStream:
+    # Framed, non-blocking TCP stream. Shared by both ends of a tunnel.
+
+    def __init__(s, srv):
+        s.srv = srv
+        s.socket = None
+        s.connecting = False
+
+    def check(s, now):
+        if not s.socket:
+            return
+        if s.pending_error:
+            s.close(str(s.pending_error))
+        elif not s.hello_received and now - s.started > TUNNEL_CONNECT_TIMEOUT:
+            s.close('timed out waiting for the tunnel to open')
+
+    def disconnect(s):
+        s.srv.unwatch(s)
+        s.socket.close()
+        s.socket = None
+        s.connecting = False
+
+    def flush(s):
+        try:
+            while s.outbuf:
+                del s.outbuf[: s.socket.send(s.outbuf)]
+        except BlockingIOError:
+            pass
+        except OSError as e:
+            # Leave closing the connection to the event loop. This could have been
+            #   called in the middle of relaying for one of this connection's sessions.
+            s.pending_error = e
+            return
+
+        writing = bool(s.outbuf)
+        if writing != s.writing:
+            s.writing = writing
+            s.srv.set_events(s, EPOLLIN | (EPOLLOUT if writing else 0))
+
+    def handle_event(s, event):
+        if event & EPOLLOUT:
+            s.flush()
+        if s.socket and event & (EPOLLIN | EPOLLHUP | EPOLLERR):
+            s.read()
+        if s.socket and s.pending_error:
+            s.close(str(s.pending_error))
+
+    def parse(s):
+        if not s.hello_received:
+            size = min(len(s.inbuf), len(TUNNEL_HELLO))
+            if s.inbuf[:size] != TUNNEL_HELLO[:size]:
+                s.close('peer is not a compatible UDP relay tunnel')
+                return
+            if size < len(TUNNEL_HELLO):
+                return
+            del s.inbuf[:size]
+            s.hello_received = True
+            s.on_hello()
+
+        offset = 0
+        while len(s.inbuf) - offset >= TUNNEL_HEADER.size:
+            frame_type, sid, length = TUNNEL_HEADER.unpack_from(s.inbuf, offset)
+            start = offset + TUNNEL_HEADER.size
+            if len(s.inbuf) < start + length:
+                break  # Wait for the rest of the frame.
+            data = bytes(s.inbuf[start : start + length])
+            offset = start + length
+
+            if frame_type == TUNNEL_FRAME_DATA:
+                s.on_data(sid, data)
+            elif frame_type == TUNNEL_FRAME_CLOSE:
+                s.on_close_session(sid)
+            else:
+                s.close('unknown tunnel frame type: %d' % frame_type)
+                return
+        del s.inbuf[:offset]
+
+    def read(s):
+        try:
+            data = s.socket.recv(TUNNEL_READ_SIZE)
+        except BlockingIOError:
+            return
+        except OSError as e:
+            s.close(str(e))
+            return
+
+        if not data:
+            s.close('connection closed by peer')
+            return
+        s.inbuf += data
+        s.parse()
+
+    def send_frame(s, frame_type, sid, data=b""):
+        # Returns False if the frame was dropped.
+        if not s.socket:
+            return False
+        if len(s.outbuf) + TUNNEL_HEADER.size + len(data) > TUNNEL_BUFFER_LIMIT:
+            return False
+        s.outbuf += TUNNEL_HEADER.pack(frame_type, sid, len(data))
+        s.outbuf += data
+        if not s.connecting:
+            s.flush()
+        return True
+
+    def start(s, sock):
+        sock.setblocking(False)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for name, value in TUNNEL_SOCKET_OPTIONS:
+            if hasattr(socket, name):
+                sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, name), value)
+
+        s.socket = sock
+        s.inbuf = bytearray()
+        s.outbuf = bytearray(TUNNEL_HELLO)
+        s.hello_received = False
+        s.pending_error = None
+        s.started = time.time()
+
+
+class TunnelServerConnection(TunnelStream):
+    # Connection accepted from a tunnel intake.
+
+    def __init__(s, srv, sock, addr):
+        TunnelStream.__init__(s, srv)
+        s.addr = addr
+        s.start(sock)
+        s.writing = False
+        srv.watch(s, EPOLLIN)
+        srv.tunnel_connections.add(s)
+        s.flush()
+
+    def __str__(s):
+        return 'tunnel %s' % colour_addr(s.addr[0], s.addr[1])
+
+    def close(s, reason):
+        s.disconnect()
+        s.srv.tunnel_connections.discard(s)
+        for session in [x for k, x in s.srv.sessions.items() if k[0] is s]:
+            s.srv.close_session(session)
+
+        if s.hello_received:
+            print_notice('Closed %s: %s' % (s, reason))
+        else:
+            print_warning('Rejected %s: %s' % (s, reason))
+
+    def on_close_session(s, sid):
+        session = s.srv.sessions.get((s, sid))
+        if session:
+            s.srv.close_session(session)
+
+    def on_data(s, sid, data):
+        key = (s, sid)
+        session = s.srv.sessions.get(key) or s.srv.new_session(
+            key,
+            lambda reply: s.send_frame(TUNNEL_FRAME_DATA, sid, reply),
+            '%s session %s' % (s, colour_text(sid)),
+        )
+        session.send(data)
+
+    def on_hello(s):
+        print_notice('Accepted %s' % s)
+
+
+class TunnelTarget(TunnelStream):
+    # Intake end of a tunnel, connecting out to a tunnel server.
+
+    def __init__(s, srv, t_ip, t_port, t_host):
+        TunnelStream.__init__(s, srv)
+        s.ip = t_ip
+        s.port = t_port
+        s.hostname = t_host
+
+        s.backoff = TUNNEL_RECONNECT_MIN
+        s.failures = 0
+        s.next_attempt = 0
+
+    __str__ = lambda s: colour_addr(s.ip, s.port, s.hostname)
+    get_addr = lambda s: (s.ip, s.port)
+
+    def close(s, reason):
+        s.disconnect()
+
+        now = time.time()
+        if s.hello_received:
+            # A working tunnel dropped. Try again right away.
+            s.backoff = TUNNEL_RECONNECT_MIN
+            s.next_attempt = now
+            print_warning(
+                'Lost tunnel to %s: %s (%s)' % (s, reason, s.describe_retry(now))
+            )
+        else:
+            s.next_attempt = now + s.backoff
+            s.backoff = min(s.backoff * 2, TUNNEL_RECONNECT_MAX)
+            # Only report the first failure in a row, unless being verbose.
+            if not s.failures or s.srv.verbose:
+                print_warning(
+                    'Unable to open tunnel to %s: %s (%s)'
+                    % (s, reason, s.describe_retry(now))
+                )
+            s.failures += 1
+
+    def close_session(s, session):
+        s.send_frame(TUNNEL_FRAME_CLOSE, session.sid)
+
+    def connect(s):
+        s.start(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+        s.connecting = True
+        s.writing = True
+        s.srv.watch(s, EPOLLIN | EPOLLOUT)
+
+        err = s.socket.connect_ex(s.get_addr())
+        if err not in (0, errno.EINPROGRESS):
+            s.close(os.strerror(err))
+
+    def describe_retry(s, now):
+        delay = max(0, int(round(s.next_attempt - now)))
+        if s.srv.lazy_reconnect:
+            if delay:
+                return 'reconnecting when needed, no sooner than %ds' % delay
+            return 'reconnecting when needed'
+        if delay:
+            return 'retrying in %ds' % delay
+        return 'reconnecting'
+
+    def handle_event(s, event):
+        if s.connecting:
+            err = s.socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+            if err:
+                s.close(os.strerror(err))
+                return
+            try:
+                s.socket.getpeername()
+            except OSError:
+                return  # Still connecting.
+            s.connecting = False
+        TunnelStream.handle_event(s, event)
+
+    def is_available(s):
+        # False while waiting out the delay after a failed connection attempt.
+        return s.socket is not None or time.time() >= s.next_attempt
+
+    def on_close_session(s, sid):
+        pass  # The intake end decides when sessions end.
+
+    def on_data(s, sid, data):
+        session = s.srv.sessions_by_sid.get(sid)
+        if session and s in session.targets:
+            session.reply(data)
+
+    def on_hello(s):
+        s.backoff = TUNNEL_RECONNECT_MIN
+        s.failures = 0
+        print_notice('Opened tunnel to %s' % s)
+
+    def send(s, session, data):
+        if not s.socket and s.srv.lazy_reconnect and s.is_available():
+            s.connect()
+        # Datagrams are held while the tunnel is connecting, and dropped while it is down.
+        s.send_frame(TUNNEL_FRAME_DATA, session.sid, data)
+
+    def tick(s, now):
+        if s.socket:
+            s.check(now)
+        elif not s.srv.lazy_reconnect and now >= s.next_attempt:
+            s.connect()
+
 
 class UdpRelaySession:
-    def __init__(s, srv, addr):
-        s.running = True
+    def __init__(s, srv, key, reply, label):
+        s.srv = srv
+        s.key = key
+        s.reply_to_client = reply
+        s.label = label
 
-        s.addr = addr
+        s.running = True
+        s.time = time.time()
 
         s.targets = srv.get_targets()
-        s.targets_addr = [t.get_addr() for t in s.targets]
+        s.backlog = deque()
+        s.socket = None
+        s.sid = None
 
-        s.socket = srv.new_socket()
-        s.backlog = []
+        if srv.tunnel_intake:
+            # Tunnelled sessions share their tunnels' connections.
+            s.sid = srv.new_sid()
+        else:
+            s.targets_addr = [t.get_addr() for t in s.targets]
+            s.socket = srv.new_socket()
+            srv.watch(s, s.get_events())
 
     def __str__(s):
 
@@ -1346,20 +1791,80 @@ class UdpRelaySession:
         else:
             ts = s.targets[0]
 
-        return '%s -> %s' % (colour_addr(s.addr[0], s.addr[1]), ts)
+        return '%s -> %s' % (s.label, ts)
+
+    def close(s):
+        if s.socket:
+            s.srv.unwatch(s)
+            s.socket.close()
+            s.socket = None
+        if s.sid is not None:
+            s.srv.sessions_by_sid.pop(s.sid, None)
+            for t in s.targets:
+                t.close_session(s)
+
+    def get_events(s):
+        events = 0 if s.srv.no_reply else EPOLLIN
+        if s.backlog:
+            events |= EPOLLOUT
+        return events
+
+    def handle_event(s, event):
+        # Data from a target server
+        if event & EPOLLIN:
+            try:
+                while True:
+                    data, addr = s.socket.recvfrom(BUFFER_SIZE)
+                    if addr in s.targets_addr:
+                        s.reply(data)
+            except OSError:
+                pass
+
+        if event & EPOLLOUT:
+            drain_backlog(s.socket, s.backlog)
+            s.srv.set_events(s, s.get_events())
 
     def is_closing(s):
-        return not s.backlog and (not s.running or time.time() - s.time > 60)
+        return not s.backlog and (
+            not s.running or time.time() - s.time > SESSION_TIMEOUT
+        )
+
+    def reply(s, data):
+        s.time = time.time()
+        s.reply_to_client(data)
+
+    def send(s, data):
+        s.time = time.time()
+        for t in s.targets:
+            t.send(s, data)
+
+        # Without replies to wait for, a session with its own socket can close right away.
+        # Tunnelled sessions stay open so that the tunnel server can keep using one
+        #   socket for them, instead of opening a new one for every datagram.
+        if s.srv.no_reply and s.socket:
+            s.running = False
 
 
 class UdpRelayTarget(object):
-    def __init__(s, t_ip, t_port, t_host):
+    def __init__(s, srv, t_ip, t_port, t_host):
+        s.srv = srv
         s.ip = t_ip
         s.port = t_port
         s.hostname = t_host
 
     __str__ = lambda s: colour_addr(s.ip, s.port, s.hostname)
     get_addr = lambda s: (s.ip, s.port)
+    is_available = lambda s: True
+
+    def close_session(s, session):
+        pass
+
+    def send(s, session, data):
+        if send_datagram(session.socket, session.backlog, data, s.get_addr()):
+            s.srv.set_events(session, session.get_events())
+
+    def tick(s, now):
+        pass
 
 
 # Run
