@@ -88,7 +88,13 @@ bind M setw synchronize-panes
 
 # Reload
 bind R source-file ~/.tmux.conf
-##
+
+## Comforts
+
+# Confirm that mounse mode is disabled
+# (it seems to be on by default now in Fedora 44 after a recent update)
+set -g mouse off
+
 EOF
 )"
 
