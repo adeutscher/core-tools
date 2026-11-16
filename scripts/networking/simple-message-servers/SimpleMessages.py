@@ -1017,7 +1017,7 @@ def serve(handler_class):
         if not udp:
             sockobj.listen(10)
     except socket.error as msg:
-        print_error('Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1])
+        print_error('Bind failed. Error Code : ' + str(msg.errno) + ' Message ' + str(msg.strerror))
         exit(1)
 
     if udp:
