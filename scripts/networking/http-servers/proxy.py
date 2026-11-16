@@ -170,7 +170,10 @@ class Proxy(common.CoreHttpServer):
         if req_headers["host"]:
             req_headers["X-Forwarded-Host"] = req_headers["host"]
         proto = "http"
-        if common.args[common.TITLE_SSL_CERT] or common.args[common.TITLE_SSL_SELF_SIGNED]:
+        if (
+            common.args[common.TITLE_SSL_CERT]
+            or common.args[common.TITLE_SSL_SELF_SIGNED]
+        ):
             proto = "https"
         req_headers["X-Forwarded-Proto"] = proto
 
@@ -191,14 +194,18 @@ class Proxy(common.CoreHttpServer):
         m = common.args[TITLE_MAX_LENGTH]
 
         lengths = set(
-            v for k, v in getattr(self, 'header_list', []) if k.lower() == 'content-length'
+            v
+            for k, v in getattr(self, 'header_list', [])
+            if k.lower() == 'content-length'
         )
         transfer_encoding = self.headers.get('transfer-encoding', '')
         if transfer_encoding:
             if lengths:
                 # RFC 9112 says Transfer-Encoding wins, but a proxy and upstream that
                 #   disagree on where a body ends is how requests get smuggled.
-                return self.send_error(400, "Both Transfer-Encoding and Content-Length given")
+                return self.send_error(
+                    400, "Both Transfer-Encoding and Content-Length given"
+                )
             if transfer_encoding.strip().lower() != 'chunked':
                 return self.send_error(501, "Unsupported Transfer-Encoding")
             # urllib cannot stream a chunked body onward, so decode and buffer it
@@ -272,7 +279,11 @@ class Proxy(common.CoreHttpServer):
             # HTTPException covers malformed upstream responses (BadStatusLine and such).
             return self.send_error(502, "Error relaying request")
 
-        location_base = "%s://%s%s" % (parsed.scheme, parsed.netloc, parsed.path.rstrip('/'))
+        location_base = "%s://%s%s" % (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path.rstrip('/'),
+        )
 
         self.log_message(
             '"%s" %s %s', getattr(self, common.ATTR_REQUEST_LINE, ""), code, None

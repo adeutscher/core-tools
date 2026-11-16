@@ -1762,7 +1762,9 @@ class CoreHttpServer(StreamRequestHandler, object):
         error is sent back.
         """
 
-        raw_line = (getattr(self, ATTR_RAW_RLINE, None) or "").rstrip(convert_bytes('\r\n'))
+        raw_line = (getattr(self, ATTR_RAW_RLINE, None) or "").rstrip(
+            convert_bytes('\r\n')
+        )
         try:
             self.requestline = convert_str(raw_line)
         except UnicodeDecodeError:
