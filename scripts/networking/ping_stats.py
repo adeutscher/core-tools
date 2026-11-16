@@ -156,7 +156,9 @@ RESULT_UNREACHABLE = 4
 RESULT_BROKEN = 5
 
 DEFAULT_STREAK_COUNT = 10
+DEFAULT_HISTORY_WIDTH = 10
 
+ENV_HISTORY_WIDTH = 'PING_HISTORY_WIDTH'
 ENV_PREFER_IPV6 = 'PING_PREFER_IPV6'
 
 
@@ -560,6 +562,14 @@ def parse_args(args_raw):
             '                Can also be set with %s=1.' % _colour_text(ENV_PREFER_IPV6)
         )
         logger.info('                Default: Use IPv4 when available.')
+        logger.info(
+            ' --history-width <width>: Width of the history chart (Default: %s)'
+            % _colour_text(DEFAULT_HISTORY_WIDTH)
+        )
+        logger.info(
+            '                          Can also be set with %s.'
+            % _colour_text(ENV_HISTORY_WIDTH)
+        )
         logger.info(' -c count: Limit the total number of packets sent.')
         logger.info(
             '           Will exit with a non-zero exit code if limit is reached'
@@ -599,7 +609,9 @@ def parse_args(args_raw):
 
     try:
         opts, operands = gnu_getopt(
-            args_raw, '46c:dhi:p:rtu', ['prefer-ipv6', 'script', 'timeout=']
+            args_raw,
+            '46c:dhi:p:rtu',
+            ['history-width=', 'prefer-ipv6', 'script', 'timeout='],
         )
     except Exception as e:
         logger.error('Error parsing arguments: %s' % str(e))
@@ -621,6 +633,15 @@ def parse_args(args_raw):
         )
         error = True
 
+    # Like the IPv6 preference, the environment variable only sets a default
+    #   that --history-width overrides.
+    env_value = environ.get(ENV_HISTORY_WIDTH, '').strip()
+    if env_value:
+        valid, args['history_width'] = validate_int(
+            env_value, '%s value' % ENV_HISTORY_WIDTH
+        )
+        error = error or not valid
+
     for arg, value in opts:
         valid = True
         if arg == '-h':
@@ -633,6 +654,8 @@ def parse_args(args_raw):
         elif arg == '-c':
             # Count
             valid, args['count'] = validate_int(value, 'count')
+        elif arg == '--history-width':
+            valid, args['history_width'] = validate_int(value, 'history width')
         elif arg == '-d':
             # Debug
             args['debug'] = True
@@ -886,7 +909,7 @@ def run(ctx, **kwargs):
     # 'heartbeat' chart of ping health.
     chart = ''
     colours = []
-    chart_length = 10
+    chart_length = kwargs.get('history_width') or DEFAULT_HISTORY_WIDTH
 
     while True:
         start = time()
