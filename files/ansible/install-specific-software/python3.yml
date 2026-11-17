@@ -1,0 +1,127 @@
+---
+
+# Make sure that Python 3 and pip are installed, and that the unversioned
+#   'python' command runs Python 3.
+# Made for Rocky Linux (8+), Fedora, Debian (11+), and Ubuntu (20.04+).
+#
+# Facts are not gathered up front because a minimal install may not have a
+#   Python interpreter for Ansible to use yet. A 'raw' task installs python3
+#   first, and facts are gathered after that.
+#
+# How 'python' is pointed at Python 3 on each distribution:
+#   * Debian/Ubuntu: 'python-is-python3' package
+#   * Fedora, Rocky 9+: 'python-unversioned-command' package
+#   * Rocky 8: 'alternatives --set python /usr/bin/python3'
+
+- hosts: "{{ variable_host | default('all') }}"
+  # Example to override 'all' grouping: --extra-vars "variable_host=127.0.0.1"
+
+  gather_facts: no
+
+  environment:
+    ANSIBLE: 1
+
+  tasks:
+
+    - name: bootstrap python3
+      become: yes
+      raw: |
+        if command -v python3 >/dev/null 2>&1; then
+          echo "python3-present"
+        elif command -v apt-get >/dev/null 2>&1; then
+          apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 || exit 1
+        elif command -v dnf >/dev/null 2>&1; then
+          dnf install -y python3 || exit 1
+        elif command -v yum >/dev/null 2>&1; then
+          yum install -y python3 || exit 1
+        else
+          echo "No supported package manager found." >&2
+          exit 1
+        fi
+        # Recent ansible-core releases cannot run modules with older Pythons
+        #   such as Python 3.6 on Rocky 8. Install a newer side-by-side Python
+        #   for Ansible to use. The system python3 is left alone.
+        # Avoid single quotes in these comments. The raw module parses them.
+        if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))'; then
+          if ! command -v python3.11 >/dev/null 2>&1; then
+            dnf install -y python3.11 || exit 1
+          fi
+          echo "ansible-interpreter=$(command -v python3.11)"
+        fi
+      register: bootstrap
+      changed_when: "'python3-present' not in bootstrap.stdout or 'Complete!' in bootstrap.stdout"
+
+    - name: use newer python for ansible modules
+      when: bootstrap.stdout is search('ansible-interpreter=')
+      set_fact:
+        ansible_python_interpreter: "{{ bootstrap.stdout | regex_search('ansible-interpreter=(\\S+)', '\\1') | first }}"
+
+    - name: gather facts
+      setup:
+
+    - name: set unversioned python method
+      set_fact:
+        python_method: >-
+          {%- if ansible_facts['os_family'] == 'Debian' -%}
+          package
+          {%- elif ansible_facts['os_family'] == 'RedHat' and ansible_facts['distribution'] != 'Fedora' and ansible_facts['distribution_major_version'] | int < 9 -%}
+          alternatives
+          {%- else -%}
+          package
+          {%- endif -%}
+        python_package: >-
+          {{ 'python-is-python3' if ansible_facts['os_family'] == 'Debian' else 'python-unversioned-command' }}
+
+    - name: install python3 and pip
+      become: yes
+      package:
+        name:
+          - python3
+          - python3-pip
+        state: present
+
+    - name: install unversioned python package
+      become: yes
+      when: python_method == 'package'
+      package:
+        name: "{{ python_package }}"
+        state: present
+
+    - name: point python alternative at python3
+      become: yes
+      when: python_method == 'alternatives'
+      block:
+
+        - name: check python alternative
+          command: alternatives --display python
+          register: python_alternative
+          changed_when: false
+          check_mode: false
+          failed_when: false
+
+        - name: set python alternative
+          command: alternatives --set python /usr/bin/python3
+          when: "'link currently points to /usr/bin/python3' not in python_alternative.stdout"
+
+    - name: check python version
+      command: python --version
+      register: python_version
+      changed_when: false
+      check_mode: false
+
+    - name: confirm python is python3
+      assert:
+        that:
+          - "(python_version.stdout ~ python_version.stderr) is search('^Python 3\\.')"
+        fail_msg: "'python' reports '{{ python_version.stdout }}{{ python_version.stderr }}', not Python 3."
+        success_msg: "'python' is {{ python_version.stdout }}"
+
+    - name: check pip version
+      command: python3 -m pip --version
+      register: pip_version
+      changed_when: false
+      check_mode: false
+
+    - name: report pip version
+      debug:
+        msg: "{{ pip_version.stdout }}"
