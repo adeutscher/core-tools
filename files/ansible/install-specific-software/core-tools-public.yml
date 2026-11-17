@@ -10,7 +10,7 @@
 
     git:
       src: https://github.com/adeutscher/core-tools.git
-      dest: "{{ ansible_user_dir }}/tools/core-tools"
+      dest: "{{ ansible_facts['user_dir'] }}/tools/core-tools"
 
   tasks:
 

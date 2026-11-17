@@ -24,7 +24,7 @@
   - name: install preferred packages
     become: yes
     action: >
-      {{ ansible_pkg_mgr }} name="iptables-services" state=latest
+      {{ ansible_facts['pkg_mgr'] }} name="iptables-services" state=latest
 
   - name: firewalld service disabled
     become: yes

@@ -19,7 +19,7 @@
 
         - name: install package
           action: >
-            {{ ansible_pkg_mgr }} name=ntpdate state=latest
+            {{ ansible_facts['pkg_mgr'] }} name=ntpdate state=latest
 
         - name: run ntpdate
           shell: ntpdate {{ time_server }}

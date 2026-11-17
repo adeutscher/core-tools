@@ -5,23 +5,23 @@
   vars:
     pkg: "python-setuptools"
     git_src: "https://github.com/rg3/youtube-dl.git"
-    git_dest: "{{ ansible_user_dir }}/.local/ansible-deployments/youtube-dl"
+    git_dest: "{{ ansible_facts['user_dir'] }}/.local/ansible-deployments/youtube-dl"
 
   tasks:
 
   - name: install package (apt)
     become: yes
-    when: ansible_pkg_mgr == "apt"
+    when: ansible_facts['pkg_mgr'] == "apt"
     apt: name="{{ pkg }}" state="latest"
 
   - name: install package (dnf)
     become: yes
-    when: ansible_pkg_mgr == "dnf"
+    when: ansible_facts['pkg_mgr'] == "dnf"
     dnf: name="{{ pkg }}" state="latest"
 
   - name: install package (yum)
     become: yes
-    when: ansible_pkg_mgr == "yum"
+    when: ansible_facts['pkg_mgr'] == "yum"
     yum: name="{{ pkg }}" state="latest"
 
   - name: get youtube-dl source

@@ -54,7 +54,7 @@
   - name: install preferred packages
     become: yes
     action: >
-      {{ ansible_pkg_mgr }} name="{{ preferred_packages }}" state=latest
+      {{ ansible_facts['pkg_mgr'] }} name="{{ preferred_packages }}" state=latest
 
   - name: install/update pip2 items
     become: yes

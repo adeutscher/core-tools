@@ -9,7 +9,7 @@
   tasks:
 
   - name: "fail if not centos {{ version }}"
-    when: ansible_distribution != distro or ansible_distribution < version
+    when: ansible_facts['distribution'] != distro or ansible_facts['distribution'] < version
     fail: msg="Must only run on {{ distro }} (Minimum version{{ ":" }} {{ version }})"
 
   - name: "install microsoft repository"

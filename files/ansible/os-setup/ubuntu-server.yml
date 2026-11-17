@@ -49,7 +49,7 @@
 
   - name: packages
     become: yes
-    when: (ansible_os_family == "Debian")
+    when: (ansible_facts['os_family'] == "Debian")
     block:
 
       - name: "install system packages"
@@ -61,7 +61,7 @@
         become: yes
 
   - name: Other System Items
-    when: (ansible_os_family == "Debian")
+    when: (ansible_facts['os_family'] == "Debian")
     become: yes
     block:
 

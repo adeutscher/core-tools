@@ -57,11 +57,11 @@
 
   - name: CentOS Tasks
     become: yes
-    when: (ansible_distribution == "CentOS")
+    when: (ansible_facts['distribution'] == "CentOS")
     block:
 
       - name: Python path (CentOS)
-        when: (ansible_distribution_major_version >= '8')
+        when: (ansible_facts['distribution_major_version'] >= '8')
         set_fact:
           ansible_python_interpreter: /usr/bin/python3
 
@@ -70,7 +70,7 @@
 
   - name: Fedora Tasks
     become: yes
-    when: (ansible_distribution == "Fedora")
+    when: (ansible_facts['distribution'] == "Fedora")
     block:
 
       - name: "install system packages (Fedora)"
@@ -79,7 +79,7 @@
   - name: install preferred packages
     become: yes
     action: >
-      {{ ansible_pkg_mgr }} name="{{ preferred_packages }}" state=latest
+      {{ ansible_facts['pkg_mgr'] }} name="{{ preferred_packages }}" state=latest
 
   - name: install/update pip items
     become: yes
@@ -88,7 +88,7 @@
       state: latest
 
   - name: Other RedHat Items
-    when: (ansible_os_family == "RedHat")
+    when: (ansible_facts['os_family'] == "RedHat")
     become: yes
     block:
 

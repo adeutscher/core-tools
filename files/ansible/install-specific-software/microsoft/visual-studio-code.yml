@@ -10,7 +10,7 @@
   tasks:
 
   - name: "fail if not using RPM package manager"
-    when: (ansible_pkg_mgr not in ("dnf", "yum"))
+    when: (ansible_facts['pkg_mgr'] not in ("dnf", "yum"))
     fail: msg="Not using a supported RPM package manager"
 
   - name: "install microsoft rpm key"
@@ -33,5 +33,5 @@
   - name: "install Visual Studio Code"
     become: yes
     action: >
-      {{ ansible_pkg_mgr }} name="{{ packages.main }}"
+      {{ ansible_facts['pkg_mgr'] }} name="{{ packages.main }}"
 

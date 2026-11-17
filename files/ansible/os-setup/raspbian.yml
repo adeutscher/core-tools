@@ -22,8 +22,8 @@
 
   tasks:
     - name: abort if not raspbian
-      when: (ansible_lsb and ansible_lsb.id != "Raspbian")
-      fail: msg="Non-Raspbian distribution - {{ ansible_os_family }} ({{ ansible_distribution }})"
+      when: (ansible_facts['lsb'] and ansible_facts['lsb'].id != "Raspbian")
+      fail: msg="Non-Raspbian distribution - {{ ansible_facts['os_family'] }} ({{ ansible_facts['distribution'] }})"
 
     - name: install packages
       become: yes
