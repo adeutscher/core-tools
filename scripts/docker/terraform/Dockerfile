@@ -11,6 +11,7 @@ RUN dnf upgrade -y \
   iputils \
   jq \
   net-tools \
+  openssh-clients \
   procps-ng \
   python \
   python-pip \
@@ -42,6 +43,13 @@ RUN dnf config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashic
 # **************************************************************
 
 RUN dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && dnf install -y docker-ce-cli
+
+# **************************************************************
+# Install GitLab CLI (glab)
+# Reads GITLAB_TOKEN and GITLAB_HOST, which the wrapper passes through.
+# **************************************************************
+ARG GLAB_VER=1.131.0
+RUN dnf install -y "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VER}/downloads/glab_${GLAB_VER}_linux_amd64.rpm" && dnf clean all
 
 # **************************************************************
 # Install TFLint

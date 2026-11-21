@@ -17,9 +17,24 @@ function get_azdo_access_token()
     fi
 }
 
+function get_gitlab_token()
+{
+    # Try different methods of getting a GitLab token.
+    # Different devs have different habits
+    if [ -n "${GITLAB_TOKEN}" ]; then
+        echo "${GITLAB_TOKEN}"
+        return
+    fi
+
+    if [ -f "${HOME}/.gitlab_tok" ]; then
+        cat ${HOME}/.gitlab_tok
+        return
+    fi
+}
+
 function get_vault_token()
 {
-    # Try different methods of getting a Azure DevOps token.
+    # Try different methods of getting a Vault token.
     # Different devs have different habits
     if [ -n "${VAULT_TOKEN}" ]; then
         echo "${VAULT_TOKEN}"
@@ -43,6 +58,10 @@ SCRIPT_DIR="$(dirname "$(readlink -f "${0}")")"
 DOCKERFILE="${SCRIPT_DIR}/Dockerfile"
 DOCKER_LABEL="cli-terraform.core-tools"
 
+# Mounts the current directory at /workspace. Start from a root directory that holds
+# every Terraform project and every module they reference (for example a directory of
+# sibling clones), then cd to a project inside the container. Started from a single
+# project directory, relative module paths outside it are not visible.
 echo "Wrapping docker for terraform around $(pwd)"
 
 if [ ! -f "${DOCKERFILE}" ]; then
@@ -68,6 +87,23 @@ if ! docker build $@ \
     error "Docker build failed."
 fi
 
+# Pass every TF_VAR_* variable from the calling shell through by name, so values
+# never appear on the docker command line.
+TF_VAR_ARGS=()
+while read -r TF_VAR_NAME; do
+  TF_VAR_ARGS+=(-e "${TF_VAR_NAME}")
+done < <(compgen -e | grep '^TF_VAR_')
+
+# Forward the SSH agent (and known hosts) so git over SSH works inside the container,
+# for example pushes to git@git.domain-d.lan.
+SSH_ARGS=()
+if [ -S "${SSH_AUTH_SOCK}" ]; then
+  SSH_ARGS+=(-v "${SSH_AUTH_SOCK}:/run/ssh-agent.sock" -e SSH_AUTH_SOCK=/run/ssh-agent.sock)
+fi
+if [ -f "${HOME}/.ssh/known_hosts" ]; then
+  SSH_ARGS+=(-v "${HOME}/.ssh/known_hosts:/root/.ssh/known_hosts:ro")
+fi
+
 STATE_DIR_ARG=""
 if [ -d "${TF_LOCAL_STATE_DIR}" ]; then
   STATE_DIR_ARG="-v ${TF_LOCAL_STATE_DIR}:/state"
@@ -85,7 +121,7 @@ docker run -it --rm \
     -e AUTH0_CLIENT_ID="${AUTH0_CLIENT_ID}" \
     -e AUTH0_CLIENT_SECRET="${AUTH0_CLIENT_SECRET}" \
     -e CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN}" \
-    -e GITLAB_TOKEN="${GITLAB_TOKEN}" \
+    -e GITLAB_TOKEN="$(get_gitlab_token)" \
     -e GITLAB_URI="${GITLAB_URI}" \
     -e GITLAB_BASE_URL="${GITLAB_BASE_URL}" \
     -e GITLAB_HOST="${GITLAB_HOST}" \
@@ -100,6 +136,8 @@ docker run -it --rm \
     -e AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN}" \
     -e VAULT_ADDR="${VAULT_ADDR}" \
     -e VAULT_TOKEN="$(get_vault_token)" \
+    "${TF_VAR_ARGS[@]}" \
+    "${SSH_ARGS[@]}" \
     ${STATE_DIR_ARG} \
     -w /workspace \
     --entrypoint /bin/bash \
