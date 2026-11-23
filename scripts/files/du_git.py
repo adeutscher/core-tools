@@ -3,7 +3,7 @@
 '''
 Summarize disk usage like `du -s`, but skip files that git repositories ignore.
 
-Usage: ./du_git.py [-b] [-c] [path ...]
+Usage: ./du_git.py [-b] [-c] [-x] [path ...]
 
 Sizes are printed in human readable units, like `du -h`. Use -b for an exact byte count.
 
@@ -15,6 +15,10 @@ is the size of the repository as it exists locally.
 A .gitignore outside of a git repository has no effect, just as with git.
 
 Like du, sizes are allocated disk usage and hard-linked files are counted once.
+
+Symbolic links are not followed. Mount points (including bind mounts) are
+descended into unless -x is given, which skips anything on a different file
+system from the path being summarized.
 '''
 
 import argparse, os, subprocess, sys
@@ -88,8 +92,9 @@ def is_repo_root(path):
     return get_repo_root(path) == os.path.realpath(path)
 
 class Counter:
-    def __init__(self, error=None):
+    def __init__(self, error=None, one_file_system=False):
         self.error = error or (lambda message: print('du-git: %s' % message, file=sys.stderr))
+        self.one_file_system = one_file_system
         self.failed = False
         self.seen_inodes = set()
 
@@ -136,6 +141,7 @@ class Counter:
             return 0
 
         total = self._add(st)
+        top_dev = st.st_dev
         on_error = lambda e: self._fail("cannot read directory '%s': %s" % (e.filename, e.strerror))
         for dirpath, dirnames, filenames in os.walk(top, onerror=on_error):
             if dirpath != top and '.git' in dirnames + filenames and is_repo_root(dirpath):
@@ -149,10 +155,14 @@ class Counter:
                 if child in ignored:
                     continue
                 try:
-                    total += self._add(os.lstat(child))
+                    child_st = os.lstat(child)
                 except OSError as e:
                     self._fail("cannot access '%s': %s" % (child, e.strerror))
                     continue
+                if self.one_file_system and child_st.st_dev != top_dev:
+                    # Like `du -x`, a mount point is neither counted nor descended into.
+                    continue
+                total += self._add(child_st)
                 kept.append(name)
             dirnames[:] = kept
 
@@ -161,9 +171,14 @@ class Counter:
                 if child in ignored:
                     continue
                 try:
-                    total += self._add(os.lstat(child))
+                    child_st = os.lstat(child)
                 except OSError as e:
                     self._fail("cannot access '%s': %s" % (child, e.strerror))
+                    continue
+                if self.one_file_system and child_st.st_dev != top_dev:
+                    # A single file can also be a mount point, via a file bind mount.
+                    continue
+                total += self._add(child_st)
         return total
 
 def main(args_raw, out=None):
@@ -172,13 +187,14 @@ def main(args_raw, out=None):
         description='Summarize disk usage like `du -s`, skipping files ignored by git repositories.')
     parser.add_argument('-b', '--bytes', dest='as_bytes', action='store_true', help='Print exact sizes in bytes, instead of human readable units (e.g. 1.5K, 234M, 2G).')
     parser.add_argument('-c', '--total', action='store_true', help='Produce a grand total.')
+    parser.add_argument('-x', '--one-file-system', action='store_true', help='Skip directories on different file systems, such as mount points and bind mounts.')
     parser.add_argument('paths', nargs='*', metavar='path', help='Paths to summarize (default: current directory).')
     try:
         args = parser.parse_args(args_raw)
     except SystemExit as e:
         return e.code
 
-    counter = Counter()
+    counter = Counter(one_file_system=args.one_file_system)
     grand_total = 0
     try:
         for path in args.paths or ['.']:

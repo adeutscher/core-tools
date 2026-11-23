@@ -2,6 +2,7 @@
 
 import common, unittest
 import io, os, subprocess, tempfile
+from unittest import mock
 
 mod = common.load('du_git', common.TOOLS_DIR + '/scripts/files/du_git.py')
 
@@ -203,6 +204,51 @@ class DuGitTests(common.TestCase):
             size = self.write(os.path.join(td, 'a'), 200000)
             os.link(os.path.join(td, 'a'), os.path.join(td, 'b'))
             self.assertEqual(self.usage(td) + size, self.measure(td))
+
+    def fake_mounts(self, *mounts):
+        '''
+        Patch lstat so that the given paths, and everything under them,
+        appear to be on a different file system.
+        '''
+        real_lstat = os.lstat
+        class Moved:
+            def __init__(self, st):
+                self._st = st
+            def __getattr__(self, name):
+                if name == 'st_dev':
+                    return self._st.st_dev + 1
+                return getattr(self._st, name)
+        def lstat(path, *args, **kwargs):
+            st = real_lstat(path, *args, **kwargs)
+            norm = os.path.normpath(os.path.abspath(path))
+            if any(norm == m or norm.startswith(m + os.sep) for m in mounts):
+                return Moved(st)
+            return st
+        return mock.patch.object(mod.os, 'lstat', lstat)
+
+    def test_one_file_system(self):
+        with tempfile.TemporaryDirectory() as td:
+            kept = self.write(os.path.join(td, 'local', 'a'), 100000)
+            self.write(os.path.join(td, 'mnt', 'b'), 300000)
+            self.write(os.path.join(td, 'file_mnt'), 200000)
+            mounts = (os.path.join(td, 'mnt'), os.path.join(td, 'file_mnt'))
+            with self.fake_mounts(*mounts):
+                everything = mod.Counter(self.errors.append).measure(td)
+                same_fs = mod.Counter(self.errors.append, one_file_system=True).measure(td)
+            self.assertEqual([], self.errors)
+            self.assertEqual(self.usage(td) + self.usage(os.path.join(td, 'local')) + kept, same_fs)
+            self.assertTrue(everything >= same_fs + 500000)
+
+    def test_one_file_system_matches_du(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.write(os.path.join(td, 'a'))
+            self.write(os.path.join(td, 'sub', 'b'), 120000)
+            proc = subprocess.run(['du', '-s', '-x', '-B1', td], stdout=subprocess.PIPE, check=True)
+            expected = proc.stdout.decode().split('\t')[0]
+            for flag in ['-x', '--one-file-system']:
+                code, output = self.run_main(['-b', flag, td])
+                self.assertEqual(0, code)
+                self.assertEqual('%s\t%s\n' % (expected, td), output)
 
     def test_main_human_and_total(self):
         with tempfile.TemporaryDirectory() as td:
