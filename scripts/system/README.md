@@ -127,6 +127,7 @@ Usage examples:
 
     ./wait-for-pid.sh 1234 [...] [-s interval]
     ./wait-for-pid.sh yum [...] [-s interval]
+    ./wait-for-pid.sh -r build-step [...]
 
 Notes:
 
@@ -135,7 +136,10 @@ Notes:
 * If no PIDs exist when the script is invoked, then the script will exit with a non-zero exit code. The `-l` switch makes this case exit successfully instead.
 * If only some patterns match running processes, then the unmatched patterns are reported as warnings and the script waits on the processes that did match. The `--strict` switch instead fails if any pattern matches no processes.
 * Process names are dealt with by invoking `pgrep`. `pgrep` reads off of the Linux procfs. Procfs is a bit unfortunate in that the name of a process (which `pgrep` searches for by default trims the process name to be a maximum of 15 characters.
-  Command searches longer than 15 characters shall not register.
+  To cover the gaps, patterns are also matched against the full name of a script run by an interpreter (e.g. `wait-for-pid foo` matches `python foo.py` and `bash /long/path/foo.sh`), and against the full name of a program whose name was trimmed.
+  Arguments to a script are not matched, so `python bar.py foo` does not match `foo`.
+  This full name check reads every process in `/proc`, once per check. The `-p` switch (or setting `WAIT_FOR_PID_PGREP_ONLY=1`) skips it and uses `pgrep` alone. This is faster and can match fewer unrelated processes, at the cost of missing the scripts and long names above.
+* The `-r` switch re-checks patterns and files once all matched processes are finished, and waits for any new matches. This repeats until a re-check finds nothing new, which still exits successfully. PIDs given directly are not re-checked. `-r` cannot be combined with `-a`.
 * A downside of this script is that it is unable to detect whether or not a process ended with a non-zero exit code.
 
 ### Use Cases

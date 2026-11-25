@@ -150,6 +150,32 @@ if ! [[ "${CLOCK_TICKS}" =~ ^[1-9][0-9]*$ ]]; then
   CLOCK_TICKS=100
 fi
 
+# The kernel cuts process names (as seen by pgrep) down to this many characters.
+COMM_LENGTH=15
+
+# pgrep-only mode (-p, or WAIT_FOR_PID_PGREP_ONLY set to anything other than empty or 0).
+# By default, patterns are also matched against full script and program names (see build_name_table).
+# That check reads the command line of every process in /proc from bash, once per pattern check
+#   (the initial check and each -r re-check, never on each wait interval).
+# Trade-offs of the full name check:
+#   * It is slower than pgrep alone. About 0.1s per check with ~700 processes, more on busier systems.
+#   * It can match more processes than pgrep alone, such as every 'python foo.py' for pattern 'foo'.
+#   * Without it, scripts run by an interpreter and names over the kernel's limit are invisible.
+# The check is on by default. It happens once (or once per re-check) in a script that is
+#   presumably watching at least one long-running task, so its cost is not worth trading for missed matches.
+#   To confirm phrasing, that's once per check sweep, not once per pattern in a sweep.
+# I don't particularly like the idea of iterating through /proc on a fundamental level,
+#   but unfortunately it seems to be the best worst option.
+case "${WAIT_FOR_PID_PGREP_ONLY:-0}" in
+  0) PGREP_ONLY=0 ;;
+  *) PGREP_ONLY=1 ;;
+esac
+
+# Interpreters that run a script given as an argument.
+# A script run through its shebang line also shows up this way (e.g. '/bin/bash ./foo.sh').
+SHELL_INTERPRETERS='^(ba|da|z|k|mk|a|y|c|tc)?sh$|^fish$'
+SCRIPT_INTERPRETERS='^(python|pypy|perl|ruby|php|lua|luajit|node|nodejs|tclsh|wish|Rscript)[0-9.]*$'
+
 read_proc_stat(){
   # Read the state and start time of a process into PROC_STATE and PROC_START.
   # Returns 1 if the process does not exist or has already exited (zombie or dead).
@@ -168,14 +194,15 @@ add_pid(){
   # Track a running process, recording its start time and command.
   # Returns 1 if the process is not running.
   local pid="${1}"
-  local existing cmd
+  local i cmd
   local args=()
 
-  for existing in "${PIDS[@]}"; do
-    [ "${existing}" = "${pid}" ] && return 0
-  done
-
   read_proc_stat "${pid}" || return 1
+
+  # A PID with a different start time is a new process re-using the number of a finished one.
+  for i in "${!PIDS[@]}"; do
+    [ "${PIDS[i]}" = "${pid}" ] && [ "${STARTS[i]}" = "${PROC_START}" ] && return 0
+  done
 
   mapfile -d '' -t args 2> /dev/null < "/proc/${pid}/cmdline"
   if (( ${#args[@]} )); then
@@ -191,6 +218,273 @@ add_pid(){
   COMMANDS+=("${cmd}")
 }
 
+get_script_name(){
+  # Set SCRIPT_NAME to the base name of the script that an interpreter command line is running.
+  # Arguments: the command line, one argument per command line entry.
+  # Returns 1 if the command is not a known interpreter, or if it is not running a script file
+  #   (e.g. 'bash -c ...', 'python -c ...', or reading from standard input).
+  # Arguments after the script are the script's own, and are never looked at.
+  local cmd="${1##*/}"
+  local family arg c rest i
+  local value_opts="" noscript_opts="" script_opts="" long_value_opts="" long_noscript_opts=""
+  SCRIPT_NAME=""
+  shift
+
+  if [[ "${cmd}" =~ ${SHELL_INTERPRETERS} ]]; then
+    family=shell
+  elif [[ "${cmd}" =~ ${SCRIPT_INTERPRETERS} ]]; then
+    family="${BASH_REMATCH[1]}"
+  else
+    return 1
+  fi
+
+  # Short options that take a value, that mean there is no script file,
+  #   or that take the script (or module) to run as their value.
+  case "${family}" in
+    shell)
+      value_opts="oO"; noscript_opts="cs"
+      long_value_opts="--rcfile --init-file"
+      ;;
+    python|pypy)
+      value_opts="WXQ"; noscript_opts="c"; script_opts="m"
+      ;;
+    perl)
+      noscript_opts="eE"
+      ;;
+    ruby)
+      value_opts="CEFIr"; noscript_opts="e"
+      ;;
+    php)
+      value_opts="cdz"; noscript_opts="raR"; script_opts="fF"
+      ;;
+    lua|luajit)
+      # 'lua -e stat script.lua' still runs the script after the statement.
+      value_opts="el"
+      ;;
+    node|nodejs)
+      value_opts="r"; noscript_opts="ep"
+      long_value_opts="--require --loader --experimental-loader --import"
+      long_noscript_opts="--eval --print"
+      ;;
+    tclsh|wish)
+      long_value_opts="-encoding"
+      ;;
+    Rscript)
+      noscript_opts="e"
+      ;;
+  esac
+
+  while (( $# )); do
+    arg="${1}"
+    shift
+
+    [ -n "${arg}" ] && case " ${long_value_opts} " in
+      *" ${arg} "*)
+        shift
+        continue
+        ;;
+    esac
+
+    case "${arg}" in
+      --)
+        SCRIPT_NAME="${1}"
+        break
+        ;;
+      -|"")
+        # Reading the script from standard input.
+        return 1
+        ;;
+      --*)
+        case " ${long_noscript_opts} " in
+          *" ${arg%%=*} "*)
+            return 1
+            ;;
+        esac
+        continue
+        ;;
+      -?*|+?*)
+        if [[ "${arg}" == +* ]] && [ "${family}" != shell ]; then
+          SCRIPT_NAME="${arg}"
+          break
+        fi
+
+        # Walk through a group of short options, such as '-ex' or '-Wignore'.
+        for (( i = 1; i < ${#arg}; i++ )); do
+          c="${arg:i:1}"
+          rest="${arg:i+1}"
+          if [[ "${noscript_opts}" == *"${c}"* ]]; then
+            return 1
+          elif [[ "${script_opts}" == *"${c}"* ]]; then
+            SCRIPT_NAME="${rest:-${1}}"
+            break 2
+          elif [[ "${value_opts}" == *"${c}"* ]]; then
+            # The value is either the rest of this argument or the next argument.
+            [ -z "${rest}" ] && shift
+            break
+          fi
+        done
+        ;;
+      *)
+        SCRIPT_NAME="${arg}"
+        break
+        ;;
+    esac
+  done
+
+  SCRIPT_NAME="${SCRIPT_NAME##*/}"
+  [ -n "${SCRIPT_NAME}" ]
+}
+
+build_name_table(){
+  # Record the full names of running processes in cases that pgrep cannot see:
+  #   * Scripts run by an interpreter, where the process name is the interpreter (e.g. 'python foo.py').
+  #   * Programs and scripts whose names are longer than the kernel's process name limit.
+  local dir pid comm name
+  local args=()
+
+  NAME_PIDS=()
+  NAME_VALUES=()
+
+  for dir in /proc/[0-9]*; do
+    pid="${dir#/proc/}"
+    # This script is never matched, the same as the pgrep check.
+    [ "${pid}" = "$$" ] && continue
+
+    mapfile -d '' -t args 2> /dev/null < "${dir}/cmdline" || continue
+    (( ${#args[@]} )) || continue
+
+    if get_script_name "${args[@]}"; then
+      name="${SCRIPT_NAME}"
+    else
+      # Not a script. Only use the program name if the process name was cut short.
+      { read -r comm < "${dir}/comm"; } 2> /dev/null || continue
+      name="${args[0]##*/}"
+      (( ${#comm} == COMM_LENGTH )) && [[ "${name}" == "${comm}"?* ]] || continue
+    fi
+
+    NAME_PIDS+=("${pid}")
+    NAME_VALUES+=("${name}")
+  done
+
+  NAME_TABLE_BUILT=1
+}
+
+match_file(){
+  # Track the processes that have a file open.
+  # Arguments: file path, quiet mode (1 during re-checks).
+  # Returns 1 if no process has the file open, or if lsof is not available.
+  local path="${1}"
+  local quiet="${2:-0}"
+  local lsof_processes p
+
+  if ! (( "${HAVE_LSOF:-0}" )); then
+    # Was given a file path, but could not follow up because lsof was not available.
+    # Make this mark to print a specific error message down the chain.
+    TRIED_LSOF=1
+    return 1
+  fi
+
+  if (( quiet )); then
+    lsof_processes="$(lsof -t "${path}" 2> /dev/null)"
+  else
+    lsof_processes="$(lsof -t "${path}")"
+  fi
+
+  if [ -z "${lsof_processes}" ]; then
+    # Print a notice that an attempt was made to use lsof on a path.
+    # Explicitly choosing not to count this as an error.
+    (( quiet )) || notice "$(printf "File ${GREEN}%s${NC} is not being used by any processes. Attempting the file name through ${BLUE}%s${NC}" "${path}" "pgrep")"
+    return 1
+  fi
+
+  for p in ${lsof_processes}; do
+    (( quiet )) || notice "$(printf "File ${GREEN}%s${NC} is open in process: ${BOLD}%s${NC}" "${path}" "${p}")"
+    add_pid "${p}"
+  done
+}
+
+match_pattern(){
+  # Track the processes matching a pattern, by process name (pgrep) and by full script or program name.
+  # Arguments: pattern, colour for messages, quiet mode (1 during re-checks).
+  # Returns 1 if nothing matched.
+  local pattern="${1}"
+  local colour="${2:-${BOLD}}"
+  local quiet="${3:-0}"
+  local pgrep_pattern="${pattern}"
+  local matched=0
+  local results result i
+
+  if [ "${#pattern}" -gt "${COMM_LENGTH}" ]; then
+
+    # Pattern as given is too long for pgrep. Print a warning and then attempt a clipped-down version.
+    # The full pattern is still checked against full script and program names below,
+    #   unless in pgrep-only mode.
+    pgrep_pattern="${pattern:0:${COMM_LENGTH}}"
+
+    if ! (( quiet )); then
+      notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${pattern}")"
+      warning "$(printf "Pattern length is ${BOLD}%d${NC} characters or greater. ${BLUE}%s${NC} cannot match this many characters." "$((COMM_LENGTH+1))" "pgrep")"
+      warning "$(printf "Attempting to clip down to ${BOLD}%d${NC} characters for ${BLUE}%s${NC}: ${colour}%s${NC} -> ${colour}%s${NC}" "${COMM_LENGTH}" "pgrep" "${pattern}" "${pgrep_pattern}")"
+    fi
+
+  elif ! (( quiet )); then
+    notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${pattern}")"
+  fi
+
+  # The '--' keeps patterns beginning in '-' from being read as pgrep options.
+  # pgrep never matches itself, and the subshell running it is gone
+  #   before add_pid checks it, so only this script needs to be skipped.
+  # Skipping this script avoids infinite waiting when waiting for other invocations of this script.
+  if (( quiet )); then
+    results="$(pgrep -- "${pgrep_pattern}" 2> /dev/null)"
+  else
+    results="$(pgrep -- "${pgrep_pattern}")"
+  fi
+
+  for result in ${results}; do
+    [ "${result}" = "$$" ] && continue
+    add_pid "${result}" && matched=1
+  done
+
+  # Check full names using the same extended regular expression syntax that pgrep uses.
+  # Skipped in pgrep-only mode (see PGREP_ONLY).
+  if ! (( PGREP_ONLY )); then
+    (( "${NAME_TABLE_BUILT:-0}" )) || build_name_table
+    for i in "${!NAME_PIDS[@]}"; do
+      [[ "${NAME_VALUES[i]}" =~ ${pattern} ]] || continue
+      add_pid "${NAME_PIDS[i]}" && matched=1
+    done
+  fi
+
+  (( matched ))
+}
+
+match_operand(){
+  # Track the processes for a file or pattern operand.
+  # Arguments: operand, whether the operand was a file (1/0), quiet mode (1 during re-checks).
+  # Returns 1 if nothing matched.
+  local operand="${1}"
+  local is_file="${2:-0}"
+  local quiet="${3:-0}"
+
+  if (( is_file )); then
+    match_file "${operand}" "${quiet}" && return 0
+    # Fall back to the file's name, which pgrep and the script name check can match.
+    match_pattern "${operand##*/}" "${GREEN}" "${quiet}"
+  else
+    match_pattern "${operand}" "${BOLD}" "${quiet}"
+  fi
+}
+
+print_waiting(){
+  # Announce the tracked processes, starting at the given index.
+  local current="${1:-0}"
+  while [ "${current}" -lt "${#PIDS[*]}" ]; do
+    print_wait "$(printf "for: ${BOLD}%s${NC} %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
+    current="$((current+1))"
+  done
+}
+
 pid_finished(){
   # A tracked process is finished once it is gone, is a zombie,
   #   or its PID now belongs to a process with a different start time.
@@ -203,9 +497,18 @@ wait_for_pids(){
     notice "Any-mode specified, stopping as soon as any of the matched processes are completed."
   fi
 
+  # Processes completed in an earlier round (before a re-check) stay complete.
   complete=0
-  get_uptime
-  time_start="${UPTIME}"
+  for current in "${!COMPLETED[@]}"; do
+    (( COMPLETED[current] )) && complete=$((complete+1))
+  done
+
+  # Watch time covers all rounds of waiting.
+  if [ -z "${time_start}" ]; then
+    get_uptime
+    time_start="${UPTIME}"
+  fi
+
   while (( 1 )); do
     current=0
     while [ "${current}" -lt "${#PIDS[*]}" ]; do
@@ -233,18 +536,50 @@ wait_for_pids(){
   done
 }
 
+recheck(){
+  # Look for new processes matching the pattern and file operands.
+  # PID operands are not re-checked.
+  # Returns 1 if no new processes were found.
+  local before="${#PIDS[*]}"
+  local i
+
+  notice "Re-checking for new processes matching the requested patterns and files."
+
+  # Process names may have changed since the last check.
+  NAME_TABLE_BUILT=0
+  for i in "${!RECHECK_OPERANDS[@]}"; do
+    match_operand "${RECHECK_OPERANDS[i]}" "${RECHECK_FILES[i]}" 1
+  done
+
+  if [ "${#PIDS[*]}" -eq "${before}" ]; then
+    notice "No new matching processes found."
+    return 1
+  fi
+
+  print_waiting "${before}"
+}
+
 usage(){
-  printf "${BOLD}Usage${NC}: %s [-a] [-l] [-s interval] [--strict] [-h] [--] pid|pattern|file ...\n\n" "${0##*/}"
+  printf "${BOLD}Usage${NC}: %s [-a] [-l] [-p] [-r] [-s interval] [--strict] [-h] [--] pid|pattern|file ...\n\n" "${0##*/}"
   printf "Wait for processes to finish, including processes that are not children of the current shell.\n\n"
   printf "Operands:\n"
   printf "  pid          A numeric process ID.\n"
   printf "  pattern      A ${BLUE}pgrep${NC} pattern, matched against process names (first 15 characters).\n"
+  printf "               Also matched against the full name of a script run by an interpreter\n"
+  printf "               (e.g. 'python foo.py' or 'bash /path/to/foo.sh'), and the full name of\n"
+  printf "               a program whose name is too long for ${BLUE}pgrep${NC}. Arguments to a script are not matched.\n"
   printf "  file         A file path. Waits for the processes that have the file open (requires ${BLUE}lsof${NC}).\n"
-  printf "               If no process has the file open, the file name is tried as a ${BLUE}pgrep${NC} pattern.\n\n"
+  printf "               If no process has the file open, the file name is tried as a pattern.\n\n"
   printf "Options:\n"
   printf "  -a           Stop as soon as any one of the processes is finished.\n"
   printf "  -h           Show this help.\n"
   printf "  -l           Lazy mode. Exit successfully instead of failing when no processes matched at all.\n"
+  printf "  -p           pgrep-only mode. Skip matching full script and program names, which reads every\n"
+  printf "               process in /proc. Faster, but misses scripts run by an interpreter and long names.\n"
+  printf "               Also enabled by setting ${BOLD}WAIT_FOR_PID_PGREP_ONLY${NC} to anything other than empty or 0.\n"
+  printf "  -r           Re-check mode. Once all processes are finished, check the patterns and files again,\n"
+  printf "               and wait for any new matches. Repeats until a check finds nothing new.\n"
+  printf "               PID operands are not re-checked.\n"
   printf "  -s interval  Seconds between checks (default: 0.5, minimum: 0.25).\n"
   printf "  --strict     Fail if any pattern matches no processes, even if other operands matched.\n"
   printf "  --           Treat all remaining arguments as operands.\n"
@@ -265,18 +600,20 @@ valid_interval(){
 
 # Confirm that valid PIDs were given and that they existed at the start of the script's running.
 
-PGREP_THRESHOLD=16
 ANY=0
 LAZY=0
+RECHECK=0
 STRICT=0
 END_OF_OPTIONS=0
 UNMATCHED_PATTERNS=()
 UNMATCHED_COLOURS=()
+RECHECK_OPERANDS=()
+RECHECK_FILES=()
 
 while (( $# )); do
   # Each pass of getopts gets a fresh argument list, so start over at its first entry.
   OPTIND=1
-  while getopts ":ahls:-:" OPT "$@"; do
+  while getopts ":ahlprs:-:" OPT "$@"; do
     # Handle switches up until we encounter a non-switch option.
     case "$OPT" in
       h)
@@ -288,6 +625,12 @@ while (( $# )); do
          ;;
       l)
          LAZY=1
+         ;;
+      p)
+         PGREP_ONLY=1
+         ;;
+      r)
+         RECHECK=1
          ;;
       s)
         if valid_interval "${OPTARG}"; then
@@ -333,9 +676,6 @@ while (( $# )); do
     # Mark that there was an attempt to give a PID.
     # If the attempt failed, then there will be a more specific error message down the chain.
     ATTEMPT=1
-    LSOF_PROCESS=0
-    IS_FILE=0
-    PATTERN_COLOUR="${BOLD}"
 
     if [ -z "${1}" ] || { ! (( END_OF_OPTIONS )) && [ "${1}" = "-" ]; }; then
       error "$(printf "Invalid operand: ${BOLD}'%s'${NC}" "${1}")"
@@ -344,82 +684,42 @@ while (( $# )); do
     fi
 
     if [ -f "${1}" ]; then
-      # Argument is a file path. Attempt to use lsof to get a path.
-
-      IS_FILE=1
-      PATTERN_COLOUR="${GREEN}"
-
-      if (( "${HAVE_LSOF:-0}" )); then
-        lsof_processes="$(lsof -t "${1}")"
-
-        if [ -n "${lsof_processes}" ]; then
-          LSOF_PROCESS=1
-          for p in ${lsof_processes}; do
-            notice "$(printf "File ${GREEN}%s${NC} is open in process: ${BOLD}%s${NC}" "${1}" "${p}")"
-            add_pid "${p}"
-          done
-        else
-          # Print a notice that an attempt was made to use lsof on a path.
-          # Explicitly choosing not to count this as an error.
-          notice "$(printf "File ${GREEN}%s${NC} is not being used by any processes. Attempting the file name through ${BLUE}%s${NC}" "${1}" "pgrep")"
-        fi
-      else
-        # Was given a file path, but could not follow up because lsof was not available.
-        # Make this mark to print a specific error message down the chain.
-        TRIED_LSOF=1
+      # Argument is a file path. Attempt to use lsof to find the processes using it.
+      if match_file "${1}"; then
+        RECHECK_OPERANDS+=("${1}")
+        RECHECK_FILES+=(1)
+        shift
+        continue
       fi
+      IS_FILE=1
+    else
+      IS_FILE=0
     fi
 
-    if ! (( "${LSOF_PROCESS:-0}" )); then
-
-      # If lsof did not match any processes, then attempt to use pgrep or a direct PID.
-
-      if ! [[ "${1}" =~ ^[0-9]+$ ]]; then
-        # If the argument is not a number, then assume that we want to pgrep for matcing process entries.
-
-        file_pattern="${1}"
-        original_file_pattern=""
-
-        if [ "$(wc -c <<< "${1}")" -ge "16" ]; then
-
-          # Pattern as given is too long. Print a warning and then attempt a clipped-down version.
-
-          if (( "${IS_FILE}" )); then
-            file_pattern="$(basename "${file_pattern}")"
-          fi
-          original_file_pattern="${file_pattern}"
-          file_pattern="${file_pattern:0:$((PGREP_THRESHOLD-1))}"
-
-          notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${original_file_pattern}")"
-          warning "$(printf "Pattern length is ${BOLD}%d${NC} characters or greater. ${BLUE}%s${NC} cannot match this many characters." "${PGREP_THRESHOLD}" "pgrep")"
-          warning "$(printf "Attempting to clip down to ${BOLD}%d${NC} characters for ${BLUE}%s${NC}: ${PATTERN_COLOUR}%s${NC} -> ${PATTERN_COLOUR}%s${NC}" "$((PGREP_THRESHOLD-1))" "pgrep" "${original_file_pattern}" "${file_pattern}")"
-
-        else
-          notice "$(printf "Checking for PIDs matching pattern: ${BOLD}%s${NC}" "${file_pattern}")"
-        fi
-
-        # The '--' keeps patterns beginning in '-' from being read as pgrep options.
-        # pgrep never matches itself, and the subshell running it is gone
-        #   before add_pid checks it, so only this script needs to be skipped.
-        # Skipping this script avoids infinite waiting when waiting for other invocations of this script.
-        results="$(pgrep -- "${file_pattern}")"
-
-        matched=0
-        for result in ${results}; do
-          [ "${result}" = "$$" ] && continue
-          add_pid "${result}" && matched=1
-        done
-
-        if ! (( matched )); then
-          # Reported after all arguments are read, since -l may come after the pattern.
-          UNMATCHED_PATTERNS+=("${file_pattern}")
-          UNMATCHED_COLOURS+=("${PATTERN_COLOUR}")
-        fi
-      elif ! add_pid "${1}"; then
+    # If lsof did not match any processes, then attempt to use pgrep or a direct PID.
+    if [[ "${1}" =~ ^[0-9]+$ ]]; then
+      if ! add_pid "${1}"; then
         # PID must exist and be running at start.
         error "$(printf "PID does not exist or has already exited: ${BOLD}%s${NC}" "${1}")"
       fi
+    else
+      # If the argument is not a number, then assume that we want to pgrep for matching process entries.
+      RECHECK_OPERANDS+=("${1}")
+      RECHECK_FILES+=("${IS_FILE}")
 
+      if (( IS_FILE )); then
+        pattern="${1##*/}"
+        colour="${GREEN}"
+      else
+        pattern="${1}"
+        colour="${BOLD}"
+      fi
+
+      if ! match_pattern "${pattern}" "${colour}"; then
+        # Reported after all arguments are read, since -l may come after the pattern.
+        UNMATCHED_PATTERNS+=("${pattern}")
+        UNMATCHED_COLOURS+=("${colour}")
+      fi
     fi
 
     shift
@@ -428,6 +728,10 @@ done # Outer ${1} loop.
 
 if (( LAZY )) && (( STRICT )); then
   error "$(printf "Switches cannot be combined: ${BOLD}%s${NC} and ${BOLD}%s${NC}" "-l" "--strict")"
+fi
+
+if (( ANY )) && (( RECHECK )); then
+  error "$(printf "Switches cannot be combined: ${BOLD}%s${NC} and ${BOLD}%s${NC}" "-a" "-r")"
 fi
 
 for i in "${!UNMATCHED_PATTERNS[@]}"; do
@@ -464,14 +768,23 @@ if ! (( "${#PIDS[*]}" )); then
   exit 0
 fi
 
-current=0
-while [ "${current}" -lt "${#PIDS[*]}" ]; do
-  print_wait "$(printf "for: ${BOLD}%s${NC} %s" "${PIDS[${current}]}" "${COMMANDS[${current}]}")"
-  current="$((current+1))"
-done
+print_waiting 0
 
 # Announce Options
 (( "${CUSTOM_INTERVAL}" )) && notice "$(printf "Check interval: ${BOLD}%s${NC}" "${INTERVAL}")"
 
+if (( RECHECK )) && ! (( ${#RECHECK_OPERANDS[@]} )); then
+  notice "Re-check mode has no patterns or files to re-check. Only PIDs were given."
+  RECHECK=0
+fi
+
 # Wait for PIDs
 wait_for_pids
+
+# Re-check for new matches until a check comes up empty.
+# Finding nothing new is the normal way for re-check mode to finish.
+while (( RECHECK )) && recheck; do
+  wait_for_pids
+done
+
+exit 0
