@@ -7,6 +7,7 @@
 # Open pages refresh themselves when their document or the file tree changes.
 #   On Linux, changes are noticed with inotify. Elsewhere, they are checked for on a timer.
 # Fenced code blocks work inside lists and blockquotes, and are highlighted when Pygments is installed.
+# Lists nest at CommonMark's indentation (to the item's text) as well as in steps of 4.
 
 import ctypes, ctypes.util, errno, hashlib, os, re, select, struct, sys, time
 import CoreHttpServer as common
@@ -623,6 +624,28 @@ FENCE_INFO_RE = re.compile(
 )
 LIST_ITEM_RE = re.compile(r'^(?:[*+-]|\d+[.)])(?:[ ]|$)')
 
+# List indentation
+#
+# CommonMark (and GitHub) nest a block in a list item when it is indented to the
+#   item's text: 3 spaces under "1. ", 2 under "* ". Python-Markdown wants steps of 4,
+#   so a nested list under "1. " ran into the item's paragraph, "*" and all.
+# This preprocessor moves each item's content from the column CommonMark reads to
+#   the column Python-Markdown reads, keeping any further indentation, so indented
+#   code blocks and fences inside items move with it. Lines outside lists are left alone.
+
+# A list marker: indentation, the marker, and the spaces before the item's text.
+LIST_MARKER_RE = re.compile(r'^(?P<indent>[ ]*)(?P<marker>[*+-]|\d{1,9}[.)])(?P<gap>[ ]+|$)')
+# A fence, after its line's indentation is removed.
+LIST_FENCE_RE = re.compile(r'^(`{3,}|~{3,})')
+
+
+def list_content_column(match):
+    """The column an item's text starts at, as CommonMark counts it."""
+    start = len(match.group('indent')) + len(match.group('marker'))
+    gap = len(match.group('gap'))
+    # No text, or 5 or more spaces (an indented code block), means one space.
+    return start + (gap if 1 <= gap <= 4 else 1)
+
 
 def fence_info(info):
     """Rewrite an info string such as 'py title="a.py"' into the '{ .py title="a.py" }' form fenced_code reads."""
@@ -727,9 +750,75 @@ if markdown:
             spaces = len(line) - len(line.lstrip(' '))
             return line[min(spaces, indent) :]
 
+    class ListIndentPreprocessor(markdown.preprocessors.Preprocessor):
+        def run(self, lines):
+            out = []
+            # Open items, innermost last: (CommonMark content column, Python-Markdown content column).
+            items = []
+            fence = None  # (fence characters, column shift) while inside a fence.
+            after_blank = True
+            # Whether the lines since the last blank one began as an item's indented
+            #   content. Python-Markdown splits on blank lines first and gives such a
+            #   block whole to the item above, so a marker in it needs a blank line first.
+            continuation = False
+            for line in lines:
+                spaces = len(line) - len(line.lstrip(' '))
+                if fence:
+                    out.append(self.shift(line, spaces, fence[1]))
+                    stripped = line.strip()
+                    if stripped.startswith(fence[0]) and not stripped.strip(fence[0][0]):
+                        fence = None
+                    continue
+                if not line.strip():
+                    out.append(line)
+                    after_blank = True
+                    continue
+
+                marker = LIST_MARKER_RE.match(line)
+                if marker and not self.is_rule(line):
+                    while items and spaces < items[-1][0]:
+                        items.pop()
+                    if items:
+                        # Any extra indentation past the parent's text is kept.
+                        column = items[-1][1] + spaces - items[-1][0]
+                    else:
+                        column = spaces
+                    items.append((list_content_column(marker), (column // 4 + 1) * 4))
+                    if continuation and not after_blank:
+                        out.append('')
+                    out.append(' ' * column + line[spaces:])
+                    after_blank = continuation = False
+                    continue
+
+                if after_blank:
+                    continuation = bool(items) and spaces >= items[-1][0]
+
+                if items and spaces < items[-1][0] and not after_blank:
+                    # A lazy continuation of the paragraph above: leave it be.
+                    out.append(line)
+                    continue
+                while items and spaces < items[-1][0]:
+                    items.pop()
+                shift = items[-1][1] - items[-1][0] if items else 0
+                out.append(self.shift(line, spaces, shift))
+                opening = LIST_FENCE_RE.match(line[spaces:])
+                if opening:
+                    fence = (opening.group(1), shift)
+                after_blank = False
+            return out
+
+        def shift(self, line, spaces, by):
+            return ' ' * max(0, spaces + by) + line[spaces:]
+
+        def is_rule(self, line):
+            """A thematic break such as '* * *' looks like a list marker."""
+            return bool(re.match(r'^[ ]{0,3}([*_-])(?:[ ]*\1){2,}[ ]*$', line))
+
     class NestedFenceExtension(markdown.Extension):
         def extendMarkdown(self, md):
-            # After whitespace normalization (30), before fenced_code (25).
+            # After whitespace normalization (30), before fenced_code (25). List
+            #   indentation first, so fences inside items sit where nested_fence looks.
+            md.preprocessors.register(ListIndentPreprocessor(md), 'list_indent', 29)
             md.preprocessors.register(NestedFencePreprocessor(md), 'nested_fence', 28)
 
 
