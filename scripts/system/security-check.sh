@@ -97,7 +97,7 @@ check_key_logins(){
         local __uid
         __uid="$(cut -d':' -f3 <<< "$__line")"
 
-        if grep -q "^\/home" <<< "$__home"; then
+        if grep -q "^/home" <<< "$__home"; then
             local __in_home=1
             local __home_total=$((${__total_home:-0}+1))
         else
